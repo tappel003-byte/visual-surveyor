@@ -1,0 +1,1 @@
+Nothing is ever locked or committed unless the user explicitly says so. Memories, briefs, and plans are options to revisit — never treat past discussions as fixed decisions. Always frame as "option discussed" not "decision made."
