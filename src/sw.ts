@@ -13,7 +13,7 @@ declare const self: ServiceWorkerGlobalScope & {
 };
 
 const OFFLINE_SHELL = "/survey.html";
-const OFFLINE_CACHE = "offline-shell-v1";
+const OFFLINE_CACHE = "offline-shell-v2";
 
 // Precache hashed JS/CSS/assets only. HTML is fetched network-first so
 // deploys are visible immediately, then cached for offline fallback.
@@ -98,7 +98,12 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .delete("offline-shell-v1")
+      .catch(() => false)
+      .then(() => self.clients.claim()),
+  );
 });
 
 // Legacy: still honor an explicit SKIP_WAITING message if anything sends one.
