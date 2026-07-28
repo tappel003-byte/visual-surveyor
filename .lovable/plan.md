@@ -1,32 +1,28 @@
-## Fully remove voice memo feature from `public/survey.html`
+## Clean-out pass
 
-Delete rather than hide. All changes are in one file.
+Three visible things gone, one confusion cleared up.
 
-### What gets removed
-1. **UI markup**
-   - 🎙️ voice memo button in the main toolbar
-   - Voice memo entry in the ⋯ overflow menu
-   - Voice memo list/section in the pin sheet (if present)
-   - Any recording-indicator DOM (red dot, timer)
+### 1. Empty cream pill (top-left of plan)
+Remove the `.mode-pill` `<div>` in the work screen. Both buttons inside are already hidden — the container itself is what shows as the little dot.
 
-2. **JS functions and handlers**
-   - `toggleVoiceMemo`, start/stop recording, MediaRecorder setup
-   - `vm_*` IndexedDB read/write/delete helpers
-   - Blob-URL playback helpers used only by voice memos
+Nothing else needs to move into that corner — with no drawing tool left, the corner should just be empty. If you later want something there (a mode toggle, a room-label toggle, etc.) we add it deliberately.
 
-3. **Export path**
-   - `voice-memos/` folder block in ZIP export
-   - Voice memo CSV column / notes append
-   - Any `project.voiceMemos` iteration during export
+### 2. Interior / Exterior selector in the pin sheet
+Currently hidden by inline style, but JS at line 3687 sets `display = ''` whenever a non-external project opens a pin — that's why it's back in your screenshot. Fix:
+- Delete the `#intExtRow` markup entirely.
+- Delete the line that sets its display.
+- Leave `p.isExterior` field alone in the data model (harmless; already defaults to Interior/red).
 
-4. **Data model**
-   - Stop initializing `project.voiceMemos = []` on new projects
-   - Leave old projects' `voiceMemos` field alone (ignored, no migration)
+### 3. Photo Annotate pen (inside the full-screen photo viewer)
+When you tap a photo to view it, there's an ✏️ Annotate button that opens a drawing toolbar over the photo. Remove:
+- The ✏️ Annotate button.
+- The annotate-mode toolbar (Cancel / Undo / Save).
+- The text-annotation editor modal.
 
-### What stays untouched
-- Photo capture, pins, notes, room picker, OCR, Quick Capture, ZIP export (plan+pins image, CSV, photos folder), clear-drawings menu item, delete-project, PWA/offline shell.
+Leave the underlying JS in place (no callers = no risk); strip only the visible entry points.
 
-### Verification after edit
-- Search the file for `voiceMemo`, `vm_`, `MediaRecorder`, `🎙` — should return zero hits.
-- Confirm export still produces plan image + `pins.csv` + `photos/` for a project with pins.
-- Confirm Quick Capture folder + CSV still emit.
+### Verification
+- Search: `intExtRow`, `pv-annotate`, `mode-pill` in survey.html — should show only defensive JS references, no visible DOM.
+- Open a pin: no Interior/Exterior bar.
+- Tap a photo: no ✏️ Annotate button.
+- Top-left of plan: clean, no cream dot.
