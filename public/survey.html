@@ -3676,7 +3676,7 @@ function openPinSheet() {
   // External mode: show counter + photo strip (upload only), hide int/ext toggle. Internal mode: full strip + toggle.
   document.getElementById('extCountRow').style.display = isExternal ? '' : 'none';
   document.getElementById('internalPhotoWrap').style.display = '';
-  document.getElementById('intExtRow').style.display = isExternal ? 'none' : '';
+  // intExtRow removed — Interior/Exterior selector no longer in UI
   renderLocationChip();
   if (isExternal) { renderExtCount(); renderPhotoStrip(); }
   else { renderPhotoStrip(); renderIntExtToggle(); }
