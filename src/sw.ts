@@ -2,7 +2,7 @@
 
 // Temporary one-release cache reset for old iOS home-screen metadata.
 // This replaces the prior app-shell worker at the same /sw.js path, deletes
-// old offline caches that can still contain `tanstack_start_ts`, refreshes any
+// old offline caches that can still contain stale home-screen metadata, refreshes any
 // open tab to network HTML, then unregisters itself.
 
 const sw = globalThis as unknown as ServiceWorkerGlobalScope;
