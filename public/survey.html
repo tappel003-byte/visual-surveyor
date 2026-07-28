@@ -3770,19 +3770,73 @@ function pinCardinal(proj, p, offset) {
   const bearing = (alpha + offset) % 360;
   return _DIRS[Math.round(bearing / 45) % 8];
 }
+function _isGenericRoomLabel(name) {
+  const words = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const generic = new Set(['room','rm','area','space','floor','plan','level','note','notes','detail','details','label','labels']);
+  return words.every(w => generic.has(w));
+}
+function _roomDistNorm(a, b, proj) {
+  const pw = Math.max(1, proj && proj.plan && proj.plan.width || 1);
+  const ph = Math.max(1, proj && proj.plan && proj.plan.height || 1);
+  return Math.hypot((a.x - b.x) * pw, (a.y - b.y) * ph) / Math.max(pw, ph);
+}
+function _roomReachForCandidate(c, count) {
+  const name = String(c.name || '');
+  const isCirculation = /\b(hall|hallway|corridor|foyer|entry|lobby|landing|stair|stairs)\b/i.test(name);
+  const maxReach = count <= 6 ? 0.34 : 0.26;
+  if (!isFinite(c.neighborDist)) return maxReach;
+  const factor = isCirculation ? 0.92 : 0.72;
+  return Math.max(0.055, Math.min(maxReach, c.neighborDist * factor));
+}
 function pinRoom(proj, p, labels) {
   const rooms = proj && proj.rooms;
-  if (!rooms || !rooms.length) return '';
+  if (!rooms || !rooms.length || !proj.plan || !p) return '';
   const pw = proj.plan.width, ph = proj.plan.height;
-  const px = p.x / pw, py = p.y / ph;
-  let bestI = -1, bestD = Infinity;
+  if (!pw || !ph) return '';
+  const pt = { x: p.x / pw, y: p.y / ph };
+  if (!isFinite(pt.x) || !isFinite(pt.y)) return '';
+
+  const candidates = [];
   for (let i = 0; i < rooms.length; i++) {
-    const r = rooms[i];
-    const d = Math.hypot(r.x - px, r.y - py);
-    if (d < bestD) { bestD = d; bestI = i; }
+    const r = rooms[i] || {};
+    const x = Number(r.x), y = Number(r.y);
+    if (!isFinite(x) || !isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) continue;
+    const exportLabel = (labels && labels[i]) || r.name || '';
+    if (_isGenericRoomLabel(r.name) && _isGenericRoomLabel(exportLabel)) continue;
+    candidates.push({ index: i, x, y, name: exportLabel, neighborDist: Infinity });
   }
-  if (bestI < 0) return '';
-  return (labels && labels[bestI]) || rooms[bestI].name;
+  if (!candidates.length) return '';
+  if (candidates.length === 1) return candidates[0].name || '';
+
+  for (let i = 0; i < candidates.length; i++) {
+    let nearest = Infinity;
+    for (let j = 0; j < candidates.length; j++) {
+      if (i === j) continue;
+      const d = _roomDistNorm(candidates[i], candidates[j], proj);
+      if (d < nearest) nearest = d;
+    }
+    candidates[i].neighborDist = nearest;
+  }
+
+  const ranked = candidates.map(c => ({ c, d: _roomDistNorm(pt, c, proj) })).sort((a, b) => a.d - b.d);
+  const best = ranked[0];
+  const second = ranked[1];
+  if (!best || !best.c) return '';
+
+  const reach = _roomReachForCandidate(best.c, candidates.length);
+  const secondD = second ? second.d : Infinity;
+  const ratio = isFinite(secondD) && secondD > 0 ? best.d / secondD : 0;
+  const gap = isFinite(secondD) ? secondD - best.d : Infinity;
+
+  // Treat room labels as centers of estimated room areas, not infinite magnets.
+  // A pin must be within the winning label's area and not sitting right on the
+  // boundary between two labels; otherwise leave it blank for review instead of
+  // auto-filling a wrong room.
+  if (best.d <= 0.028) return best.c.name || '';
+  if (best.d <= reach && (ratio <= 0.92 || best.d <= 0.08 || gap >= 0.025)) return best.c.name || '';
+  if (ratio <= 0.58 && best.d <= reach + 0.045) return best.c.name || '';
+  return '';
 }
 // Disambiguate duplicate room names for the export only (plan/UI keep raw names).
 // Two "Bedroom" rooms become "South Bedroom" / "North Bedroom" using each room's
