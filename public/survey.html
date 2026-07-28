@@ -1006,11 +1006,18 @@ let ui = {
 };
 
 // ---------- Persistence ----------
+const BACKUP_KEYS = ['pgg_survey_v1.bak1','pgg_survey_v1.bak2','pgg_survey_v1.bak3'];
 function load() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    raw = localStorage.getItem(STORAGE_KEY);
     if (raw) store = JSON.parse(raw);
-  } catch (e) { console.warn('load failed', e); }
+  } catch (e) {
+    console.error('load failed', e);
+    // Loud toast so a corrupt store can't silently wipe the UI.
+    setTimeout(() => { try { toast('Saved data unreadable — tap Restore backup on the home screen.'); } catch {} }, 300);
+    store = { projects: [] };
+  }
   if (!store.projects) store.projects = [];
   if (!store.trash) store.trash = [];
   purgeOldTrash();
@@ -1018,12 +1025,71 @@ function load() {
   migratePhotosToIdb();
 }
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }
+  try {
+    const serialized = JSON.stringify(store);
+    // Rolling backup: never overwrite a non-empty backup with an empty store.
+    const hasContent = (store.projects && store.projects.length) || (store.trash && store.trash.length);
+    if (hasContent) {
+      try {
+        const prev1 = localStorage.getItem(BACKUP_KEYS[0]);
+        const prev2 = localStorage.getItem(BACKUP_KEYS[1]);
+        if (prev2) localStorage.setItem(BACKUP_KEYS[2], prev2);
+        if (prev1) localStorage.setItem(BACKUP_KEYS[1], prev1);
+        localStorage.setItem(BACKUP_KEYS[0], serialized);
+      } catch (be) { console.warn('backup write failed', be); }
+    }
+    localStorage.setItem(STORAGE_KEY, serialized);
+  }
   catch (e) {
     toast('Storage full — try removing some photos or an old project.');
     console.error(e);
   }
 }
+
+// ---------- Backup restore ----------
+function _readBackupCandidates() {
+  const out = [];
+  for (const k of BACKUP_KEYS) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const projects = (parsed && parsed.projects) || [];
+      const trash = (parsed && parsed.trash) || [];
+      if (projects.length || trash.length) {
+        out.push({ key: k, raw, parsed, projects: projects.length, trash: trash.length });
+      }
+    } catch {}
+  }
+  return out;
+}
+function hasRestorableBackup() {
+  const currentProjects = (store.projects || []).length;
+  const cands = _readBackupCandidates();
+  // Only offer when a backup has strictly more projects than what's loaded.
+  return cands.some(c => c.projects > currentProjects);
+}
+function restoreFromBackup() {
+  const cands = _readBackupCandidates().sort((a,b) => b.projects - a.projects);
+  if (!cands.length) { toast('No backup found.'); return; }
+  const best = cands[0];
+  const msg = 'Restore ' + best.projects + ' project' + (best.projects===1?'':'s')
+    + (best.trash ? ' (+' + best.trash + ' in trash)' : '')
+    + ' from backup?\n\nThis replaces the current empty/partial list. Backup slot: ' + best.key;
+  if (!confirm(msg)) return;
+  try {
+    store = JSON.parse(best.raw);
+    if (!store.projects) store.projects = [];
+    if (!store.trash) store.trash = [];
+    save();
+    renderHome();
+    toast('Restored ' + best.projects + ' project' + (best.projects===1?'':'s'));
+  } catch (e) {
+    console.error(e);
+    toast('Restore failed.');
+  }
+}
+
 
 // ---------- Photo storage (IndexedDB, much larger quota than localStorage) ----------
 const IDB_NAME = 'pgg_photos_v1', IDB_STORE = 'photos';
