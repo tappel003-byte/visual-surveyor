@@ -84,6 +84,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "theme-color", content: "#8b5e34" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-title", content: "PGG" },
+      { name: "application-name", content: "PGG" },
+      { name: "mobile-web-app-capable", content: "yes" },
     ],
     links: [
       {
@@ -91,8 +93,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "manifest", href: "/manifest-pgg.webmanifest" },
-      { rel: "apple-touch-icon", href: "/icon-pgg-v2-192.png?v=pgg-3" },
-      { rel: "icon", type: "image/png", sizes: "192x192", href: "/icon-pgg-v2-192.png?v=pgg-3" },
+      { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png?v=pgg-4" },
+      { rel: "apple-touch-icon-precomposed", href: "/apple-touch-icon-precomposed.png?v=pgg-4" },
+      { rel: "icon", type: "image/png", sizes: "192x192", href: "/favicon.png?v=pgg-4" },
       { rel: "icon", type: "image/png", sizes: "512x512", href: "/icon-pgg-v2-512.png?v=pgg-3" },
     ],
   }),
