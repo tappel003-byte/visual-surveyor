@@ -11,7 +11,7 @@ const sw = globalThis as unknown as ServiceWorkerGlobalScope & {
 
 // Reference the injectManifest token so vite-plugin-pwa can inject; unused at runtime.
 // The literal `self.__WB_MANIFEST` string must appear in source for workbox-build.
-const _precacheManifest = self.__WB_MANIFEST;
+const _precacheManifest = (self as unknown as { __WB_MANIFEST: unknown[] }).__WB_MANIFEST;
 if (_precacheManifest.length < 0) {
   // unreachable, keeps the reference from being tree-shaken
   console.log(_precacheManifest);
