@@ -5,21 +5,21 @@
 // old offline caches that can still contain `tanstack_start_ts`, refreshes any
 // open tab to network HTML, then unregisters itself.
 
-declare const self: ServiceWorkerGlobalScope;
+const sw = globalThis as unknown as ServiceWorkerGlobalScope;
 
-self.addEventListener("install", () => self.skipWaiting());
+sw.addEventListener("install", () => sw.skipWaiting());
 
-self.addEventListener("activate", (event) => {
+sw.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       try {
         const cacheNames = await caches.keys();
         await Promise.allSettled(cacheNames.map((name) => caches.delete(name)));
-        await self.clients.claim();
-        const clients = await self.clients.matchAll({ type: "window" });
+        await sw.clients.claim();
+        const clients = await sw.clients.matchAll({ type: "window" });
         await Promise.allSettled(clients.map((client) => client.navigate(client.url)));
       } finally {
-        await self.registration.unregister();
+        await sw.registration.unregister();
       }
     })(),
   );
