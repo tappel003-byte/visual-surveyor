@@ -3818,9 +3818,12 @@ function renderIntExtToggle() {
   const p = currentPin();
   if (!p) return;
   const ext = !!p.isExterior;
-  document.getElementById('iexInt').classList.toggle('active', !ext);
-  document.getElementById('iexExt').classList.toggle('active', ext);
+  const iInt = document.getElementById('iexInt');
+  const iExt = document.getElementById('iexExt');
+  if (iInt) iInt.classList.toggle('active', !ext);
+  if (iExt) iExt.classList.toggle('active', ext);
 }
+
 
 function setPinExterior(ext) {
   const p = currentPin();
