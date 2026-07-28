@@ -1301,8 +1301,17 @@ function renderHome() {
       reminder.innerHTML = '';
     }
   }
+  // Restore-from-backup banner: only when a backup has more projects than we loaded.
+  if (reminder && hasRestorableBackup()) {
+    const cand = _readBackupCandidates().sort((a,b)=>b.projects-a.projects)[0];
+    reminder.innerHTML = `<div class="export-reminder" style="background:#fff3cd;border-color:#f0c674;color:#5a4a1a">
+      <span>Backup available: ${cand.projects} project${cand.projects===1?'':'s'} found. Current list is smaller — restore?</span>
+      <button onclick="restoreFromBackup()" style="background:#8b5e34;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600">Restore backup</button>
+    </div>`;
+  }
   renderTrashFab();
 }
+
 function dismissExportReminder(e) {
   if (e && e.stopPropagation) e.stopPropagation();
   try { localStorage.setItem('exportReminderDismissed', String(Date.now())); } catch {}
