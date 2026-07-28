@@ -1,11 +1,32 @@
-Small edits on the Setup screen in `public/survey.html`. No functionality changes elsewhere.
+## Fully remove voice memo feature from `public/survey.html`
 
-## Changes
+Delete rather than hide. All changes are in one file.
 
-1. **Rename header** "New Internal Survey" → **"New PGG Photo Documentation"**.
-2. **Remove the "Use coordinates" button** from the address row. The "Auto-fill address" button expands to fill the row.
+### What gets removed
+1. **UI markup**
+   - 🎙️ voice memo button in the main toolbar
+   - Voice memo entry in the ⋯ overflow menu
+   - Voice memo list/section in the pin sheet (if present)
+   - Any recording-indicator DOM (red dot, timer)
 
-## Not touching
+2. **JS functions and handlers**
+   - `toggleVoiceMemo`, start/stop recording, MediaRecorder setup
+   - `vm_*` IndexedDB read/write/delete helpers
+   - Blob-URL playback helpers used only by voice memos
 
-- Address field, Auto-fill address, floor plan upload, Front door faces, Building type, rooms picker, Read labels — all stay exactly as-is.
-- Underlying geolocation code stays in the file (just no button to trigger it).
+3. **Export path**
+   - `voice-memos/` folder block in ZIP export
+   - Voice memo CSV column / notes append
+   - Any `project.voiceMemos` iteration during export
+
+4. **Data model**
+   - Stop initializing `project.voiceMemos = []` on new projects
+   - Leave old projects' `voiceMemos` field alone (ignored, no migration)
+
+### What stays untouched
+- Photo capture, pins, notes, room picker, OCR, Quick Capture, ZIP export (plan+pins image, CSV, photos folder), clear-drawings menu item, delete-project, PWA/offline shell.
+
+### Verification after edit
+- Search the file for `voiceMemo`, `vm_`, `MediaRecorder`, `🎙` — should return zero hits.
+- Confirm export still produces plan image + `pins.csv` + `photos/` for a project with pins.
+- Confirm Quick Capture folder + CSV still emit.
