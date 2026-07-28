@@ -5506,39 +5506,179 @@ async function exportProjectPdf() {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Building PDF…'; }
   try {
+    // Composed plan with numbered pins overlay
     const pngBlob = await composeMapImage('png-blob');
-    const dataUrl = await new Promise((res, rej) => {
+    const planDataUrl = await new Promise((res, rej) => {
       const r = new FileReader();
       r.onload = () => res(r.result);
       r.onerror = rej;
       r.readAsDataURL(pngBlob);
     });
-    const W = project.plan.width, H = project.plan.height;
-    const landscape = W >= H;
+    const planW = project.plan.width, planH = project.plan.height;
+
+    // 11x17 tabloid, landscape: plan on left, pin log table on right
     const { jsPDF } = window.jspdf;
-    // 11x17 tabloid in inches
-    const pdf = new jsPDF({
-      unit: 'in',
-      format: [11, 17],
-      orientation: landscape ? 'landscape' : 'portrait'
+    const pdf = new jsPDF({ unit: 'in', format: [11, 17], orientation: 'landscape' });
+    const pageW = pdf.internal.pageSize.getWidth();   // 17
+    const pageH = pdf.internal.pageSize.getHeight();  // 11
+    const margin = 0.35;
+
+    // Layout: plan takes ~60% width on the left, table takes rest on the right
+    const gutter = 0.25;
+    const planBoxW = 9.6;
+    const planBoxX = margin;
+    const planBoxY = margin;
+    const planBoxH = pageH - margin*2;
+    const tableX = planBoxX + planBoxW + gutter;
+    const tableW = pageW - tableX - margin;
+    const tableY = margin;
+    const tableH = pageH - margin*2;
+
+    // Scale the plan image to fit its box (preserving aspect)
+    const planScale = Math.min(planBoxW / planW, planBoxH / planH);
+    const planDrawW = planW * planScale;
+    const planDrawH = planH * planScale;
+    const planDrawX = planBoxX + (planBoxW - planDrawW) / 2;
+    const planDrawY = planBoxY + (planBoxH - planDrawH) / 2;
+
+    // Table column layout (inches within tableW)
+    // Photo | # | Location | Notes
+    const colPhoto = 0.75;
+    const colNum = 0.45;
+    const colLoc = 1.35;
+    const colNotes = tableW - (colPhoto + colNum + colLoc);
+    const colX = [
+      tableX,
+      tableX + colPhoto,
+      tableX + colPhoto + colNum,
+      tableX + colPhoto + colNum + colLoc,
+      tableX + tableW
+    ];
+    const headerH = 0.32;
+    const rowH = 0.30;
+    const bodyTop = tableY + headerH;
+    const rowsPerPage = Math.max(1, Math.floor((tableH - headerH) / rowH));
+
+    // Build the row data
+    const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
+    const rows = pins.map(p => {
+      const n = (p.photos || []).length;
+      let photo = '';
+      if (n === 1) photo = String(p.num);
+      else if (n > 1) photo = p.num + '–' + (p.num + n - 1);
+      const orientOffset = _orientationOffset(project);
+      const roomLabels = buildRoomLabels(project, orientOffset);
+      const loc = pinRoom(project, p, roomLabels) || p.location || '';
+      return {
+        pinNum: p.num,
+        photo,
+        location: loc,
+        notes: (p.description || '').trim()
+      };
     });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 0.15;
-    const maxW = pageW - margin*2;
-    const maxH = pageH - margin*2;
-    const scale = Math.min(maxW / W, maxH / H);
-    const drawW = W * scale, drawH = H * scale;
-    const x = (pageW - drawW) / 2;
-    const y = (pageH - drawH) / 2;
-    pdf.addImage(dataUrl, 'PNG', x, y, drawW, drawH, undefined, 'FAST');
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+
+    const drawPage = (pageIdx) => {
+      // Plan image with pins (repeats on every page)
+      pdf.addImage(planDataUrl, 'PNG', planDrawX, planDrawY, planDrawW, planDrawH, undefined, 'FAST');
+
+      // Table outer border
+      pdf.setLineWidth(0.012);
+      pdf.setDrawColor(40);
+      pdf.rect(tableX, tableY, tableW, tableH);
+
+      // Header row background
+      pdf.setFillColor(235, 230, 222);
+      pdf.rect(tableX, tableY, tableW, headerH, 'F');
+
+      // Header labels
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(30);
+      const hy = tableY + headerH/2 + 0.04;
+      pdf.text('Photo', colX[0] + colPhoto/2, hy, { align: 'center' });
+      pdf.text('#',     colX[1] + colNum/2,   hy, { align: 'center' });
+      pdf.text('Location', colX[2] + colLoc/2, hy, { align: 'center' });
+      pdf.text('Notes', colX[3] + 0.1, hy);
+
+      // Column separators (full height)
+      pdf.line(colX[1], tableY, colX[1], tableY + tableH);
+      pdf.line(colX[2], tableY, colX[2], tableY + tableH);
+      pdf.line(colX[3], tableY, colX[3], tableY + tableH);
+      // Header bottom
+      pdf.line(tableX, tableY + headerH, tableX + tableW, tableY + headerH);
+
+      // Rows
+      const start = pageIdx * rowsPerPage;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      for (let i = 0; i < rowsPerPage; i++) {
+        const y = bodyTop + i * rowH;
+        // horizontal row line (skip the very top since header line already there)
+        if (i > 0) {
+          pdf.setDrawColor(180);
+          pdf.setLineWidth(0.006);
+          pdf.line(tableX, y, tableX + tableW, y);
+        }
+        const row = rows[start + i];
+        if (!row) continue;
+        const ty = y + rowH/2 + 0.035;
+        // Photo range
+        pdf.setTextColor(30);
+        if (row.photo) pdf.text(row.photo, colX[0] + colPhoto/2, ty, { align: 'center' });
+        // Pin # in a circle
+        const cx = colX[1] + colNum/2;
+        const cy = y + rowH/2;
+        pdf.setDrawColor(60);
+        pdf.setLineWidth(0.010);
+        pdf.circle(cx, cy, 0.11, 'S');
+        pdf.setFontSize(8);
+        pdf.text(String(row.pinNum), cx, cy + 0.035, { align: 'center' });
+        pdf.setFontSize(9);
+        // Location (truncate with ellipsis to fit)
+        const locMax = colLoc - 0.12;
+        let locTxt = row.location;
+        while (locTxt && pdf.getTextWidth(locTxt) > locMax) locTxt = locTxt.slice(0, -1);
+        if (locTxt !== row.location && locTxt.length > 1) locTxt = locTxt.slice(0, -1) + '…';
+        pdf.text(locTxt || '', colX[2] + 0.06, ty);
+        // Notes — wrap to fit column, clamp to 2 lines within the row
+        const notesMax = colNotes - 0.14;
+        const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
+        const shown = noteLines.slice(0, 2);
+        if (shown.length === 1) {
+          pdf.text(shown[0], colX[3] + 0.07, ty);
+        } else if (shown.length === 2) {
+          pdf.text(shown[0], colX[3] + 0.07, y + rowH/2 - 0.02);
+          const tail = noteLines.length > 2
+            ? (shown[1].length > 3 ? shown[1].slice(0, -1) + '…' : shown[1])
+            : shown[1];
+          pdf.text(tail, colX[3] + 0.07, y + rowH/2 + 0.10);
+        }
+      }
+
+      // Page footer
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(120);
+      pdf.text(
+        (project.address || '') + '  ·  Page ' + (pageIdx + 1) + ' of ' + totalPages,
+        pageW - margin, pageH - 0.12, { align: 'right' }
+      );
+    };
+
+    for (let p = 0; p < totalPages; p++) {
+      if (p > 0) pdf.addPage([11, 17], 'landscape');
+      drawPage(p);
+    }
+
     pdf.save(sanitizeFilename(project.address) + '.pdf');
     toast('PDF downloaded');
   } catch (err) {
     console.error(err);
     alert('Could not build the PDF: ' + err.message);
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = orig || '📄 Download Map as PDF'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = orig || '📄 Download PDF (Plan + Pin Log)'; }
   }
 }
 function escapeHtml(s) {
