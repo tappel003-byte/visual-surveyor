@@ -590,6 +590,15 @@
     </div>
   </button>
 
+  <button class="mode-btn" onclick="triggerImportProject()">
+    <div class="icon">📥</div>
+    <div class="meta">
+      <span>Import project file</span>
+      <small>Open a .pgg from another device</small>
+    </div>
+  </button>
+  <input type="file" id="importFileInput" accept=".pgg,.zip,application/zip" style="display:none" onchange="_onImportFileChosen(event)">
+
 
   <div class="recent-head">
     <span>Recent</span>
