@@ -1,13 +1,13 @@
 {
   "name": "PGG",
   "short_name": "PGG",
-  "description": "PGG field photo documentation tool with floor plan pins and photos.",
-  "id": "/survey.html?pwa=pgg-v5",
-  "start_url": "/survey.html?pwa=pgg-v5",
+  "description": "PGG field photo documentation tool with floor plan pins, room locations, notes, photos, and export.",
+  "id": "/survey.html?pwa=pgg-v6",
+  "start_url": "/survey.html?pwa=pgg-v6",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#8b5e34",
+  "background_color": "#f7f5f2",
   "theme_color": "#8b5e34",
   "icons": [
     { "src": "/icon-pgg-v2-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
