@@ -2872,7 +2872,7 @@ function enterWork() {
   project.north.rotation = frontDoorToNorthRotation(project.frontDoorFacing || '');
   setupNorthWidget();
   setupDrawToolbar();
-  document.getElementById('drawToolbar').classList.toggle('show', ui.tool === 'draw');
+  { const dtb = document.getElementById('drawToolbar'); if (dtb) dtb.classList.toggle('show', ui.tool === 'draw'); }
   showScreen('screenWork');
   // Render after layout
   requestAnimationFrame(() => { updateAppHeight(); mountPlan(); fitView(); renderAll(); updateUndoButton(); });
