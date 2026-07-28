@@ -5,7 +5,17 @@
 // old offline caches that can still contain stale home-screen metadata, refreshes any
 // open tab to network HTML, then unregisters itself.
 
-const sw = globalThis as unknown as ServiceWorkerGlobalScope;
+const sw = globalThis as unknown as ServiceWorkerGlobalScope & {
+  __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
+};
+
+// Reference the injectManifest token so vite-plugin-pwa can inject; unused at runtime.
+// The literal `self.__WB_MANIFEST` string must appear in source for workbox-build.
+const _precacheManifest = (self as unknown as { __WB_MANIFEST: unknown[] }).__WB_MANIFEST;
+if (_precacheManifest.length < 0) {
+  // unreachable, keeps the reference from being tree-shaken
+  console.log(_precacheManifest);
+}
 
 sw.addEventListener("install", () => sw.skipWaiting());
 
