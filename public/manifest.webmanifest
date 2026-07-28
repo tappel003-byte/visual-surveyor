@@ -1,8 +1,9 @@
 {
-  "name": "PGG Photo Documentation",
+  "name": "PGG",
   "short_name": "PGG",
   "description": "PGG field photo documentation tool with floor plan pins and photos.",
-  "start_url": "/survey.html",
+  "id": "/survey.html?pwa=pgg-v5",
+  "start_url": "/survey.html?pwa=pgg-v5",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
