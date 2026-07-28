@@ -2903,9 +2903,9 @@ function refreshSubtitle() {
 // ---------- Tool ----------
 function setTool(t) {
   ui.tool = t;
-  document.getElementById('toolPin').classList.toggle('active', t === 'pin');
-  document.getElementById('toolDraw').classList.toggle('active', t === 'draw');
-  document.getElementById('drawToolbar').classList.toggle('show', t === 'draw');
+  const tp = document.getElementById('toolPin'); if (tp) tp.classList.toggle('active', t === 'pin');
+  const td = document.getElementById('toolDraw'); if (td) td.classList.toggle('active', t === 'draw');
+  const dtb = document.getElementById('drawToolbar'); if (dtb) dtb.classList.toggle('show', t === 'draw');
   refreshSubtitle();
   closeMenu();
   if (project) renderDrawings();
