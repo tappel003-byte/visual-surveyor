@@ -5307,7 +5307,7 @@ async function composeMapImage(format) {
       (project.pins||[]).forEach((p, idx) => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, R, 0, Math.PI*2);
-        const pinFill = (!!p.isExterior && project.mode !== 'external') ? '#6b7280' : '#c14a2b';
+        const pinFill = '#374151';
         ctx.fillStyle = pinFill; ctx.fill();
         ctx.lineWidth = R*0.18; ctx.strokeStyle = '#fff'; ctx.stroke();
         ctx.fillStyle = '#fff'; ctx.fillText(pinPlanLabel(p, idx), p.x, p.y + R*0.04);
