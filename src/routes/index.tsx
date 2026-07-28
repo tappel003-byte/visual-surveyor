@@ -1,7 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: () => {
+    throw redirect({ href: "/survey.html" });
+  },
   head: () => ({
     meta: [
       { title: "PGG" },
@@ -35,10 +37,6 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  useEffect(() => {
-    window.location.replace("/survey.html");
-  }, []);
-
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6 text-center text-foreground">
       <a className="text-lg font-semibold underline" href="/survey.html">
