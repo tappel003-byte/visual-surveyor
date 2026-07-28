@@ -853,24 +853,37 @@
     <button class="ghost" onclick="closeSheets()">Cancel</button>
   </div>
   <div id="exportBody" style="padding:8px 0 4px">
+    <button class="ghost" style="width:100%;margin-bottom:10px;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="openReviewSheet()">
+      📝 Review pins &amp; notes
+    </button>
+    <div class="sheet-sub" style="margin:-4px 0 12px">
+      Optional. Proof-read locations and notes before you export — the ZIP and PDF freeze this text.
+    </div>
+
     <button class="primary-btn" id="exportZipBtn" onclick="exportProjectZip()">
-      📦 Download Project (ZIP)
+      📦 Finish &amp; Export (ZIP)
     </button>
     <div class="sheet-sub" style="margin-top:14px;line-height:1.5">
-      One ZIP containing:<br>
+      Final deliverable. One ZIP containing:<br>
       • <code>plan.png</code> — clean floor plan, no pins or markup<br>
       • <code>map.png</code> — floor plan with numbered pins<br>
       • <code>pins.csv</code> — location, type, description, photo numbers, <b>Room</b>, <b>Direction</b> (N/S/E/W relative to front door), X,Y<br>
       <span style="color:var(--muted);font-size:12px">Cardinal directions are derived from the "Front door faces" setting chosen when the project was created.</span><br>
       <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total</span>
       <span id="exportQcNote" style="display:none"><br>• <code>quick-capture/</code> — untethered walk-around photos + CSV with timestamp &amp; GPS</span>
-      
     </div>
     <button class="ghost" style="margin-top:14px;width:100%" onclick="exportProjectPdf()">
       📄 Download PDF (Plan + Pin Log)
     </button>
     <div class="sheet-sub" style="margin-top:6px">
       11×17 landscape. Floor plan (with pins) on the left, pin log table on the right. Pages repeat the plan and continue the table as needed. Prints cleanly at 8.5×11.
+    </div>
+
+    <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
+      💾 Move to Desktop (project file)
+    </button>
+    <div class="sheet-sub" style="margin-top:6px">
+      A re-openable <code>.pgg</code> file with every pin, photo, and setting. Import it on another device to keep working. Not a client deliverable.
     </div>
   </div>
 </div>
