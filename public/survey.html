@@ -719,8 +719,8 @@
     <div class="sep"></div>
     <button onclick="confirmQuickCapture()">📸 Quick Capture</button>
     <button onclick="toggleVoiceMemo()">🎙️ Voice memo</button>
-    <div class="sep"></div>
-    <button onclick="clearDrawings()">✎ Clear all drawings</button>
+    
+
     
     <div class="sep"></div>
     <button class="danger" onclick="confirmDeleteProject()">🗑 Delete this project</button>
@@ -729,8 +729,8 @@
   <div class="stage" id="stage">
     <svg id="planSvg" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="mode-pill">
-      <button class="tool active" id="toolPin" onclick="setTool('pin')" title="Pin mode">📍</button>
-      <button class="tool" id="toolDraw" onclick="setTool('draw')" title="Draw mode">✏️</button>
+      <button class="tool active" id="toolPin" onclick="setTool('pin')" title="Pin mode" style="display:none">📍</button>
+      <button class="tool" id="toolDraw" onclick="setTool('draw')" title="Draw mode" style="display:none">✏️</button>
     </div>
     <button class="pin-picker-btn" id="pinPickerBtn" onclick="openPinPicker()" disabled>
       <span>📍 Edit pin ▾</span>
@@ -745,7 +745,7 @@
         </g>
       </svg>
     </div>
-    <div class="draw-toolbar" id="drawToolbar">
+    <div class="draw-toolbar" id="drawToolbar" style="display:none">
       <button class="dt-btn active" data-dtool="pencil" title="Pencil">✏️</button>
       <button class="dt-btn" data-dtool="rect" title="Rectangle">▭</button>
       <button class="dt-btn" data-dtool="circle" title="Circle">◯</button>
