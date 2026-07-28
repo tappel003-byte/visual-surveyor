@@ -728,10 +728,6 @@
 
   <div class="stage" id="stage">
     <svg id="planSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-    <div class="mode-pill">
-      <button class="tool active" id="toolPin" onclick="setTool('pin')" title="Pin mode" style="display:none">📍</button>
-      <button class="tool" id="toolDraw" onclick="setTool('draw')" title="Draw mode" style="display:none">✏️</button>
-    </div>
     <button class="pin-picker-btn" id="pinPickerBtn" onclick="openPinPicker()" disabled>
       <span>📍 Edit pin ▾</span>
       <span class="ppc" id="pinPickerCount">(0 pins)</span>
@@ -812,10 +808,6 @@
   </div>
 
   <div id="internalPhotoWrap">
-    <div class="int-ext-row" id="intExtRow" style="display:none">
-      <button type="button" class="iex-btn int active" id="iexInt" onclick="setPinExterior(false)">Interior</button>
-      <button type="button" class="iex-btn ext" id="iexExt" onclick="setPinExterior(true)">Exterior</button>
-    </div>
     <div class="photo-strip" id="photoStrip"></div>
     <input type="file" id="pinPhotoFile" accept="image/*" capture="environment" multiple style="display:none" onchange="onPinPhotoFile(event)" />
     <input type="file" id="pinPhotoUpload" accept="image/*" multiple style="display:none" onchange="onPinPhotoFile(event)" />
@@ -885,7 +877,7 @@
   <div class="pv-head" id="pvHead">
     <button class="pv-btn" onclick="closePhotoViewer()" aria-label="Close">✕</button>
     <div class="pv-counter" id="pvCounter">1 / 1</div>
-    <button class="pv-annotate-btn" onclick="enterAnnotateMode()">✏️ Annotate</button>
+    
     <button class="pv-btn pv-danger" onclick="deleteCurrentViewerPhoto()" aria-label="Delete photo">🗑</button>
   </div>
   <div class="pv-toolbar" id="pvToolbar">
