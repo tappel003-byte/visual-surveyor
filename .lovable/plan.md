@@ -1,35 +1,48 @@
-I would not patch this with another picker or manual workaround. The problem is the app currently treats each room label as a point, then assigns the pin to the nearest label. That is why a pin can be inside a hallway or living room and still snap to a nearby word fragment like "Area" or "Room".
 
-Plan:
+## What I will NOT do
+- I will not change the room-recognition code.
+- I will not touch the service worker, manifest, or icon files.
+- I will not "just add a fix" without first showing you evidence of the cause.
 
-1. Keep the existing room labeling workflow
-   - Do not rebuild the canvas, pins, photos, quick capture, import/export, or room picker.
-   - Keep the manual room list and OCR room detection as the source of room names.
+## What I already checked (read-only, just now)
+- Storage key is `pgg_survey_v1` in `localStorage`, plus photos in IndexedDB `pgg_photos_v1`. **Neither key has been renamed in any recent change.**
+- The room-recognition edit I made only changed two JS functions (`cleanRawRoomText` and the pin→room matcher). It does not call `localStorage.removeItem`, `caches.delete`, or `indexedDB.deleteDatabase`.
+- The service worker at `src/sw.ts` deletes **Cache Storage** entries on activate. Cache Storage is separate from localStorage and IndexedDB — clearing it does NOT delete saved projects.
 
-2. Change pin-to-room assignment from “nearest label dot” to “estimated room area”
-   - Use the uploaded floor plan image dimensions and the detected/manual room label positions.
-   - Build invisible room regions from those label positions.
-   - When a pin is dropped, assign it to the region the pin is actually inside, not just the closest label text.
+So on paper, my edit should not have wiped your projects. That means the real cause is something else, and I want to prove which one before touching anything.
 
-3. Filter bad OCR fragments before they can become rooms
-   - Reject generic orphan labels such as “Room”, “Area”, “Space”, and similar fragments when they are not part of a real room name.
-   - Preserve valid names like “Living Room”, “Dining Area”, “Primary Bedroom”, and “Hallway”.
+## Most likely real causes (need to confirm, not guess)
+1. **Different origin between preview and published URL.** localStorage is per-origin. If the iPad shortcut opened `id-preview--…lovable.app` one time and `visual-surveyor.lovable.app` (or the PGG published URL) another time, each origin has its own empty project list. This has nothing to do with any code edit.
+2. **iPadOS evicted site data** for the PWA (iOS aggressively clears storage for sites not used in ~7 days, or under storage pressure). Also independent of my edits.
+3. **A JSON parse error on load** (corrupt row) causing `store.projects` to reset to `[]`. The current `load()` catches the error but then silently continues with an empty store — no warning, no backup.
 
-4. Add a fallback for ambiguous areas
-   - If the app cannot confidently determine the region, it should leave the location blank or use the manually selected location, instead of confidently assigning the wrong room.
-   - The room picker remains the fallback, but the auto-fill should stop poisoning pins with bad guesses.
+## Plan
 
-5. Make export use the improved room result
-   - The same improved room assignment should feed the review sheet, CSV, and 11x17 PDF export so the displayed location and exported location match.
+### Step 1 — Diagnose (read-only, one short turn)
+On the device where projects disappeared, open the app and run a tiny inspector I'll give you (paste into Safari address bar or I'll add a hidden diagnostic button). It reports:
+- exact origin/URL the shortcut is loading
+- whether `pgg_survey_v1` exists, its size, and how many projects it contains
+- whether the IndexedDB `pgg_photos_v1` still has photos
+- any JSON parse error
 
-Technical detail:
+This tells us in one look whether it's an origin mismatch, an eviction, or a corruption. **No code fix happens until this returns an answer.**
 
-- The current `pinRoom(project, pin, labels)` function finds the closest room label by Euclidean distance.
-- I would replace that with a bounded-region lookup based on the detected room-label points, with a maximum confidence/distance guard.
-- I would also harden OCR cleanup so single generic fragments are not saved as standalone room labels.
+### Step 2 — Add a safety net (only after diagnosis)
+Regardless of cause, add these guardrails so this can never silently wipe you again:
+- **Auto-backup on every save**: keep the last 3 full snapshots of `store` under rolling keys (`pgg_survey_v1.bak1/2/3`). Cheap, text-only, no photos duplicated.
+- **Restore-from-backup button** on the home screen, visible only when a backup exists and the current project list is empty or smaller than the backup.
+- **Loud toast** if `load()` catches a parse error, instead of silently continuing with `[]`.
+- **Never overwrite** a non-empty backup with an empty store.
 
-Expected result:
+### Step 3 — Address the root cause found in Step 1
+- If origin mismatch: I'll show you which URL to always use for the shortcut and add a one-time migration that copies data across origins if both are reachable.
+- If iPad eviction: the backup + a periodic "Move to Desktop" reminder is the only real defense — iOS gives no way to opt out of eviction for a website.
+- If corruption: fix the specific bad field and load from the newest good backup.
 
-- Pin 1 should not become “Area” just because the word AREA is near it.
-- Pin 6 should not become “Room” just because OCR split “Living Room”.
-- Pins should map to real room names more consistently, and ambiguous pins should be safer to manually correct instead of wrong by default.
+## Technical detail (for reference)
+Files that would change in Step 2 only, and only after you approve:
+- `public/survey.html` — `save()` writes rolling backup; `load()` surfaces parse errors; small "Restore backup" UI on home screen.
+No changes to service worker, manifest, icons, room-recognition, or export code.
+
+## What I need from you to proceed
+Just: "run the diagnostic" (Step 1) or "skip diagnosis, add the backup safety net now" (jump to Step 2).
