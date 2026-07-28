@@ -17,9 +17,11 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "PGG Photo Documentation" },
       { name: "twitter:description", content: "PGG field photo documentation tool for floor plan pins, room locations, notes, photos, and export." },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-title", content: "PGG" },
     ],
     links: [
-      { rel: "manifest", href: "/manifest.webmanifest?v=pgg-3" },
+      { rel: "manifest", href: "/manifest-pgg.webmanifest" },
       { rel: "apple-touch-icon", href: "/icon-pgg-v2-192.png?v=pgg-3" },
       { rel: "icon", type: "image/png", sizes: "192x192", href: "/icon-pgg-v2-192.png?v=pgg-3" },
       { rel: "icon", type: "image/png", sizes: "512x512", href: "/icon-pgg-v2-512.png?v=pgg-3" },
