@@ -115,9 +115,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   :root{
-    --bg:#ffffff; --paper:#ffffff; --ink:#1a1a1a; --muted:#6b7280;
-    --line:#e5e7eb; --accent:#8b5e34; --accent-soft:#f2e8dc;
-    --ok:#374151; --bad:#374151;
+    --bg:#f7f5f2; --paper:#ffffff; --ink:#1f1b16; --muted:#6b6357;
+    --line:#dcd6cc; --accent:#8b5e34; --accent-soft:#efe5d6;
+    --ok:#2f7d4f; --bad:#b8801a;
     --shadow:0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
     --shadow-lg:0 8px 32px rgba(0,0,0,.10);
   }
@@ -173,9 +173,9 @@
     padding:6px 10px;border-radius:8px;text-decoration:underline;cursor:pointer}
   .ri-move:active{background:var(--line)}
   .ri-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
-  .ri-badge.warn{background:#fff3cd;color:#856404}
-  .ri-badge.ok{background:#e2efe6;color:#2e7d4f}
-  .export-reminder{display:flex;align-items:flex-start;gap:10px;background:var(--accent-soft);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
+  .ri-badge.warn{background:#fdf4e0;color:#8a5a10}
+  .ri-badge.ok{background:#e4efe4;color:#2f7d4f}
+  .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
   /* Trash FAB (bottom-right of home) */
   .fab-trash{position:fixed;right:18px;bottom:calc(18px + var(--app-bottom-offset,0px));
@@ -284,7 +284,7 @@
   .icon-btn:active{background:var(--line)}
   .icon-btn:disabled{opacity:.3}
 
-  .stage{flex:1;position:relative;overflow:hidden;background:#2a2a2a;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .stage{flex:1;position:relative;overflow:hidden;background:#e8e6e2;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
   .stage *{-webkit-touch-callout:none}
   .stage img,.stage svg,.stage svg *{-webkit-touch-callout:none;-webkit-user-drag:none;user-select:none}
   #planSvg{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
