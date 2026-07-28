@@ -8,7 +8,7 @@
 const sw = globalThis as unknown as ServiceWorkerGlobalScope & { __WB_MANIFEST: unknown };
 
 // Referenced only to satisfy vite-plugin-pwa's injectManifest requirement; unused at runtime.
-void sw.__WB_MANIFEST;
+if (Array.isArray(sw.__WB_MANIFEST)) { /* noop */ }
 
 sw.addEventListener("install", () => sw.skipWaiting());
 
