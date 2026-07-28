@@ -5,7 +5,10 @@
 // old offline caches that can still contain stale home-screen metadata, refreshes any
 // open tab to network HTML, then unregisters itself.
 
-const sw = globalThis as unknown as ServiceWorkerGlobalScope;
+const sw = globalThis as unknown as ServiceWorkerGlobalScope & { __WB_MANIFEST: unknown };
+
+// Referenced only to satisfy vite-plugin-pwa's injectManifest requirement; unused at runtime.
+void sw.__WB_MANIFEST;
 
 sw.addEventListener("install", () => sw.skipWaiting());
 
