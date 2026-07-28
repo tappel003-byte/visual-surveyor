@@ -13,7 +13,10 @@ declare const self: ServiceWorkerGlobalScope & {
 };
 
 const OFFLINE_SHELL = "/survey.html";
-const OFFLINE_CACHE = "offline-shell-v1";
+const OFFLINE_CACHE = "offline-shell-v2";
+const HTML_NAV_CACHE = "html-navigations-v2";
+const APP_ASSET_CACHE = "app-shell-assets-v2";
+const CDN_LIB_CACHE = "cdn-libs-v2";
 
 // Precache hashed JS/CSS/assets only. HTML is fetched network-first so
 // deploys are visible immediately, then cached for offline fallback.
@@ -39,7 +42,7 @@ registerRoute(
     !url.pathname.startsWith("/~oauth") &&
     !url.pathname.startsWith("/api/"),
   new NetworkFirst({
-    cacheName: "html-navigations",
+    cacheName: HTML_NAV_CACHE,
     networkTimeoutSeconds: 3,
     plugins: [new ExpirationPlugin({ maxEntries: 32 })],
   }),
@@ -56,7 +59,7 @@ registerRoute(
     !url.pathname.startsWith("/~oauth") &&
     !url.pathname.startsWith("/api/"),
   new CacheFirst({
-    cacheName: "app-shell-assets",
+    cacheName: APP_ASSET_CACHE,
     plugins: [new ExpirationPlugin({ maxEntries: 128 })],
   }),
 );
@@ -68,7 +71,7 @@ registerRoute(
     url.origin === "https://cdn.jsdelivr.net" &&
     (url.pathname.includes("jszip") || url.pathname.includes("jspdf")),
   new CacheFirst({
-    cacheName: "cdn-libs",
+    cacheName: CDN_LIB_CACHE,
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
       new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 90 }),
@@ -79,7 +82,7 @@ registerRoute(
 // Offline navigation fallback — serve the cached survey shell.
 setCatchHandler(async ({ request }) => {
   if (request.mode === "navigate") {
-    const htmlCache = await caches.open("html-navigations");
+    const htmlCache = await caches.open(HTML_NAV_CACHE);
     const cached =
       (await htmlCache.match("/survey.html")) ||
       (await htmlCache.match("/"));
@@ -98,7 +101,15 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.allSettled([
+      caches.delete("offline-shell-v1"),
+      caches.delete("html-navigations"),
+      caches.delete("app-shell-assets"),
+      caches.delete("cdn-libs"),
+      caches.delete("html-shell"),
+    ]).then(() => self.clients.claim()),
+  );
 });
 
 // Legacy: still honor an explicit SKIP_WAITING message if anything sends one.
