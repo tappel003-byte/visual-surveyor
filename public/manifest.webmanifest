@@ -1,7 +1,7 @@
 {
-  "name": "Distress Survey – Field Reporter",
-  "short_name": "Survey",
-  "description": "Field-friendly distress survey tool with floor plan pins and photos.",
+  "name": "PGG Photo Documentation",
+  "short_name": "PGG",
+  "description": "PGG field photo documentation tool with floor plan pins and photos.",
   "start_url": "/survey.html",
   "scope": "/",
   "display": "standalone",
