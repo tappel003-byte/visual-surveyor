@@ -1,120 +1,26 @@
 /// <reference lib="webworker" />
-// Custom service worker source used by vite-plugin-pwa's injectManifest strategy.
-// Workbox injects the precache manifest into self.__WB_MANIFEST at build time.
 
-import { precacheAndRoute, cleanupOutdatedCaches } from "workbox-precaching";
-import { registerRoute, setCatchHandler } from "workbox-routing";
-import { NetworkFirst, CacheFirst } from "workbox-strategies";
-import { ExpirationPlugin } from "workbox-expiration";
-import { CacheableResponsePlugin } from "workbox-cacheable-response";
+// Temporary one-release cache reset for old iOS home-screen metadata.
+// This replaces the prior app-shell worker at the same /sw.js path, deletes
+// old offline caches that can still contain stale home-screen metadata, refreshes any
+// open tab to network HTML, then unregisters itself.
 
-declare const self: ServiceWorkerGlobalScope & {
-  __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
-};
+const sw = globalThis as unknown as ServiceWorkerGlobalScope;
 
-const OFFLINE_SHELL = "/survey.html";
-const OFFLINE_CACHE = "offline-shell-v2";
-const HTML_NAV_CACHE = "html-navigations-v2";
-const APP_ASSET_CACHE = "app-shell-assets-v2";
-const CDN_LIB_CACHE = "cdn-libs-v2";
+sw.addEventListener("install", () => sw.skipWaiting());
 
-// Precache hashed JS/CSS/assets only. HTML is fetched network-first so
-// deploys are visible immediately, then cached for offline fallback.
-precacheAndRoute(self.__WB_MANIFEST || []);
-cleanupOutdatedCaches();
-
-// Always keep a fresh offline copy of the visible shell.
-async function cacheOfflineShell() {
-  try {
-    const cache = await caches.open(OFFLINE_CACHE);
-    const response = await fetch(OFFLINE_SHELL, { cache: "no-cache" });
-    if (response && response.ok) {
-      await cache.put(OFFLINE_SHELL, response.clone());
-    }
-  } catch {}
-}
-
-// HTML navigations — NetworkFirst so users get fresh HTML online,
-// fall back to cached shell offline.
-registerRoute(
-  ({ request, url }) =>
-    request.mode === "navigate" &&
-    !url.pathname.startsWith("/~oauth") &&
-    !url.pathname.startsWith("/api/"),
-  new NetworkFirst({
-    cacheName: HTML_NAV_CACHE,
-    networkTimeoutSeconds: 3,
-    plugins: [new ExpirationPlugin({ maxEntries: 32 })],
-  }),
-);
-
-// Same-origin built assets (hashed JS/CSS/worker) — cache-first for
-// instant offline cold-start of the app shell.
-registerRoute(
-  ({ url, request, sameOrigin }) =>
-    sameOrigin &&
-    (request.destination === "script" ||
-      request.destination === "style" ||
-      request.destination === "worker") &&
-    !url.pathname.startsWith("/~oauth") &&
-    !url.pathname.startsWith("/api/"),
-  new CacheFirst({
-    cacheName: APP_ASSET_CACHE,
-    plugins: [new ExpirationPlugin({ maxEntries: 128 })],
-  }),
-);
-
-// survey.html loads jszip/jspdf from jsdelivr — cache them so the shell
-// works offline for export flows.
-registerRoute(
-  ({ url }) =>
-    url.origin === "https://cdn.jsdelivr.net" &&
-    (url.pathname.includes("jszip") || url.pathname.includes("jspdf")),
-  new CacheFirst({
-    cacheName: CDN_LIB_CACHE,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 90 }),
-    ],
-  }),
-);
-
-// Offline navigation fallback — serve the cached survey shell.
-setCatchHandler(async ({ request }) => {
-  if (request.mode === "navigate") {
-    const htmlCache = await caches.open(HTML_NAV_CACHE);
-    const cached =
-      (await htmlCache.match("/survey.html")) ||
-      (await htmlCache.match("/"));
-    if (cached) return cached;
-
-    const offlineCache = await caches.open(OFFLINE_CACHE);
-    const shell = await offlineCache.match(OFFLINE_SHELL);
-    if (shell) return shell;
-  }
-  return Response.error();
-});
-
-// Activate new versions promptly.
-self.addEventListener("install", (event) => {
-  event.waitUntil(cacheOfflineShell().then(() => self.skipWaiting()));
-});
-
-self.addEventListener("activate", (event) => {
+sw.addEventListener("activate", (event) => {
   event.waitUntil(
-    Promise.allSettled([
-      caches.delete("offline-shell-v1"),
-      caches.delete("html-navigations"),
-      caches.delete("app-shell-assets"),
-      caches.delete("cdn-libs"),
-      caches.delete("html-shell"),
-    ]).then(() => self.clients.claim()),
+    (async () => {
+      try {
+        const cacheNames = await caches.keys();
+        await Promise.allSettled(cacheNames.map((name) => caches.delete(name)));
+        await sw.clients.claim();
+        const clients = await sw.clients.matchAll({ type: "window" });
+        await Promise.allSettled(clients.map((client) => client.navigate(client.url)));
+      } finally {
+        await sw.registration.unregister();
+      }
+    })(),
   );
-});
-
-// Legacy: still honor an explicit SKIP_WAITING message if anything sends one.
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
 });
