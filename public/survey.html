@@ -1685,6 +1685,12 @@ function cleanRawRoomText(text) {
   if (letters / t.length < 0.5) return null;
   if (/^\d/.test(t)) return null;
   if (/\b(ft|in|sq|sf|min|max)\b/i.test(t)) return null;
+  const plain = t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const rawWords = plain.split(/\s+/).filter(Boolean);
+  const genericOnly = new Set(['room','rm','area','space','floor','plan','level','note','notes','detail','details','label','labels']);
+  if (!rawWords.length) return null;
+  if (rawWords.every(w => genericOnly.has(w))) return null;
+  if (rawWords.length === 1 && genericOnly.has(rawWords[0])) return null;
   const small = new Set(['of','and','the','a']);
   const words = t.toLowerCase().split(' ').map((w, i) => {
     if (i > 0 && small.has(w)) return w;
