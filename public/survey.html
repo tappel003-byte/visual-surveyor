@@ -710,7 +710,7 @@
     <button class="icon-btn" id="wRedo" onclick="redo()" title="Redo">↷</button>
     
     <button class="icon-btn" id="wQuickCap" onclick="confirmQuickCapture()" title="Quick Capture">📸</button>
-    <button class="icon-btn" id="wVoiceMemo" onclick="toggleVoiceMemo()" title="Voice memo" style="display:none">🎙️</button>
+    
     <button class="icon-btn" onclick="toggleMenu()" title="More">⋯</button>
   </div>
   <div class="menu" id="workMenu">
@@ -718,7 +718,7 @@
     <button onclick="editSetup()">⚙️ Edit setup</button>
     <div class="sep"></div>
     <button onclick="confirmQuickCapture()">📸 Quick Capture</button>
-    <button onclick="toggleVoiceMemo()" style="display:none">🎙️ Voice memo</button>
+    
     
 
     
@@ -863,7 +863,7 @@
       <span style="color:var(--muted);font-size:12px">Cardinal directions are derived from the "Front door faces" setting chosen when the project was created.</span><br>
       <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total</span>
       <span id="exportQcNote" style="display:none"><br>• <code>quick-capture/</code> — untethered walk-around photos + CSV with timestamp &amp; GPS</span>
-      <span id="exportVmNote" style="display:none"><br>• <code>voice-memos/</code> — recorded audio memos (webm/m4a) + CSV with timestamp, GPS, duration</span>
+      
     </div>
     <button class="ghost" style="margin-top:14px;width:100%" onclick="exportProjectPdf()">
       📄 Download Map as PDF
@@ -5229,10 +5229,8 @@ function openExport() {
   const isInternal = project.mode === 'internal';
   document.getElementById('exportPhotosNote').style.display = isInternal ? '' : 'none';
   const qcCount = (project.quickCapture || []).length;
-  const vmCount = (project.voiceMemos || []).length;
   document.getElementById('exportQcNote').style.display = qcCount ? '' : 'none';
-  document.getElementById('exportVmNote').style.display = vmCount ? '' : 'none';
-  const extras = (qcCount ? ' + ' + qcCount + ' Quick Capture' : '') + (vmCount ? ' + ' + vmCount + ' voice memo' + (vmCount===1?'':'s') : '');
+  const extras = (qcCount ? ' + ' + qcCount + ' Quick Capture' : '');
   document.getElementById('exportSub').textContent = (isInternal ? 'Map + pin list + photos' : 'Map + pin list') + extras;
   document.getElementById('scrim').classList.add('active');
   document.getElementById('exportSheet').classList.add('open');
@@ -5474,26 +5472,6 @@ async function exportProjectZip() {
       qcFolder.file('quick-capture.csv', qcLines.join('\r\n'));
     }
 
-    // voice-memos/  — recorded audio memos
-    const vm = (project.voiceMemos || []);
-    if (vm.length) {
-      const vmFolder = root.folder('voice-memos');
-      const vmPad = String(vm.length).length >= 3 ? 3 : 2;
-      const vmLines = ['File,Timestamp,Latitude,Longitude,Duration (s)'];
-      for (let i = 0; i < vm.length; i++) {
-        const e = vm[i];
-        let blob = null;
-        try { blob = await idbGet(e.id); } catch {}
-        if (!blob) continue;
-        const ext = e.ext || 'webm';
-        const name = 'memo-' + String(i+1).padStart(vmPad, '0') + '.' + ext;
-        vmFolder.file(name, blob);
-        const iso = new Date(e.ts || Date.now()).toISOString();
-        const dur = (e.duration==null) ? '' : (Math.round(e.duration*10)/10);
-        vmLines.push([name, iso, e.lat==null?'':e.lat, e.lng==null?'':e.lng, dur].join(','));
-      }
-      vmFolder.file('voice-memos.csv', vmLines.join('\r\n'));
-    }
 
 
 
@@ -5776,200 +5754,6 @@ document.addEventListener('click', (e) => {
   }
 }, true);
 
-// ---------- Voice memos ----------
-// Tap mic to start one long recording with a visible pause/resume + stop control bar.
-// Native browser format (webm or m4a). Stored as Blob in IDB keyed by `vm_<id>`; metadata in project.voiceMemos[].
-(function setupVoiceMemoStyle(){
-  const s = document.createElement('style');
-  s.textContent = `
-    #wVoiceMemo.vm-recording{background:#dc2626;color:#fff}
-    #wVoiceMemo.vm-paused{background:#f59e0b;color:#fff}
-    @keyframes vmPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.55)}50%{box-shadow:0 0 0 8px rgba(220,38,38,0)}}
-    #vmBar{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + env(safe-area-inset-top));
-      z-index:1500;display:none;align-items:center;gap:6px;
-      background:#111827;color:#fff;border-radius:999px;padding:6px 8px 6px 14px;
-      box-shadow:0 6px 20px rgba(0,0,0,.35);font:600 13px system-ui}
-    #vmBar.on{display:flex}
-    #vmBar .vm-dot{width:9px;height:9px;border-radius:50%;background:#dc2626;animation:vmPulse 1.2s infinite}
-    #vmBar.paused .vm-dot{background:#f59e0b;animation:none}
-    #vmBar .vm-time{min-width:54px;text-align:center;font-variant-numeric:tabular-nums}
-    #vmBar button{border:0;background:#1f2937;color:#fff;border-radius:999px;
-      width:34px;height:34px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
-    #vmBar button.vm-stop{background:#dc2626}
-    #vmBar button:active{transform:scale(.94)}
-  `;
-  document.head.appendChild(s);
-  const b = document.createElement('div');
-  b.id = 'vmBar';
-  b.innerHTML = `
-    <span class="vm-dot"></span>
-    <span class="vm-time" id="vmTime">0:00</span>
-    <button id="vmPauseBtn" title="Pause">⏸</button>
-    <button id="vmStopBtn" class="vm-stop" title="Stop & save">⏹</button>
-  `;
-  document.body.appendChild(b);
-  b.querySelector('#vmPauseBtn').addEventListener('click', vmTogglePause);
-  b.querySelector('#vmStopBtn').addEventListener('click', stopVoiceMemo);
-})();
-
-let _vm = { rec: null, stream: null, chunks: [], startedAt: 0, elapsedBeforePause: 0, pauseStartedAt: 0,
-            timer: null, mime: '', ext: '', gps: null, paused: false };
-
-function newVoiceMemoId(){ return 'vm_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
-function isVoiceMemoId(s){ return typeof s === 'string' && s.startsWith('vm_'); }
-
-function _vmPickMime(){
-  const cands = [
-    ['audio/webm;codecs=opus','webm'],
-    ['audio/webm','webm'],
-    ['audio/mp4;codecs=mp4a.40.2','m4a'],
-    ['audio/mp4','m4a'],
-    ['audio/ogg;codecs=opus','ogg'],
-  ];
-  for (const [m,ext] of cands){
-    try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return {mime:m, ext}; } catch {}
-  }
-  return {mime:'', ext:'webm'};
-}
-
-function _vmFmt(sec){
-  sec = Math.max(0, Math.floor(sec));
-  const m = Math.floor(sec/60), s = sec%60;
-  return m + ':' + String(s).padStart(2,'0');
-}
-
-function _vmElapsed(){
-  if (_vm.paused) return _vm.elapsedBeforePause;
-  return _vm.elapsedBeforePause + (Date.now() - _vm.startedAt);
-}
-
-function _vmUpdateUI(){
-  const bar = document.getElementById('vmBar');
-  const time = document.getElementById('vmTime');
-  const pauseBtn = document.getElementById('vmPauseBtn');
-  const btn = document.getElementById('wVoiceMemo');
-  if (!_vm.rec){
-    bar.classList.remove('on','paused');
-    btn && btn.classList.remove('vm-recording','vm-paused');
-    return;
-  }
-  bar.classList.add('on');
-  bar.classList.toggle('paused', _vm.paused);
-  btn && btn.classList.toggle('vm-recording', !_vm.paused);
-  btn && btn.classList.toggle('vm-paused', _vm.paused);
-  pauseBtn.textContent = _vm.paused ? '▶' : '⏸';
-  pauseBtn.title = _vm.paused ? 'Resume' : 'Pause';
-  time.textContent = _vmFmt(_vmElapsed()/1000);
-}
-
-async function toggleVoiceMemo(){
-  closeMenu();
-  if (!project){ alert('Open a project first.'); return; }
-  // If already recording, do NOT stop on toolbar tap — user must use the visible Stop button.
-  if (_vm.rec){
-    // Just surface the bar in case it scrolled out of view.
-    document.getElementById('vmBar').classList.add('on');
-    return;
-  }
-  await startVoiceMemo();
-}
-
-async function startVoiceMemo(){
-  if (!navigator.mediaDevices || !window.MediaRecorder){
-    alert('Voice recording is not supported in this browser.');
-    return;
-  }
-  try {
-    _vm.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:true, noiseSuppression:true } });
-  } catch (e){
-    alert('Microphone access denied or unavailable.');
-    return;
-  }
-  const {mime, ext} = _vmPickMime();
-  _vm.mime = mime; _vm.ext = ext;
-  try {
-    _vm.rec = mime ? new MediaRecorder(_vm.stream, { mimeType: mime }) : new MediaRecorder(_vm.stream);
-  } catch (e){
-    try { _vm.rec = new MediaRecorder(_vm.stream); } catch (e2){
-      _vm.stream.getTracks().forEach(t=>t.stop()); _vm.stream=null;
-      alert('Could not start recorder: ' + e2.message);
-      return;
-    }
-  }
-  _vm.chunks = [];
-  _vm.paused = false;
-  _vm.elapsedBeforePause = 0;
-  _vm.startedAt = Date.now();
-  _vm.rec.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) _vm.chunks.push(ev.data); };
-  _vm.rec.onstop = _vmOnStop;
-  try { _vm.rec.start(1000); } catch { _vm.rec.start(); }
-
-  _vmUpdateUI();
-  _vm.timer = setInterval(_vmUpdateUI, 500);
-
-  // GPS in background (non-blocking)
-  _vm.gps = null;
-  if (navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(
-      (p)=>{ _vm.gps = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6) }; },
-      ()=>{}, { enableHighAccuracy:true, timeout:8000, maximumAge:30000 }
-    );
-  }
-}
-
-function vmTogglePause(){
-  if (!_vm.rec) return;
-  if (_vm.paused){
-    try { _vm.rec.resume(); } catch {}
-    _vm.startedAt = Date.now();
-    _vm.paused = false;
-  } else {
-    try { _vm.rec.pause(); } catch {}
-    _vm.elapsedBeforePause += (Date.now() - _vm.startedAt);
-    _vm.paused = true;
-  }
-  _vmUpdateUI();
-}
-
-function stopVoiceMemo(){
-  if (!_vm.rec) return;
-  if (_vm.paused){ _vm.paused = false; } // ensure final elapsed is frozen via elapsedBeforePause
-  else { _vm.elapsedBeforePause += (Date.now() - _vm.startedAt); }
-  try { _vm.rec.stop(); } catch {}
-}
-
-async function _vmOnStop(){
-  if (_vm.timer){ clearInterval(_vm.timer); _vm.timer = null; }
-  if (_vm.stream){ _vm.stream.getTracks().forEach(t=>t.stop()); _vm.stream=null; }
-
-  const chunks = _vm.chunks; _vm.chunks = [];
-  const rec = _vm.rec; _vm.rec = null;
-  const ext = _vm.ext, mime = _vm.mime || (rec && rec.mimeType) || 'audio/webm';
-  const startedAt = (Date.now() - _vm.elapsedBeforePause); // approximate "true start"
-  const duration = _vm.elapsedBeforePause / 1000;
-  _vm.elapsedBeforePause = 0;
-  _vmUpdateUI();
-
-  if (!chunks.length || duration < 0.6){
-    toast('Memo too short — discarded.');
-    return;
-  }
-  const blob = new Blob(chunks, { type: mime });
-  const id = newVoiceMemoId();
-  try { await idbPut(id, blob); }
-  catch (e){ alert('Could not save voice memo: ' + e.message); return; }
-
-  project.voiceMemos = project.voiceMemos || [];
-  project.voiceMemos.push({
-    id, ts: startedAt, duration,
-    mime, ext,
-    lat: _vm.gps ? _vm.gps.lat : null,
-    lng: _vm.gps ? _vm.gps.lng : null,
-  });
-  save();
-  const n = project.voiceMemos.length;
-  toast('Voice memo saved (' + _vmFmt(duration) + ') · ' + n + ' total');
-}
 
 
 
