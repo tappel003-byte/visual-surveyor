@@ -626,10 +626,6 @@
           style="flex:1;padding:10px 12px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;font-size:14px;cursor:pointer">
           📍 Auto-fill address
         </button>
-        <button type="button" id="coordsBtn" onclick="useGpsCoordsOnly()"
-          style="flex:1;padding:10px 12px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;font-size:14px;cursor:pointer">
-          📐 Use coordinates
-        </button>
       </div>
       <div class="hint" id="gpsHint" style="display:none"></div>
     </div>
@@ -1335,7 +1331,7 @@ function startNewProject(mode) {
   _setupFrontDoor = null;
   _setupRooms = null;
   _setupRoomsToken++;
-  document.getElementById('setupTitle').textContent = mode === 'internal' ? 'New Internal Survey' : 'New External Survey';
+  document.getElementById('setupTitle').textContent = mode === 'internal' ? 'New PGG Photo Documentation' : 'New External Survey';
   document.getElementById('fAddress').value = '';
   document.getElementById('planPreview').style.display = 'none';
   document.getElementById('planDropZone').style.display = '';
