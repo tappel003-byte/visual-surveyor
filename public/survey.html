@@ -710,7 +710,7 @@
     <button class="icon-btn" id="wRedo" onclick="redo()" title="Redo">↷</button>
     
     <button class="icon-btn" id="wQuickCap" onclick="confirmQuickCapture()" title="Quick Capture">📸</button>
-    <button class="icon-btn" id="wVoiceMemo" onclick="toggleVoiceMemo()" title="Voice memo">🎙️</button>
+    <button class="icon-btn" id="wVoiceMemo" onclick="toggleVoiceMemo()" title="Voice memo" style="display:none">🎙️</button>
     <button class="icon-btn" onclick="toggleMenu()" title="More">⋯</button>
   </div>
   <div class="menu" id="workMenu">
@@ -718,7 +718,7 @@
     <button onclick="editSetup()">⚙️ Edit setup</button>
     <div class="sep"></div>
     <button onclick="confirmQuickCapture()">📸 Quick Capture</button>
-    <button onclick="toggleVoiceMemo()">🎙️ Voice memo</button>
+    <button onclick="toggleVoiceMemo()" style="display:none">🎙️ Voice memo</button>
     
 
     
@@ -812,7 +812,7 @@
   </div>
 
   <div id="internalPhotoWrap">
-    <div class="int-ext-row" id="intExtRow">
+    <div class="int-ext-row" id="intExtRow" style="display:none">
       <button type="button" class="iex-btn int active" id="iexInt" onclick="setPinExterior(false)">Interior</button>
       <button type="button" class="iex-btn ext" id="iexExt" onclick="setPinExterior(true)">Exterior</button>
     </div>
