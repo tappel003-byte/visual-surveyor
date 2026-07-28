@@ -115,11 +115,11 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   :root{
-    --bg:#f4f0e8; --paper:#fffaf0; --ink:#1a1a1a; --muted:#7a7468;
-    --line:#d9d2c2; --accent:#c14a2b; --accent-soft:#f3d8ce;
-    --ok:#2e7d4f; --bad:#b03a1e;
-    --shadow:0 8px 24px rgba(0,0,0,.12);
-    --shadow-lg:0 16px 48px rgba(0,0,0,.18);
+    --bg:#ffffff; --paper:#ffffff; --ink:#1a1a1a; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#374151; --accent-soft:#f3f4f6;
+    --ok:#374151; --bad:#374151;
+    --shadow:0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
+    --shadow-lg:0 8px 32px rgba(0,0,0,.10);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0;height:100%;width:100%;background:var(--bg);color:var(--ink);
@@ -175,8 +175,8 @@
   .ri-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
   .ri-badge.warn{background:#fff3cd;color:#856404}
   .ri-badge.ok{background:#e2efe6;color:#2e7d4f}
-  .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fff3cd;border:1px solid #f0d29b;color:#856404;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
-  .export-reminder button{margin-left:auto;background:transparent;border:none;color:#856404;font-size:18px;line-height:1;padding:0 2px}
+  .export-reminder{display:flex;align-items:flex-start;gap:10px;background:var(--accent-soft);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
+  .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
   /* Trash FAB (bottom-right of home) */
   .fab-trash{position:fixed;right:18px;bottom:calc(18px + var(--app-bottom-offset,0px));
     width:56px;height:56px;border-radius:50%;border:1px solid var(--line);
@@ -326,7 +326,7 @@
   .mode-pill .tool:active{transform:scale(.95)}
 
   /* Pin picker pill — bottom-left */
-  .pin-picker-btn{position:absolute !important;bottom:calc(14px + var(--app-bottom-offset,0px));left:12px;
+  .pin-picker-btn{position:absolute !important;top:8px;left:8px;
     display:flex !important;align-items:center;gap:8px;background:var(--paper);
     padding:9px 16px;border-radius:999px;box-shadow:var(--shadow-lg);
     border:1px solid var(--line);font-size:14px;font-weight:600;color:var(--ink);
@@ -583,7 +583,7 @@
 
 
   <button class="mode-btn" onclick="startNewProject('internal')">
-    <div class="icon">🏠</div>
+    <div class="icon">📷</div>
     <div class="meta">
       <span>PGG Photo Documentation</span>
       <small>Interior survey · exports map + photos</small>
@@ -5307,7 +5307,7 @@ async function composeMapImage(format) {
       (project.pins||[]).forEach((p, idx) => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, R, 0, Math.PI*2);
-        const pinFill = (!!p.isExterior && project.mode !== 'external') ? '#6b7280' : '#c14a2b';
+        const pinFill = '#374151';
         ctx.fillStyle = pinFill; ctx.fill();
         ctx.lineWidth = R*0.18; ctx.strokeStyle = '#fff'; ctx.stroke();
         ctx.fillStyle = '#fff'; ctx.fillText(pinPlanLabel(p, idx), p.x, p.y + R*0.04);

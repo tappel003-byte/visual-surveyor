@@ -1,28 +1,28 @@
-## Clean-out pass
+## Light monochrome rebrand + Edit pin move
 
-Three visible things gone, one confusion cleared up.
+Single file: `public/survey.html`. No functional changes.
 
-### 1. Empty cream pill (top-left of plan)
-Remove the `.mode-pill` `<div>` in the work screen. Both buttons inside are already hidden — the container itself is what shows as the little dot.
+### 1. Move Edit pin pill to upper-left
+The "Edit pin ▾ (N pins · N pics)" pill currently floats at the bottom of the work screen. Move it to the top-left corner of the plan area (where the removed mode-pill used to sit). Same size, same click behavior, just repositioned.
 
-Nothing else needs to move into that corner — with no drawing tool left, the corner should just be empty. If you later want something there (a mode toggle, a room-label toggle, etc.) we add it deliberately.
+### 2. Light monochrome theme
+- App background: white / near-white (no dark charcoal anywhere)
+- Plan canvas: white with a very light gray checker or plain white
+- Cards, sheets, buttons: white surfaces with thin light-gray borders and soft shadows for depth
+- Text: near-black on white; secondary text in mid-gray
+- Accents: grayscale only — no cream, no red, no orange, no dark theme
+- Pin marker on the plan: neutral dark dot with white ring + number (no red)
+- Buttons: white/light-gray with black text; active states a slightly darker gray
+- "Not exported" reminder banner: keep the reminder, restyle to a light neutral (light gray band, no yellow)
 
-### 2. Interior / Exterior selector in the pin sheet
-Currently hidden by inline style, but JS at line 3687 sets `display = ''` whenever a non-external project opens a pin — that's why it's back in your screenshot. Fix:
-- Delete the `#intExtRow` markup entirely.
-- Delete the line that sets its display.
-- Leave `p.isExterior` field alone in the data model (harmless; already defaults to Interior/red).
+### 3. Home card icon
+Swap the 🏠 emoji on the "PGG Photo Documentation" home card for a camera icon (📷).
 
-### 3. Photo Annotate pen (inside the full-screen photo viewer)
-When you tap a photo to view it, there's an ✏️ Annotate button that opens a drawing toolbar over the photo. Remove:
-- The ✏️ Annotate button.
-- The annotate-mode toolbar (Cancel / Undo / Save).
-- The text-annotation editor modal.
+### Out of scope
+- No logo/favicon swap yet (you may supply a PGG logo later).
+- No changes to canvas mechanics, pins, capture, OCR, room picker, quick capture, or export.
+- Header text stays "PGG Photo Documentation".
 
-Leave the underlying JS in place (no callers = no risk); strip only the visible entry points.
-
-### Verification
-- Search: `intExtRow`, `pv-annotate`, `mode-pill` in survey.html — should show only defensive JS references, no visible DOM.
-- Open a pin: no Interior/Exterior bar.
-- Tap a photo: no ✏️ Annotate button.
-- Top-left of plan: clean, no cream dot.
+### Technical notes
+- Edit the CSS custom properties block at the top of `<style>` in `survey.html` as the single palette source, then sweep any hardcoded colors on: pin marker, home card background, mode buttons, sheet chrome, "Not exported" banner, and the Edit pin pill.
+- Edit-pin pill: change its `position: fixed` bottom coords to top coords (matching the old mode-pill location), keep width/padding/dropdown behavior identical.
