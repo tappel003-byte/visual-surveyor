@@ -1,44 +1,29 @@
-## Goal
-Restore usability by moving off pure monochrome. Keep the calm, professional PGG feel — but add enough contrast, depth, and a warm accent so the plan canvas, pins, buttons, and status chips are easy to read at a glance in the field.
+## Two export buttons + on-device review
 
-## The rebalanced palette
+Both options exist — nothing forces a choice.
 
-**App chrome (screens outside the plan)** — soft warm off-white, not stark white:
-- `--bg` (screen background): `#f7f5f2` (warm paper)
-- `--paper` (cards, sheets): `#ffffff`
-- `--line` (borders): `#dcd6cc` (a touch warmer than gray)
+### Export sheet gets two buttons
 
-**Plan canvas** — light neutral gray so pins and the plan image both pop:
-- Canvas background: `#e8e6e2` (light warm gray, not white, not dark)
-- This is the biggest legibility win: white plan-on-white canvas washed everything out; a gray frame makes the plan itself the brightest thing on screen.
+1. **Finish & Export** — the current deliverable ZIP (plan PNG with pins, CSV, photos folder, 11×17 PDF). Unchanged from today.
+2. **Move to Desktop** — a re-openable project file containing `project.json` (pins, coords, rooms, notes, settings) plus the original photo blobs. Opens on any device running this app via a new **Import** button on the home screen.
 
-**Text**:
-- `--ink` (primary text): `#1f1b16` (near-black, warm)
-- `--muted` (secondary): `#6b6357`
+Projects stay on the device until you delete them manually — exporting either kind does not remove anything.
 
-**Accent (warm brown, kept)**:
-- `--accent`: `#8b5e34`
-- `--accent-soft`: `#efe5d6` (used sparingly — icon chip, active tab)
+### Review before export
 
-**Status colors brought back (muted, not candy)** — needed so "not exported" vs "exported" and pin markers actually register:
-- Warn (not-exported badge, export reminder): amber `#b8801a` on `#fdf4e0`
-- OK (exported badge): green `#2f7d4f` on `#e4efe4`
-- Pin fill on plan + exported PNG: `#8b5e34` (accent brown) — high contrast on the gray canvas
+New **Review** button on the export sheet (and a soft prompt before Finish & Export runs). Opens a scrollable list of every pin: Pin # · Photo range · Location · Notes. Tap any row to edit location or notes inline. Uses the browser's native spell-check on the textareas. Close the review and hit Finish & Export when it reads clean.
 
-## What changes on screen
+Review is optional — you can skip straight to either export button.
 
-1. Home / Recent / Setup screens: subtle warm off-white background instead of glaring white; cards stay white so they lift off the page.
-2. Plan work screen: canvas becomes light gray → plan image and brown numbered pins read clearly.
-3. Export-reminder banner: readable amber again (was gray-on-gray).
-4. "Not exported" / "Exported" chips: amber and green again, muted tones.
-5. Edit-pin pill (top-left), buttons, and the pin sheet keep the brown accent for primary actions.
-6. Zero layout/structural changes — pure CSS token swap in the `:root` block plus the canvas background and two badge rules.
+### Home screen
 
-## Out of scope
-- No new features, no removed features.
-- No font changes.
-- No changes to export ZIP structure or CSV.
+Adds an **Import project file** action alongside the existing project list. Picks a `.pgg` (zip) file, restores the project, drops you into it.
 
-## Technical notes
-- All edits live in the `:root` block (lines ~118–123 of `public/survey.html`), the `.ri-badge.warn` / `.ri-badge.ok` rules, the `.export-reminder` rule, and the canvas background rule.
-- `pinFill` in the plan renderer stays `#8b5e34` so exports match the on-screen pin color.
+Duplicate handling: if the address already exists, the imported one comes in as "<address> (v2)". No prompts.
+
+### Technical notes
+
+- `.pgg` = a `.zip` (JSZip, already loaded) with `project.json` + `photos/photo-NN.jpg`. Version field for future migrations.
+- Import path reuses existing IndexedDB writers; no schema change needed for the app itself.
+- Review screen is a new modal in `survey.html`, reads/writes the same in-memory project object the pin sheet uses.
+- No changes to canvas, pin drop, quick capture, or the current ZIP export contents.
