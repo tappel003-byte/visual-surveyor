@@ -116,7 +116,7 @@
 <style>
   :root{
     --bg:#ffffff; --paper:#ffffff; --ink:#1a1a1a; --muted:#6b7280;
-    --line:#e5e7eb; --accent:#374151; --accent-soft:#f3f4f6;
+    --line:#e5e7eb; --accent:#8b5e34; --accent-soft:#f2e8dc;
     --ok:#374151; --bad:#374151;
     --shadow:0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
     --shadow-lg:0 8px 32px rgba(0,0,0,.10);
@@ -5307,7 +5307,7 @@ async function composeMapImage(format) {
       (project.pins||[]).forEach((p, idx) => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, R, 0, Math.PI*2);
-        const pinFill = '#374151';
+        const pinFill = '#8b5e34';
         ctx.fillStyle = pinFill; ctx.fill();
         ctx.lineWidth = R*0.18; ctx.strokeStyle = '#fff'; ctx.stroke();
         ctx.fillStyle = '#fff'; ctx.fillText(pinPlanLabel(p, idx), p.x, p.y + R*0.04);
