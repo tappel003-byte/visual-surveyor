@@ -1236,6 +1236,7 @@ function updateAppHeight() {
   document.documentElement.style.setProperty('--app-bottom-offset', `${Math.round(bottomOffset)}px`);
 }
 function goHome() {
+  closeSheets();
   if (project) { saveProject(); }
   project = null;
   ui.selectedPinId = null;
