@@ -5645,7 +5645,7 @@ async function exportProjectZip() {
         const photoCount = (p.photos || []).length;
         const range = photoRangeFor(p);
         const dir = pinCardinal(project, p, orientOffset);
-        const room = pinRoom(project, p, roomLabels);
+        const room = p.location || pinRoom(project, p, roomLabels);
         csvLines.push([p.num, type, csvField(desc), photoCount, csvField(range), csvField(room), csvField(dir), norm(p.x, planW), norm(p.y, planH)].join(','));
       } else {
         const extCount = p.extPhotoCount || 0;
