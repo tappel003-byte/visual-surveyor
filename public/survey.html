@@ -4339,10 +4339,12 @@ function closeSheets(ev) {
 
 // ---------- Pin picker (slide-up list) ----------
 function openPinPicker() {
+  closeSheets();
   if (!project || !(project.pins||[]).length) return;
   _sheetOpenedAt = performance.now();
   const list = document.getElementById('pinList');
   list.innerHTML = '';
+  const isInterior = project.mode === 'internal' && !!project.plan;
   // Show pins in numbering order (creation order, since recomputeNumbering preserves it)
   const pins = (project.pins||[]).slice().sort((a,b)=>(a.num||0)-(b.num||0));
   const tol = Math.max(project.plan.width, project.plan.height) * 0.005;
@@ -4364,8 +4366,17 @@ function openPinPicker() {
     const stackChip = others.length
       ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:#facc15;color:#1f2937;font-size:11px;font-weight:700;vertical-align:middle">stacked with #'+others.map(q=>q.num).join(', #')+'</span>'
       : '';
+    // QA room chip — only for interior pins in plan mode.
+    let roomChip = '';
+    if (isInterior && !p.isExterior) {
+      if (p.location) {
+        roomChip = '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;background:#efe6d8;color:#5a3d1f;font-size:11px;font-weight:600;vertical-align:middle">'+escapeHtml(p.location)+'</span>';
+      } else {
+        roomChip = '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;vertical-align:middle;border:1px dashed #d97706">No room</span>';
+      }
+    }
     btn.innerHTML = '<span class="pli-num">'+p.num+'</span>' +
-      '<span class="pli-body"><div class="pli-title">Pin #'+p.num+(project.mode==='external'&&p.location?' — '+escapeHtml(p.location):'')+stackChip+'</div>' +
+      '<span class="pli-body"><div class="pli-title">Pin #'+p.num+(project.mode==='external'&&p.location?' — '+escapeHtml(p.location):'')+stackChip+roomChip+'</div>' +
       '<div class="'+subClass+'">'+escapeHtml(sub)+'</div></span>';
     btn.onclick = () => {
       document.getElementById('pinPickerSheet').classList.remove('open');
