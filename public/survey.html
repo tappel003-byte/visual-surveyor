@@ -879,14 +879,15 @@
       • <code>map.png</code> — floor plan with numbered pins<br>
       • <code>pins.csv</code> — location, type, description, photo numbers, <b>Room</b>, <b>Direction</b> (N/S/E/W relative to front door), X,Y<br>
       <span style="color:var(--muted);font-size:12px">Cardinal directions are derived from the "Front door faces" setting chosen when the project was created.</span><br>
-      <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total</span>
+      <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total<br></span>
+      • <code>pinlog.pdf</code> — 11×17 plan + pin log table, print-ready
       <span id="exportQcNote" style="display:none"><br>• <code>quick-capture/</code> — untethered walk-around photos + CSV with timestamp &amp; GPS</span>
     </div>
     <button class="ghost" style="margin-top:14px;width:100%" onclick="exportProjectPdf()">
-      📄 Download PDF (Plan + Pin Log)
+      📄 Preview PDF (Plan + Pin Log)
     </button>
     <div class="sheet-sub" style="margin-top:6px">
-      11×17 landscape. Floor plan (with pins) on the left, pin log table on the right. Pages repeat the plan and continue the table as needed. Prints cleanly at 8.5×11.
+      Opens the PDF in a new tab so you can review before saving. Same file is also included as <code>pinlog.pdf</code> inside the ZIP.
     </div>
 
     <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
@@ -1236,6 +1237,7 @@ function updateAppHeight() {
   document.documentElement.style.setProperty('--app-bottom-offset', `${Math.round(bottomOffset)}px`);
 }
 function goHome() {
+  closeSheets();
   if (project) { saveProject(); }
   project = null;
   ui.selectedPinId = null;
@@ -3791,12 +3793,25 @@ function stackSizeAt(p) {
 
 // ---------- Pin sheet ----------
 function openPinSheet() {
-  const p = currentPin();
+  const p = currentPin(); // capture BEFORE closeSheets() wipes selection
+  closeSheets();
   if (!p) return;
+  ui.selectedPinId = p.id; // restore — closeSheets() cleared it
+  renderPins();
   _sheetOpenedAt = performance.now();
   const isExternal = project && project.mode === 'external';
+  // Auto-fill location for plan/interior pins the first time they're opened.
+  if (!isExternal && !p.location && project && project.plan && Array.isArray(project.rooms) && project.rooms.length) {
+    const orient = _orientationOffset(project);
+    const labels = buildRoomLabels(project, orient);
+    const guess = pinRoom(project, p, labels);
+    if (guess) {
+      p.location = guess;
+      saveProject();
+    }
+  }
   document.getElementById('pinTitle').textContent =
-    'Pin #' + p.num + (isExternal && p.location ? ' — ' + p.location : '');
+    'Pin #' + p.num + (p.location ? ' — ' + p.location : '');
   document.getElementById('pinDesc').value = p.description || '';
   // External mode: show counter + photo strip (upload only), hide int/ext toggle. Internal mode: full strip + toggle.
   document.getElementById('extCountRow').style.display = isExternal ? '' : 'none';
@@ -4076,8 +4091,10 @@ function renderLocationChip() {
   const p = currentPin();
   const row = document.querySelector('.loc-row');
   const isExternal = project && project.mode === 'external';
-  if (row) row.style.display = isExternal ? '' : 'none';
-  if (!isExternal) return;
+  const hasPlanRooms = project && project.plan && Array.isArray(project.rooms) && project.rooms.length > 0;
+  const showRow = isExternal || (!isExternal && hasPlanRooms);
+  if (row) row.style.display = showRow ? '' : 'none';
+  if (!showRow) return;
   const chip = document.getElementById('pinLocChip');
   const clear = document.getElementById('pinLocClear');
   if (!p) return;
@@ -4092,11 +4109,56 @@ function renderLocationChip() {
   }
 }
 function openLocationPicker() {
-  const p = currentPin();
+  const p = currentPin(); // capture BEFORE closeSheets() wipes selection
+  closeSheets();
   if (!p) return;
+  ui.selectedPinId = p.id; // restore — closeSheets() cleared it
+  renderPins();
   _sheetOpenedAt = performance.now();
+  document.getElementById('scrim').classList.add('active');
+  document.getElementById('pinSheet').classList.add('open');
   const list = document.getElementById('locPickerList');
   list.innerHTML = '';
+
+  const isExternal = project && project.mode === 'external';
+  const hasPlanRooms = project && project.plan && Array.isArray(project.rooms) && project.rooms.length > 0;
+
+  if (!isExternal && hasPlanRooms) {
+    // Scoped picker: only rooms identified for this project during setup.
+    const seen = new Set();
+    const scoped = document.createElement('div');
+    scoped.className = 'loc-cat open';
+    const body = document.createElement('div');
+    body.className = 'loc-cat-body';
+    project.rooms.forEach(r => {
+      const name = (r && r.name || '').trim();
+      if (!name || _isGenericRoomLabel(name)) return;
+      if (seen.has(name.toLowerCase())) return;
+      seen.add(name.toLowerCase());
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'loc-room' + (p.location === name ? ' selected' : '');
+      btn.textContent = name;
+      btn.onclick = () => setPinLocation(name, 'Plan');
+      body.appendChild(btn);
+    });
+    // Custom fallback
+    const cust = document.createElement('button');
+    cust.type = 'button';
+    cust.className = 'loc-room';
+    cust.textContent = 'Custom…';
+    cust.onclick = () => {
+      const v = (prompt('Custom location label:', p.location || '') || '').trim();
+      if (v) setPinLocation(v, 'Custom');
+    };
+    body.appendChild(cust);
+    scoped.appendChild(body);
+    list.appendChild(scoped);
+    document.getElementById('locPickerSheet').classList.add('open');
+    return;
+  }
+
+  // External / no-plan fallback: full ROOM_CATALOG.
   const openCat = p.category || _lastOpenCategory || ROOM_CATALOG[0].name;
   ROOM_CATALOG.forEach(cat => {
     const wrap = document.createElement('div');
@@ -4132,7 +4194,6 @@ function openLocationPicker() {
     wrap.appendChild(body);
     list.appendChild(wrap);
   });
-  document.getElementById('scrim').classList.add('active');
   document.getElementById('locPickerSheet').classList.add('open');
 }
 function closeLocationPicker() {
@@ -4279,10 +4340,12 @@ function closeSheets(ev) {
 
 // ---------- Pin picker (slide-up list) ----------
 function openPinPicker() {
+  closeSheets();
   if (!project || !(project.pins||[]).length) return;
   _sheetOpenedAt = performance.now();
   const list = document.getElementById('pinList');
   list.innerHTML = '';
+  const isInterior = project.mode === 'internal' && !!project.plan;
   // Show pins in numbering order (creation order, since recomputeNumbering preserves it)
   const pins = (project.pins||[]).slice().sort((a,b)=>(a.num||0)-(b.num||0));
   const tol = Math.max(project.plan.width, project.plan.height) * 0.005;
@@ -4304,8 +4367,17 @@ function openPinPicker() {
     const stackChip = others.length
       ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:#facc15;color:#1f2937;font-size:11px;font-weight:700;vertical-align:middle">stacked with #'+others.map(q=>q.num).join(', #')+'</span>'
       : '';
+    // QA room chip — only for interior pins in plan mode.
+    let roomChip = '';
+    if (isInterior && !p.isExterior) {
+      if (p.location) {
+        roomChip = '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;background:#efe6d8;color:#5a3d1f;font-size:11px;font-weight:600;vertical-align:middle">'+escapeHtml(p.location)+'</span>';
+      } else {
+        roomChip = '<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;vertical-align:middle;border:1px dashed #d97706">No room</span>';
+      }
+    }
     btn.innerHTML = '<span class="pli-num">'+p.num+'</span>' +
-      '<span class="pli-body"><div class="pli-title">Pin #'+p.num+(project.mode==='external'&&p.location?' — '+escapeHtml(p.location):'')+stackChip+'</div>' +
+      '<span class="pli-body"><div class="pli-title">Pin #'+p.num+(project.mode==='external'&&p.location?' — '+escapeHtml(p.location):'')+stackChip+roomChip+'</div>' +
       '<div class="'+subClass+'">'+escapeHtml(sub)+'</div></span>';
     btn.onclick = () => {
       document.getElementById('pinPickerSheet').classList.remove('open');
@@ -5394,6 +5466,7 @@ function setupNorthWidget() {
 
 // ---------- Export ----------
 function openExport() {
+  closeSheets();
   closeMenu();
   if (!project) return;
   if (!project.pins || !project.pins.length) {
@@ -5573,7 +5646,7 @@ async function exportProjectZip() {
         const photoCount = (p.photos || []).length;
         const range = photoRangeFor(p);
         const dir = pinCardinal(project, p, orientOffset);
-        const room = pinRoom(project, p, roomLabels);
+        const room = p.location || pinRoom(project, p, roomLabels);
         csvLines.push([p.num, type, csvField(desc), photoCount, csvField(range), csvField(room), csvField(dir), norm(p.x, planW), norm(p.y, planH)].join(','));
       } else {
         const extCount = p.extPhotoCount || 0;
@@ -5647,9 +5720,14 @@ async function exportProjectZip() {
     }
 
 
-
-
-
+    // pinlog.pdf — same shared builder as the standalone Preview PDF button.
+    try {
+      const pdfDoc = await buildPinLogPdf();
+      const pdfBlob = pdfDoc.output('blob');
+      root.file('pinlog.pdf', pdfBlob);
+    } catch (e) {
+      console.warn('pinlog.pdf skipped:', e);
+    }
 
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -5679,185 +5757,243 @@ function sanitizeFilename(s) {
   return (s||'survey').replace(/[^a-z0-9_\-]+/gi,'_').replace(/_+/g,'_').replace(/^_|_$/g,'').slice(0,60) || 'survey';
 }
 
+// Shared PDF builder — single source of truth for the standalone PDF button
+// AND the pinlog.pdf embedded in the ZIP export.
+async function buildPinLogPdf() {
+  if (!project) throw new Error('No project loaded');
+  // Composed plan with numbered pins overlay
+  const pngBlob = await composeMapImage('png-blob');
+  const planDataUrl = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(pngBlob);
+  });
+  const planW = project.plan.width, planH = project.plan.height;
+
+  // 11x17 tabloid, landscape: plan on left, pin log table on right
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'in', format: [11, 17], orientation: 'landscape' });
+  const pageW = pdf.internal.pageSize.getWidth();   // 17
+  const pageH = pdf.internal.pageSize.getHeight();  // 11
+  const margin = 0.35;
+
+  // Layout: plan takes ~60% width on the left, table takes rest on the right
+  const gutter = 0.25;
+  const planBoxW = 9.6;
+  const planBoxX = margin;
+  const planBoxY = margin;
+  const planBoxH = pageH - margin*2;
+  const tableX = planBoxX + planBoxW + gutter;
+  const tableW = pageW - tableX - margin;
+  const tableY = margin;
+  const tableH = pageH - margin*2;
+
+  // Scale the plan image to fit its box (preserving aspect)
+  const planScale = Math.min(planBoxW / planW, planBoxH / planH);
+  const planDrawW = planW * planScale;
+  const planDrawH = planH * planScale;
+  const planDrawX = planBoxX + (planBoxW - planDrawW) / 2;
+  const planDrawY = planBoxY + (planBoxH - planDrawH) / 2;
+
+  // Table column layout
+  const colPhoto = 0.75;
+  const colNum = 0.45;
+  const colLoc = 1.35;
+  const colNotes = tableW - (colPhoto + colNum + colLoc);
+  const colX = [
+    tableX,
+    tableX + colPhoto,
+    tableX + colPhoto + colNum,
+    tableX + colPhoto + colNum + colLoc,
+    tableX + tableW
+  ];
+  const headerH = 0.32;
+  const rowH = 0.30;
+  const bodyTop = tableY + headerH;
+  const rowsPerPage = Math.max(1, Math.floor((tableH - headerH) / rowH));
+
+  // Build the row data — p.location wins over auto-detected pinRoom guess.
+  const orientOffset = _orientationOffset(project);
+  const roomLabels = buildRoomLabels(project, orientOffset);
+  const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
+  const rows = pins.map(p => {
+    const n = (p.photos || []).length;
+    let photo = '';
+    if (n === 1) photo = String(p.num);
+    else if (n > 1) photo = p.num + '–' + (p.num + n - 1);
+    const loc = p.location || pinRoom(project, p, roomLabels) || '';
+    return {
+      pinNum: p.num,
+      photo,
+      location: loc,
+      notes: (p.description || '').trim()
+    };
+  });
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+
+  // North arrow anchored to a FIXED spot: right edge of plan box area,
+  // vertically aligned with the top of the pin-log table (not tied to
+  // the plan image's own drawn bounds).
+  const drawNorthArrow = () => {
+    const rot = ((project && project.north && project.north.rotation) || 0);
+    const rad = rot * Math.PI / 180;
+    const R = 0.35;
+    const cx = planBoxX + planBoxW - R - 0.05;
+    const cy = tableY + R + 0.05;
+    // White disc + border
+    pdf.setFillColor(255, 255, 255);
+    pdf.setDrawColor(80);
+    pdf.setLineWidth(0.012);
+    pdf.circle(cx, cy, R, 'FD');
+    // Rotated triangle pointing north
+    const rTip = R * 0.78;
+    const rBase = R * 0.42;
+    const tipX = cx + Math.sin(rad) * rTip;
+    const tipY = cy - Math.cos(rad) * rTip;
+    const a1 = rad + (140 * Math.PI / 180);
+    const a2 = rad - (140 * Math.PI / 180);
+    const b1x = cx + Math.sin(a1) * rBase;
+    const b1y = cy - Math.cos(a1) * rBase;
+    const b2x = cx + Math.sin(a2) * rBase;
+    const b2y = cy - Math.cos(a2) * rBase;
+    pdf.setFillColor(139, 94, 52); // brand brown
+    pdf.setDrawColor(139, 94, 52);
+    pdf.triangle(tipX, tipY, b1x, b1y, b2x, b2y, 'FD');
+    // "N" label near the tip
+    const labelR = R * 0.95;
+    const lx = cx + Math.sin(rad) * labelR;
+    const ly = cy - Math.cos(rad) * labelR;
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(30);
+    pdf.text('N', lx, ly + 0.04, { align: 'center' });
+  };
+
+  const drawPage = (pageIdx) => {
+    // Plan image with pins (repeats on every page)
+    pdf.addImage(planDataUrl, 'PNG', planDrawX, planDrawY, planDrawW, planDrawH, undefined, 'FAST');
+
+    // North arrow (fixed position, drawn on top of plan)
+    drawNorthArrow();
+
+    // Table outer border
+    pdf.setLineWidth(0.012);
+    pdf.setDrawColor(40);
+    pdf.rect(tableX, tableY, tableW, tableH);
+
+    // Header row background
+    pdf.setFillColor(235, 230, 222);
+    pdf.rect(tableX, tableY, tableW, headerH, 'F');
+
+    // Header labels
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(30);
+    const hy = tableY + headerH/2 + 0.04;
+    pdf.text('Photo', colX[0] + colPhoto/2, hy, { align: 'center' });
+    pdf.text('#',     colX[1] + colNum/2,   hy, { align: 'center' });
+    pdf.text('Location', colX[2] + colLoc/2, hy, { align: 'center' });
+    pdf.text('Notes', colX[3] + 0.1, hy);
+
+    // Column separators (full height)
+    pdf.line(colX[1], tableY, colX[1], tableY + tableH);
+    pdf.line(colX[2], tableY, colX[2], tableY + tableH);
+    pdf.line(colX[3], tableY, colX[3], tableY + tableH);
+    // Header bottom
+    pdf.line(tableX, tableY + headerH, tableX + tableW, tableY + headerH);
+
+    // Rows
+    const start = pageIdx * rowsPerPage;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    for (let i = 0; i < rowsPerPage; i++) {
+      const y = bodyTop + i * rowH;
+      if (i > 0) {
+        pdf.setDrawColor(180);
+        pdf.setLineWidth(0.006);
+        pdf.line(tableX, y, tableX + tableW, y);
+      }
+      const row = rows[start + i];
+      if (!row) continue;
+      const ty = y + rowH/2 + 0.035;
+      pdf.setTextColor(30);
+      if (row.photo) pdf.text(row.photo, colX[0] + colPhoto/2, ty, { align: 'center' });
+      // Pin # in a circle — 25% larger than before (0.11 -> 0.1375),
+      // font scaled proportionally (8 -> 10) so the number still fits centered.
+      const cx = colX[1] + colNum/2;
+      const cy = y + rowH/2;
+      pdf.setDrawColor(60);
+      pdf.setLineWidth(0.010);
+      pdf.circle(cx, cy, 0.1375, 'S');
+      pdf.setFontSize(10);
+      pdf.text(String(row.pinNum), cx, cy + 0.04, { align: 'center' });
+      pdf.setFontSize(9);
+      // Location (truncate with ellipsis to fit)
+      const locMax = colLoc - 0.12;
+      let locTxt = row.location;
+      while (locTxt && pdf.getTextWidth(locTxt) > locMax) locTxt = locTxt.slice(0, -1);
+      if (locTxt !== row.location && locTxt.length > 1) locTxt = locTxt.slice(0, -1) + '…';
+      pdf.text(locTxt || '', colX[2] + 0.06, ty);
+      // Notes
+      const notesMax = colNotes - 0.14;
+      const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
+      const shown = noteLines.slice(0, 2);
+      if (shown.length === 1) {
+        pdf.text(shown[0], colX[3] + 0.07, ty);
+      } else if (shown.length === 2) {
+        pdf.text(shown[0], colX[3] + 0.07, y + rowH/2 - 0.02);
+        const tail = noteLines.length > 2
+          ? (shown[1].length > 3 ? shown[1].slice(0, -1) + '…' : shown[1])
+          : shown[1];
+        pdf.text(tail, colX[3] + 0.07, y + rowH/2 + 0.10);
+      }
+    }
+
+    // Page footer
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(120);
+    pdf.text(
+      (project.address || '') + '  ·  Page ' + (pageIdx + 1) + ' of ' + totalPages,
+      pageW - margin, pageH - 0.12, { align: 'right' }
+    );
+  };
+
+  for (let p = 0; p < totalPages; p++) {
+    if (p > 0) pdf.addPage([11, 17], 'landscape');
+    drawPage(p);
+  }
+  return pdf;
+}
+
 async function exportProjectPdf() {
   if (!project) return;
+  // Open the preview tab SYNCHRONOUSLY as the very first thing — iOS Safari
+  // blocks window.open() after any await.
+  const previewTab = window.open('', '_blank');
   const btn = event && event.target;
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Building PDF…'; }
   try {
-    // Composed plan with numbered pins overlay
-    const pngBlob = await composeMapImage('png-blob');
-    const planDataUrl = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result);
-      r.onerror = rej;
-      r.readAsDataURL(pngBlob);
-    });
-    const planW = project.plan.width, planH = project.plan.height;
-
-    // 11x17 tabloid, landscape: plan on left, pin log table on right
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit: 'in', format: [11, 17], orientation: 'landscape' });
-    const pageW = pdf.internal.pageSize.getWidth();   // 17
-    const pageH = pdf.internal.pageSize.getHeight();  // 11
-    const margin = 0.35;
-
-    // Layout: plan takes ~60% width on the left, table takes rest on the right
-    const gutter = 0.25;
-    const planBoxW = 9.6;
-    const planBoxX = margin;
-    const planBoxY = margin;
-    const planBoxH = pageH - margin*2;
-    const tableX = planBoxX + planBoxW + gutter;
-    const tableW = pageW - tableX - margin;
-    const tableY = margin;
-    const tableH = pageH - margin*2;
-
-    // Scale the plan image to fit its box (preserving aspect)
-    const planScale = Math.min(planBoxW / planW, planBoxH / planH);
-    const planDrawW = planW * planScale;
-    const planDrawH = planH * planScale;
-    const planDrawX = planBoxX + (planBoxW - planDrawW) / 2;
-    const planDrawY = planBoxY + (planBoxH - planDrawH) / 2;
-
-    // Table column layout (inches within tableW)
-    // Photo | # | Location | Notes
-    const colPhoto = 0.75;
-    const colNum = 0.45;
-    const colLoc = 1.35;
-    const colNotes = tableW - (colPhoto + colNum + colLoc);
-    const colX = [
-      tableX,
-      tableX + colPhoto,
-      tableX + colPhoto + colNum,
-      tableX + colPhoto + colNum + colLoc,
-      tableX + tableW
-    ];
-    const headerH = 0.32;
-    const rowH = 0.30;
-    const bodyTop = tableY + headerH;
-    const rowsPerPage = Math.max(1, Math.floor((tableH - headerH) / rowH));
-
-    // Build the row data
-    const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
-    const rows = pins.map(p => {
-      const n = (p.photos || []).length;
-      let photo = '';
-      if (n === 1) photo = String(p.num);
-      else if (n > 1) photo = p.num + '–' + (p.num + n - 1);
-      const orientOffset = _orientationOffset(project);
-      const roomLabels = buildRoomLabels(project, orientOffset);
-      const loc = pinRoom(project, p, roomLabels) || p.location || '';
-      return {
-        pinNum: p.num,
-        photo,
-        location: loc,
-        notes: (p.description || '').trim()
-      };
-    });
-
-    const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
-
-    const drawPage = (pageIdx) => {
-      // Plan image with pins (repeats on every page)
-      pdf.addImage(planDataUrl, 'PNG', planDrawX, planDrawY, planDrawW, planDrawH, undefined, 'FAST');
-
-      // Table outer border
-      pdf.setLineWidth(0.012);
-      pdf.setDrawColor(40);
-      pdf.rect(tableX, tableY, tableW, tableH);
-
-      // Header row background
-      pdf.setFillColor(235, 230, 222);
-      pdf.rect(tableX, tableY, tableW, headerH, 'F');
-
-      // Header labels
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(30);
-      const hy = tableY + headerH/2 + 0.04;
-      pdf.text('Photo', colX[0] + colPhoto/2, hy, { align: 'center' });
-      pdf.text('#',     colX[1] + colNum/2,   hy, { align: 'center' });
-      pdf.text('Location', colX[2] + colLoc/2, hy, { align: 'center' });
-      pdf.text('Notes', colX[3] + 0.1, hy);
-
-      // Column separators (full height)
-      pdf.line(colX[1], tableY, colX[1], tableY + tableH);
-      pdf.line(colX[2], tableY, colX[2], tableY + tableH);
-      pdf.line(colX[3], tableY, colX[3], tableY + tableH);
-      // Header bottom
-      pdf.line(tableX, tableY + headerH, tableX + tableW, tableY + headerH);
-
-      // Rows
-      const start = pageIdx * rowsPerPage;
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(9);
-      for (let i = 0; i < rowsPerPage; i++) {
-        const y = bodyTop + i * rowH;
-        // horizontal row line (skip the very top since header line already there)
-        if (i > 0) {
-          pdf.setDrawColor(180);
-          pdf.setLineWidth(0.006);
-          pdf.line(tableX, y, tableX + tableW, y);
-        }
-        const row = rows[start + i];
-        if (!row) continue;
-        const ty = y + rowH/2 + 0.035;
-        // Photo range
-        pdf.setTextColor(30);
-        if (row.photo) pdf.text(row.photo, colX[0] + colPhoto/2, ty, { align: 'center' });
-        // Pin # in a circle
-        const cx = colX[1] + colNum/2;
-        const cy = y + rowH/2;
-        pdf.setDrawColor(60);
-        pdf.setLineWidth(0.010);
-        pdf.circle(cx, cy, 0.11, 'S');
-        pdf.setFontSize(8);
-        pdf.text(String(row.pinNum), cx, cy + 0.035, { align: 'center' });
-        pdf.setFontSize(9);
-        // Location (truncate with ellipsis to fit)
-        const locMax = colLoc - 0.12;
-        let locTxt = row.location;
-        while (locTxt && pdf.getTextWidth(locTxt) > locMax) locTxt = locTxt.slice(0, -1);
-        if (locTxt !== row.location && locTxt.length > 1) locTxt = locTxt.slice(0, -1) + '…';
-        pdf.text(locTxt || '', colX[2] + 0.06, ty);
-        // Notes — wrap to fit column, clamp to 2 lines within the row
-        const notesMax = colNotes - 0.14;
-        const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
-        const shown = noteLines.slice(0, 2);
-        if (shown.length === 1) {
-          pdf.text(shown[0], colX[3] + 0.07, ty);
-        } else if (shown.length === 2) {
-          pdf.text(shown[0], colX[3] + 0.07, y + rowH/2 - 0.02);
-          const tail = noteLines.length > 2
-            ? (shown[1].length > 3 ? shown[1].slice(0, -1) + '…' : shown[1])
-            : shown[1];
-          pdf.text(tail, colX[3] + 0.07, y + rowH/2 + 0.10);
-        }
-}
-
-      // Page footer
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(120);
-      pdf.text(
-        (project.address || '') + '  ·  Page ' + (pageIdx + 1) + ' of ' + totalPages,
-        pageW - margin, pageH - 0.12, { align: 'right' }
-      );
-    };
-
-    for (let p = 0; p < totalPages; p++) {
-      if (p > 0) pdf.addPage([11, 17], 'landscape');
-      drawPage(p);
+    const pdf = await buildPinLogPdf();
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    if (previewTab && !previewTab.closed) {
+      previewTab.location.href = url;
+    } else {
+      // Popup blocked — fall back to direct download.
+      pdf.save(sanitizeFilename(project.address) + '.pdf');
     }
-
-    pdf.save(sanitizeFilename(project.address) + '.pdf');
-    toast('PDF downloaded');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('PDF preview opened');
   } catch (err) {
     console.error(err);
+    if (previewTab && !previewTab.closed) previewTab.close();
     alert('Could not build the PDF: ' + err.message);
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = orig || '📄 Download PDF (Plan + Pin Log)'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = orig || '📄 Preview PDF (Plan + Pin Log)'; }
   }
 }
 function escapeHtml(s) {
