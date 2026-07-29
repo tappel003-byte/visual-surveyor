@@ -879,14 +879,15 @@
       • <code>map.png</code> — floor plan with numbered pins<br>
       • <code>pins.csv</code> — location, type, description, photo numbers, <b>Room</b>, <b>Direction</b> (N/S/E/W relative to front door), X,Y<br>
       <span style="color:var(--muted);font-size:12px">Cardinal directions are derived from the "Front door faces" setting chosen when the project was created.</span><br>
-      <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total</span>
+      <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total<br></span>
+      • <code>pinlog.pdf</code> — 11×17 plan + pin log table, print-ready
       <span id="exportQcNote" style="display:none"><br>• <code>quick-capture/</code> — untethered walk-around photos + CSV with timestamp &amp; GPS</span>
     </div>
     <button class="ghost" style="margin-top:14px;width:100%" onclick="exportProjectPdf()">
-      📄 Download PDF (Plan + Pin Log)
+      📄 Preview PDF (Plan + Pin Log)
     </button>
     <div class="sheet-sub" style="margin-top:6px">
-      11×17 landscape. Floor plan (with pins) on the left, pin log table on the right. Pages repeat the plan and continue the table as needed. Prints cleanly at 8.5×11.
+      Opens the PDF in a new tab so you can review before saving. Same file is also included as <code>pinlog.pdf</code> inside the ZIP.
     </div>
 
     <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
