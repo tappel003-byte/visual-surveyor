@@ -5719,9 +5719,14 @@ async function exportProjectZip() {
     }
 
 
-
-
-
+    // pinlog.pdf — same shared builder as the standalone Preview PDF button.
+    try {
+      const pdfDoc = await buildPinLogPdf();
+      const pdfBlob = pdfDoc.output('blob');
+      root.file('pinlog.pdf', pdfBlob);
+    } catch (e) {
+      console.warn('pinlog.pdf skipped:', e);
+    }
 
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
