@@ -4090,8 +4090,10 @@ function renderLocationChip() {
   const p = currentPin();
   const row = document.querySelector('.loc-row');
   const isExternal = project && project.mode === 'external';
-  if (row) row.style.display = isExternal ? '' : 'none';
-  if (!isExternal) return;
+  const hasPlanRooms = project && project.plan && Array.isArray(project.rooms) && project.rooms.length > 0;
+  const showRow = isExternal || (!isExternal && hasPlanRooms);
+  if (row) row.style.display = showRow ? '' : 'none';
+  if (!showRow) return;
   const chip = document.getElementById('pinLocChip');
   const clear = document.getElementById('pinLocClear');
   if (!p) return;
@@ -4106,11 +4108,56 @@ function renderLocationChip() {
   }
 }
 function openLocationPicker() {
-  const p = currentPin();
+  const p = currentPin(); // capture BEFORE closeSheets() wipes selection
+  closeSheets();
   if (!p) return;
+  ui.selectedPinId = p.id; // restore — closeSheets() cleared it
+  renderPins();
   _sheetOpenedAt = performance.now();
+  document.getElementById('scrim').classList.add('active');
+  document.getElementById('pinSheet').classList.add('open');
   const list = document.getElementById('locPickerList');
   list.innerHTML = '';
+
+  const isExternal = project && project.mode === 'external';
+  const hasPlanRooms = project && project.plan && Array.isArray(project.rooms) && project.rooms.length > 0;
+
+  if (!isExternal && hasPlanRooms) {
+    // Scoped picker: only rooms identified for this project during setup.
+    const seen = new Set();
+    const scoped = document.createElement('div');
+    scoped.className = 'loc-cat open';
+    const body = document.createElement('div');
+    body.className = 'loc-cat-body';
+    project.rooms.forEach(r => {
+      const name = (r && r.name || '').trim();
+      if (!name || _isGenericRoomLabel(name)) return;
+      if (seen.has(name.toLowerCase())) return;
+      seen.add(name.toLowerCase());
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'loc-room' + (p.location === name ? ' selected' : '');
+      btn.textContent = name;
+      btn.onclick = () => setPinLocation(name, 'Plan');
+      body.appendChild(btn);
+    });
+    // Custom fallback
+    const cust = document.createElement('button');
+    cust.type = 'button';
+    cust.className = 'loc-room';
+    cust.textContent = 'Custom…';
+    cust.onclick = () => {
+      const v = (prompt('Custom location label:', p.location || '') || '').trim();
+      if (v) setPinLocation(v, 'Custom');
+    };
+    body.appendChild(cust);
+    scoped.appendChild(body);
+    list.appendChild(scoped);
+    document.getElementById('locPickerSheet').classList.add('open');
+    return;
+  }
+
+  // External / no-plan fallback: full ROOM_CATALOG.
   const openCat = p.category || _lastOpenCategory || ROOM_CATALOG[0].name;
   ROOM_CATALOG.forEach(cat => {
     const wrap = document.createElement('div');
@@ -4146,7 +4193,6 @@ function openLocationPicker() {
     wrap.appendChild(body);
     list.appendChild(wrap);
   });
-  document.getElementById('scrim').classList.add('active');
   document.getElementById('locPickerSheet').classList.add('open');
 }
 function closeLocationPicker() {
