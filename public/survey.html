@@ -3792,12 +3792,25 @@ function stackSizeAt(p) {
 
 // ---------- Pin sheet ----------
 function openPinSheet() {
-  const p = currentPin();
+  const p = currentPin(); // capture BEFORE closeSheets() wipes selection
+  closeSheets();
   if (!p) return;
+  ui.selectedPinId = p.id; // restore — closeSheets() cleared it
+  renderPins();
   _sheetOpenedAt = performance.now();
   const isExternal = project && project.mode === 'external';
+  // Auto-fill location for plan/interior pins the first time they're opened.
+  if (!isExternal && !p.location && project && project.plan && Array.isArray(project.rooms) && project.rooms.length) {
+    const orient = _orientationOffset(project);
+    const labels = buildRoomLabels(project, orient);
+    const guess = pinRoom(project, p, labels);
+    if (guess) {
+      p.location = guess;
+      saveProject();
+    }
+  }
   document.getElementById('pinTitle').textContent =
-    'Pin #' + p.num + (isExternal && p.location ? ' — ' + p.location : '');
+    'Pin #' + p.num + (p.location ? ' — ' + p.location : '');
   document.getElementById('pinDesc').value = p.description || '';
   // External mode: show counter + photo strip (upload only), hide int/ext toggle. Internal mode: full strip + toggle.
   document.getElementById('extCountRow').style.display = isExternal ? '' : 'none';
