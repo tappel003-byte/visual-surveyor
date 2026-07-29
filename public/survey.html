@@ -5465,6 +5465,7 @@ function setupNorthWidget() {
 
 // ---------- Export ----------
 function openExport() {
+  closeSheets();
   closeMenu();
   if (!project) return;
   if (!project.pins || !project.pins.length) {
