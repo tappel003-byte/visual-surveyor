@@ -4189,6 +4189,17 @@ function openLocationPicker() {
     const body = document.createElement('div');
     body.className = 'loc-cat-body';
     cat.rooms.forEach(room => {
+      if (room === 'Custom…') {
+        // Saved custom locations for this project, before the "Custom…" adder
+        _projectCustomLocations().forEach(name => {
+          const cb = document.createElement('button');
+          cb.type = 'button';
+          cb.className = 'loc-room' + (p.location === name ? ' selected' : '');
+          cb.textContent = name;
+          cb.onclick = () => setPinLocation(name, 'Custom');
+          body.appendChild(cb);
+        });
+      }
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'loc-room' + (p.location === room ? ' selected' : '');
@@ -4197,6 +4208,7 @@ function openLocationPicker() {
         if (room === 'Custom…') {
           const custom = (prompt('Custom location label:', p.location || '') || '').trim();
           if (!custom) return;
+          _rememberCustomLocation(custom);
           setPinLocation(custom, 'Custom');
         } else {
           setPinLocation(room, cat.name);
@@ -4204,6 +4216,7 @@ function openLocationPicker() {
       };
       body.appendChild(btn);
     });
+
     wrap.appendChild(head);
     wrap.appendChild(body);
     list.appendChild(wrap);
