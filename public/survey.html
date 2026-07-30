@@ -4144,6 +4144,17 @@ function openLocationPicker() {
       btn.onclick = () => setPinLocation(name, 'Plan');
       body.appendChild(btn);
     });
+    // Saved custom locations for this project
+    _projectCustomLocations().forEach(name => {
+      if (seen.has(name.toLowerCase())) return;
+      seen.add(name.toLowerCase());
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'loc-room' + (p.location === name ? ' selected' : '');
+      btn.textContent = name;
+      btn.onclick = () => setPinLocation(name, 'Custom');
+      body.appendChild(btn);
+    });
     // Custom fallback
     const cust = document.createElement('button');
     cust.type = 'button';
@@ -4151,9 +4162,10 @@ function openLocationPicker() {
     cust.textContent = 'Custom…';
     cust.onclick = () => {
       const v = (prompt('Custom location label:', p.location || '') || '').trim();
-      if (v) setPinLocation(v, 'Custom');
+      if (v) { _rememberCustomLocation(v); setPinLocation(v, 'Custom'); }
     };
     body.appendChild(cust);
+
     scoped.appendChild(body);
     list.appendChild(scoped);
     document.getElementById('locPickerSheet').classList.add('open');
