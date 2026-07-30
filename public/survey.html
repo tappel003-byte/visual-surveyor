@@ -4123,6 +4123,7 @@ function openLocationPicker() {
   list.innerHTML = '';
 
   const isExternal = project && project.mode === 'external';
+
   const hasPlanRooms = project && project.plan && Array.isArray(project.rooms) && project.rooms.length > 0;
 
   if (!isExternal && hasPlanRooms) {
