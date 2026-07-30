@@ -4110,7 +4110,21 @@ function renderLocationChip() {
     clear.style.display = 'none';
   }
 }
+function _projectCustomLocations() {
+  if (!project) return [];
+  if (!Array.isArray(project.customLocations)) project.customLocations = [];
+  return project.customLocations;
+}
+function _rememberCustomLocation(name) {
+  const v = (name || '').trim();
+  if (!v || !project) return;
+  const list = _projectCustomLocations();
+  if (list.some(x => (x || '').trim().toLowerCase() === v.toLowerCase())) return;
+  list.push(v);
+  saveProject();
+}
 function openLocationPicker() {
+
   const p = currentPin(); // capture BEFORE closeSheets() wipes selection
   closeSheets();
   if (!p) return;
@@ -4123,6 +4137,7 @@ function openLocationPicker() {
   list.innerHTML = '';
 
   const isExternal = project && project.mode === 'external';
+
   const hasPlanRooms = project && project.plan && Array.isArray(project.rooms) && project.rooms.length > 0;
 
   if (!isExternal && hasPlanRooms) {
@@ -4144,6 +4159,17 @@ function openLocationPicker() {
       btn.onclick = () => setPinLocation(name, 'Plan');
       body.appendChild(btn);
     });
+    // Saved custom locations for this project
+    _projectCustomLocations().forEach(name => {
+      if (seen.has(name.toLowerCase())) return;
+      seen.add(name.toLowerCase());
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'loc-room' + (p.location === name ? ' selected' : '');
+      btn.textContent = name;
+      btn.onclick = () => setPinLocation(name, 'Custom');
+      body.appendChild(btn);
+    });
     // Custom fallback
     const cust = document.createElement('button');
     cust.type = 'button';
@@ -4151,9 +4177,10 @@ function openLocationPicker() {
     cust.textContent = 'Custom…';
     cust.onclick = () => {
       const v = (prompt('Custom location label:', p.location || '') || '').trim();
-      if (v) setPinLocation(v, 'Custom');
+      if (v) { _rememberCustomLocation(v); setPinLocation(v, 'Custom'); }
     };
     body.appendChild(cust);
+
     scoped.appendChild(body);
     list.appendChild(scoped);
     document.getElementById('locPickerSheet').classList.add('open');
@@ -4177,6 +4204,17 @@ function openLocationPicker() {
     const body = document.createElement('div');
     body.className = 'loc-cat-body';
     cat.rooms.forEach(room => {
+      if (room === 'Custom…') {
+        // Saved custom locations for this project, before the "Custom…" adder
+        _projectCustomLocations().forEach(name => {
+          const cb = document.createElement('button');
+          cb.type = 'button';
+          cb.className = 'loc-room' + (p.location === name ? ' selected' : '');
+          cb.textContent = name;
+          cb.onclick = () => setPinLocation(name, 'Custom');
+          body.appendChild(cb);
+        });
+      }
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'loc-room' + (p.location === room ? ' selected' : '');
@@ -4185,6 +4223,7 @@ function openLocationPicker() {
         if (room === 'Custom…') {
           const custom = (prompt('Custom location label:', p.location || '') || '').trim();
           if (!custom) return;
+          _rememberCustomLocation(custom);
           setPinLocation(custom, 'Custom');
         } else {
           setPinLocation(room, cat.name);
@@ -4192,6 +4231,7 @@ function openLocationPicker() {
       };
       body.appendChild(btn);
     });
+
     wrap.appendChild(head);
     wrap.appendChild(body);
     list.appendChild(wrap);
