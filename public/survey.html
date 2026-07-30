@@ -4110,7 +4110,21 @@ function renderLocationChip() {
     clear.style.display = 'none';
   }
 }
+function _projectCustomLocations() {
+  if (!project) return [];
+  if (!Array.isArray(project.customLocations)) project.customLocations = [];
+  return project.customLocations;
+}
+function _rememberCustomLocation(name) {
+  const v = (name || '').trim();
+  if (!v || !project) return;
+  const list = _projectCustomLocations();
+  if (list.some(x => (x || '').trim().toLowerCase() === v.toLowerCase())) return;
+  list.push(v);
+  saveProject();
+}
 function openLocationPicker() {
+
   const p = currentPin(); // capture BEFORE closeSheets() wipes selection
   closeSheets();
   if (!p) return;
