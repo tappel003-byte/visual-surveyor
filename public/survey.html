@@ -3671,6 +3671,11 @@ function onPointerUp(e) {
     const tap = _maybeTap;
     _maybeTap = null;
     if (tap.longPressTimer) { clearTimeout(tap.longPressTimer); tap.longPressTimer = null; }
+    const _sheetOpen =
+      (document.getElementById('pinSheet') && document.getElementById('pinSheet').classList.contains('open')) ||
+      (document.getElementById('pinPickerSheet') && document.getElementById('pinPickerSheet').classList.contains('open')) ||
+      (document.getElementById('exportSheet') && document.getElementById('exportSheet').classList.contains('open'));
+    if (_sheetOpen) { ui.panning = null; return; }
     if (commitTapAction(tap)) {
       e.preventDefault();
       e.stopPropagation();
