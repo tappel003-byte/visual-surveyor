@@ -864,12 +864,7 @@
     <button class="ghost" onclick="closeSheets()">Cancel</button>
   </div>
   <div id="exportBody" style="padding:8px 0 4px">
-    <button class="ghost" style="width:100%;margin-bottom:10px;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="openReviewSheet()">
-      📝 Review pins &amp; notes
-    </button>
-    <div class="sheet-sub" style="margin:-4px 0 12px">
-      Optional. Proof-read locations and notes before you export — the ZIP and PDF freeze this text.
-    </div>
+
 
     <button class="primary-btn" id="exportZipBtn" onclick="exportProjectZip()">
       📦 Finish &amp; Export (ZIP)
@@ -900,18 +895,8 @@
   </div>
 </div>
 
-<!-- ============ REVIEW SHEET ============ -->
-<div class="sheet" id="reviewSheet">
-  <div class="grab"></div>
-  <div class="sheet-head">
-    <div>
-      <div class="sheet-title">Review pins &amp; notes</div>
-      <div class="sheet-sub">Edits save automatically. Close when it reads clean.</div>
-    </div>
-    <button class="ghost" onclick="closeReviewSheet()">Done</button>
-  </div>
-  <div id="reviewList" style="padding:6px 0 20px;max-height:70vh;overflow-y:auto"></div>
-</div>
+
+
 
 
 <div class="pviewer" id="pviewer">
@@ -3675,7 +3660,7 @@ function onPointerUp(e) {
       (document.getElementById('pinSheet') && document.getElementById('pinSheet').classList.contains('open')) ||
       (document.getElementById('pinPickerSheet') && document.getElementById('pinPickerSheet').classList.contains('open')) ||
       (document.getElementById('exportSheet') && document.getElementById('exportSheet').classList.contains('open'));
-    if (_sheetOpen) { ui.panning = null; return; }
+    if (_sheetOpen || Date.now() < _suppressClickUntil) { ui.panning = null; return; }
     if (commitTapAction(tap)) {
       e.preventDefault();
       e.stopPropagation();
@@ -5755,6 +5740,8 @@ async function exportProjectZip() {
     const a = document.createElement('a');
     a.href = url;
     a.download = folderName + '.zip';
+    _suppressClickUntil = Date.now() + 1200;
+    _maybeTap = null;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     project.lastExportedAt = Date.now();
@@ -6021,67 +6008,8 @@ function escapeHtml(s) {
   return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// ============================================================
-// Review sheet — proof-read locations and notes before export
-// ============================================================
-function openReviewSheet() {
-  if (!project) return;
-  renderReviewList();
-  document.getElementById('reviewSheet').classList.add('open');
-}
-function closeReviewSheet() {
-  document.getElementById('reviewSheet').classList.remove('open');
-}
-function renderReviewList() {
-  const host = document.getElementById('reviewList');
-  if (!host || !project) return;
-  const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
-  if (!pins.length) {
-    host.innerHTML = '<div class="recent-empty" style="padding:24px 8px">No pins yet.</div>';
-    return;
-  }
-  const isInternal = project.mode === 'internal';
-  const orient = isInternal ? _orientationOffset(project) : 0;
-  const roomLabels = isInternal ? buildRoomLabels(project, orient) : null;
-  host.innerHTML = pins.map(p => {
-    const nPhotos = (p.photos || []).length;
-    const start = p.num;
-    const end = start + Math.max(nPhotos, 1) - 1;
-    const range = nPhotos ? (nPhotos === 1 ? String(start) : (start + '–' + end)) : '—';
-    const derivedLoc = isInternal ? pinRoom(project, p, roomLabels) : '';
-    const loc = p.location || derivedLoc || '';
-    const desc = p.description || '';
-    return `
-      <div style="padding:12px 14px;border-top:1px solid var(--line)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px;color:var(--muted)">
-          <span><b style="color:var(--text)">Pin ${p.num}</b> · Photo ${escapeHtml(range)}</span>
-        </div>
-        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:2px">Location</label>
-        <input type="text" spellcheck="true"
-          data-review-loc="${p.id}"
-          value="${escapeHtml(loc)}"
-          placeholder="${escapeHtml(derivedLoc || 'Location')}"
-          style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px;margin-bottom:8px"
-          oninput="_reviewEdit('${p.id}','location',this.value)">
-        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:2px">Notes</label>
-        <textarea spellcheck="true"
-          data-review-desc="${p.id}"
-          rows="2"
-          style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px;resize:vertical;font-family:inherit"
-          oninput="_reviewEdit('${p.id}','description',this.value)">${escapeHtml(desc)}</textarea>
-      </div>`;
-  }).join('');
-}
-function _reviewEdit(pinId, field, value) {
-  if (!project) return;
-  const pin = (project.pins || []).find(p => String(p.id) === String(pinId));
-  if (!pin) return;
-  pin[field] = value;
-  project.updatedAt = Date.now();
-  // Debounced save
-  clearTimeout(_reviewEdit._t);
-  _reviewEdit._t = setTimeout(() => save(), 250);
-}
+
+
 
 // ============================================================
 // Move to Desktop — export re-openable .pgg project file
