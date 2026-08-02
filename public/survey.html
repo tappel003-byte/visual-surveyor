@@ -593,6 +593,12 @@
   </div>
 
 
+  <button class="mode-btn" style="padding:10px 14px;margin-bottom:16px" onclick="triggerImportProject()">
+    <div class="icon" style="font-size:18px;width:32px;height:32px">📥</div>
+    <div class="meta"><span style="font-size:14px">Import project file</span></div>
+  </button>
+  <input type="file" id="importFileInput" accept=".pgg,.zip,application/zip" style="display:none" onchange="_onImportFileChosen(event)">
+
   <button class="mode-btn" onclick="startNewProject('internal')">
     <div class="icon">📷</div>
     <div class="meta">
@@ -601,14 +607,14 @@
     </div>
   </button>
 
-  <button class="mode-btn" onclick="triggerImportProject()">
-    <div class="icon">📥</div>
+  <button class="mode-btn" onclick="startNewProject('external')">
+    <div class="icon">🏘️</div>
     <div class="meta">
-      <span>Import project file</span>
-      <small>Open a .pgg from another device</small>
+      <span>External Camera</span>
+      <small>Exterior survey · exports map only</small>
     </div>
   </button>
-  <input type="file" id="importFileInput" accept=".pgg,.zip,application/zip" style="display:none" onchange="_onImportFileChosen(event)">
+
 
 
   <div class="recent-head">
@@ -5262,7 +5268,7 @@ function renderPins() {
   if (!g) return;
   g.innerHTML = '';
   if (!project) return;
-  const R = Math.max(project.plan.width, project.plan.height) * 0.01125;
+  const R = Math.max(project.plan.width, project.plan.height) * 0.009;
   const tol = Math.max(project.plan.width, project.plan.height) * 0.005;
   // Determine which pin is the "top" of each stack (last in array at those coords)
   const pins = project.pins || [];
