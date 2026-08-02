@@ -3798,7 +3798,7 @@ function openPinSheet() {
   _sheetOpenedAt = performance.now();
   const isExternal = project && project.mode === 'external';
   // Auto-fill location for plan/interior pins the first time they're opened.
-  if (!isExternal && !p.location && project && project.plan && Array.isArray(project.rooms) && project.rooms.length) {
+  if (!p.location && project && project.plan && Array.isArray(project.rooms) && project.rooms.length) {
     const orient = _orientationOffset(project);
     const labels = buildRoomLabels(project, orient);
     const guess = pinRoom(project, p, labels);
@@ -4036,7 +4036,6 @@ function currentPin() {
 // to avoid clutter when the starting picture number is high (e.g. 225).
 // Internal mode keeps p.num (matches photo numbering).
 function pinPlanLabel(p, idx) {
-  if (project && project.mode === 'external') return String(idx + 1);
   return String(p.num);
 }
 function onPinDescInput(e) {
