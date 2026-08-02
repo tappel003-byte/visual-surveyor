@@ -4266,14 +4266,11 @@ function renderPhotoStrip() {
     div.appendChild(x);
     strip.appendChild(div);
   });
-  const isExternal = project && project.mode === 'external';
-  if (!isExternal) {
-    const add = document.createElement('button');
-    add.className = 'add-photo';
-    add.innerHTML = '<span class="ic">📷</span><span>Add</span>';
-    add.onclick = () => document.getElementById('pinPhotoFile').click();
-    strip.appendChild(add);
-  }
+  const add = document.createElement('button');
+  add.className = 'add-photo';
+  add.innerHTML = '<span class="ic">📷</span><span>Add</span>';
+  add.onclick = () => document.getElementById('pinPhotoFile').click();
+  strip.appendChild(add);
   const up = document.createElement('button');
   up.className = 'add-photo';
   up.innerHTML = '<span class="ic">📁</span><span>Upload</span>';
