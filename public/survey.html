@@ -4157,55 +4157,6 @@ function openLocationPicker() {
     return;
   }
 
-  // External / no-plan fallback: full ROOM_CATALOG.
-  const openCat = p.category || _lastOpenCategory || ROOM_CATALOG[0].name;
-  ROOM_CATALOG.forEach(cat => {
-    const wrap = document.createElement('div');
-    wrap.className = 'loc-cat' + (cat.name === openCat ? ' open' : '');
-    const head = document.createElement('button');
-    head.type = 'button';
-    head.className = 'loc-cat-head';
-    head.innerHTML = '<span>' + escapeHtml(cat.name) + '</span><span class="caret">›</span>';
-    head.onclick = () => {
-      const wasOpen = wrap.classList.contains('open');
-      list.querySelectorAll('.loc-cat.open').forEach(el => el.classList.remove('open'));
-      if (!wasOpen) wrap.classList.add('open');
-    };
-    const body = document.createElement('div');
-    body.className = 'loc-cat-body';
-    cat.rooms.forEach(room => {
-      if (room === 'Custom…') {
-        // Saved custom locations for this project, before the "Custom…" adder
-        _projectCustomLocations().forEach(name => {
-          const cb = document.createElement('button');
-          cb.type = 'button';
-          cb.className = 'loc-room' + (p.location === name ? ' selected' : '');
-          cb.textContent = name;
-          cb.onclick = () => setPinLocation(name, 'Custom');
-          body.appendChild(cb);
-        });
-      }
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'loc-room' + (p.location === room ? ' selected' : '');
-      btn.textContent = room;
-      btn.onclick = () => {
-        if (room === 'Custom…') {
-          const custom = (prompt('Custom location label:', p.location || '') || '').trim();
-          if (!custom) return;
-          _rememberCustomLocation(custom);
-          setPinLocation(custom, 'Custom');
-        } else {
-          setPinLocation(room, cat.name);
-        }
-      };
-      body.appendChild(btn);
-    });
-
-    wrap.appendChild(head);
-    wrap.appendChild(body);
-    list.appendChild(wrap);
-  });
   document.getElementById('locPickerSheet').classList.add('open');
 }
 function closeLocationPicker() {
