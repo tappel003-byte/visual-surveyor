@@ -3887,52 +3887,26 @@ function _roomReachForCandidate(c, count) {
 }
 function pinRoom(proj, p, labels) {
   const rooms = proj && proj.rooms;
-  if (!rooms || !rooms.length || !proj.plan || !p) return '';
+  if (!rooms || !rooms.length) return '';
   const pw = proj.plan.width, ph = proj.plan.height;
-  if (!pw || !ph) return '';
-  const pt = { x: p.x / pw, y: p.y / ph };
-  if (!isFinite(pt.x) || !isFinite(pt.y)) return '';
-
-  const candidates = [];
+  const px = p.x / pw, py = p.y / ph;
+  const scored = [];
   for (let i = 0; i < rooms.length; i++) {
-    const r = rooms[i] || {};
-    const x = Number(r.x), y = Number(r.y);
-    if (!isFinite(x) || !isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) continue;
-    const exportLabel = (labels && labels[i]) || r.name || '';
-    if (_isGenericRoomLabel(r.name) && _isGenericRoomLabel(exportLabel)) continue;
-    candidates.push({ index: i, x, y, name: exportLabel, neighborDist: Infinity });
+    const r = rooms[i];
+    if (_isGenericRoomLabel(r.name)) continue;
+    scored.push({ i, d: Math.hypot(r.x - px, r.y - py) });
   }
-  if (!candidates.length) return '';
-  if (candidates.length === 1) return candidates[0].name || '';
-
-  for (let i = 0; i < candidates.length; i++) {
-    let nearest = Infinity;
-    for (let j = 0; j < candidates.length; j++) {
-      if (i === j) continue;
-      const d = _roomDistNorm(candidates[i], candidates[j], proj);
-      if (d < nearest) nearest = d;
-    }
-    candidates[i].neighborDist = nearest;
+  if (!scored.length) return '';
+  scored.sort((a, b) => a.d - b.d);
+  const best = scored[0];
+  // Absolute guard: closest label is very far from pin — don't guess.
+  if (best.d > 0.28) return '';
+  // Ambiguity guard: require a clear winner over the runner-up.
+  if (scored.length > 1) {
+    const next = scored[1];
+    if (best.d > 0.02 && next.d < best.d * 1.25) return '';
   }
-
-  const ranked = candidates.map(c => ({ c, d: _roomDistNorm(pt, c, proj) })).sort((a, b) => a.d - b.d);
-  const best = ranked[0];
-  const second = ranked[1];
-  if (!best || !best.c) return '';
-
-  const reach = _roomReachForCandidate(best.c, candidates.length);
-  const secondD = second ? second.d : Infinity;
-  const ratio = isFinite(secondD) && secondD > 0 ? best.d / secondD : 0;
-  const gap = isFinite(secondD) ? secondD - best.d : Infinity;
-
-  // Treat room labels as centers of estimated room areas, not infinite magnets.
-  // A pin must be within the winning label's area and not sitting right on the
-  // boundary between two labels; otherwise leave it blank for review instead of
-  // auto-filling a wrong room.
-  if (best.d <= 0.028) return best.c.name || '';
-  if (best.d <= reach && (ratio <= 0.92 || best.d <= 0.08 || gap >= 0.025)) return best.c.name || '';
-  if (ratio <= 0.58 && best.d <= reach + 0.045) return best.c.name || '';
-  return '';
+  return (labels && labels[best.i]) || rooms[best.i].name;
 }
 // Disambiguate duplicate room names for the export only (plan/UI keep raw names).
 // Two "Bedroom" rooms become "South Bedroom" / "North Bedroom" using each room's
