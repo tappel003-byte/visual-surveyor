@@ -4056,6 +4056,7 @@ const ROOM_CATALOG = [
   { name: 'Specialty', rooms: ['Basement','Attic','Crawlspace','Mechanical Room','Utility','Storage','Gym','Theater','Wine Room'] },
   { name: 'Other', rooms: ['Custom…'] },
 ];
+const DEFAULT_ROOMS = ['Kitchen','Living Room','Dining Area','Primary Bedroom','Bedroom 2','Bedroom 3','Bedroom 4','Primary Bathroom','Bathroom','Hall','Laundry','Garage','Office','W.I.C.'];
 let _lastOpenCategory = null;
 
 function renderLocationChip() {
@@ -4105,23 +4106,26 @@ function openLocationPicker() {
   const list = document.getElementById('locPickerList');
   list.innerHTML = '';
 
-  // Scoped picker: only rooms identified for this project during setup.
+  // Scoped picker: rooms identified for this project during setup, or a
+  // sensible default list when no rooms have been defined yet.
   {
     const seen = new Set();
     const scoped = document.createElement('div');
     scoped.className = 'loc-cat open';
     const body = document.createElement('div');
     body.className = 'loc-cat-body';
-    (Array.isArray(project && project.rooms) ? project.rooms : []).forEach(r => {
-      const name = (r && r.name || '').trim();
-      if (!name || _isGenericRoomLabel(name)) return;
+    const hasPlanRooms = Array.isArray(project && project.rooms) && project.rooms.length > 0;
+    const roomNames = hasPlanRooms
+      ? project.rooms.map(r => (r && r.name || '').trim()).filter(name => name && !_isGenericRoomLabel(name))
+      : DEFAULT_ROOMS.slice();
+    roomNames.forEach(name => {
       if (seen.has(name.toLowerCase())) return;
       seen.add(name.toLowerCase());
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'loc-room' + (p.location === name ? ' selected' : '');
       btn.textContent = name;
-      btn.onclick = () => setPinLocation(name, 'Plan');
+      btn.onclick = () => setPinLocation(name, hasPlanRooms ? 'Plan' : 'Default');
       body.appendChild(btn);
     });
     // Saved custom locations for this project
