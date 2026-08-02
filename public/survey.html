@@ -5262,7 +5262,7 @@ function renderPins() {
   if (!g) return;
   g.innerHTML = '';
   if (!project) return;
-  const R = Math.max(project.plan.width, project.plan.height) * 0.009;
+  const R = Math.max(project.plan.width, project.plan.height) * 0.01125;
   const tol = Math.max(project.plan.width, project.plan.height) * 0.005;
   // Determine which pin is the "top" of each stack (last in array at those coords)
   const pins = project.pins || [];
