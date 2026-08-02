@@ -5649,7 +5649,7 @@ async function exportProjectZip() {
     const roomLabels = buildRoomLabels(project, orientOffset);
     const firstPinNum = pins.length ? pins[0].num : null;
     const csvLines = [isInternal
-      ? 'Location,Type,Description,Photo Count,Photo Numbers,Room,Direction,X,Y,PinID,DescUpdatedAt'
+      ? 'Pin,Type,Description,Photo Count,Photo Numbers,Room,Direction,X,Y,PinID,DescUpdatedAt'
       : 'Pin,Location,Category,Description,External Photos,Uploaded Photos'];
     const planW = project.plan.width, planH = project.plan.height;
     const norm = (v, dim) => (typeof v === 'number' && isFinite(v) && dim) ? (Math.round((v / dim) * 1e5) / 1e5).toString() : '';
