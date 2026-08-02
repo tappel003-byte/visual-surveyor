@@ -5877,11 +5877,17 @@ async function buildPinLogPdf() {
   const orientOffset = _orientationOffset(project);
   const roomLabels = buildRoomLabels(project, orientOffset);
   const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
+  const isExternalPdf = project && project.mode === 'external';
   const rows = pins.map(p => {
-    const n = (p.photos || []).length;
     let photo = '';
-    if (n === 1) photo = String(p.num);
-    else if (n > 1) photo = p.num + '–' + (p.num + n - 1);
+    if (isExternalPdf) {
+      if (p.extPhotoEnd) photo = p.extPhotoStart + '–' + p.extPhotoEnd;
+      else if (p.extPhotoStart) photo = String(p.extPhotoStart);
+    } else {
+      const n = (p.photos || []).length;
+      if (n === 1) photo = String(p.num);
+      else if (n > 1) photo = p.num + '–' + (p.num + n - 1);
+    }
     const loc = p.location || pinRoom(project, p, roomLabels) || '';
     return {
       pinNum: p.num,
