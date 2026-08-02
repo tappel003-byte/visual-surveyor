@@ -1504,6 +1504,8 @@ function startNewProject(mode) {
   document.getElementById('planDropZone').style.display = '';
   document.getElementById('fPlanFile').value = '';
   const rf = document.getElementById('roomsField'); if (rf) rf.style.display = 'none';
+  const esf = document.getElementById('extStartNumField'); if (esf) esf.style.display = (mode === 'external') ? '' : 'none';
+  const esi = document.getElementById('fExtStartNum'); if (esi) esi.value = 1;
   const rc = document.getElementById('roomsChips'); if (rc) rc.innerHTML = '';
   const bt = document.getElementById('fBuildingType'); if (bt) bt.value = 'residential';
   refreshStartBtn();
@@ -2962,6 +2964,10 @@ function editSetup() {
 
   const rf = document.getElementById('roomsField');
   if (rf) rf.style.display = (_setupRooms && _setupRooms.length) ? '' : 'none';
+  const esf = document.getElementById('extStartNumField');
+  if (esf) esf.style.display = (project.mode === 'external') ? '' : 'none';
+  const esi = document.getElementById('fExtStartNum');
+  if (esi) esi.value = project.extStartNum || 1;
   renderSetupRooms();
 
   document.getElementById('startBtn').textContent = 'Save Setup';
@@ -2993,6 +2999,8 @@ function commitNewProject() {
   const fd = (document.getElementById('fFrontDoor')||{}).value || '';
   const bt = (document.getElementById('fBuildingType')||{}).value || 'residential';
   const northRot = frontDoorToNorthRotation(fd);
+  const _extStartRaw = parseInt((document.getElementById('fExtStartNum')||{}).value, 10);
+  const extStartNum = (isFinite(_extStartRaw) && _extStartRaw >= 1) ? _extStartRaw : 1;
 
 
   if (_editingProjectId) {
@@ -3006,9 +3014,11 @@ function commitNewProject() {
     p.buildingType = bt;
     if (!p.north) p.north = { x: p.plan.width * 0.92, y: p.plan.height * 0.08, rotation: 0 };
     p.north.rotation = northRot;
+    if (p.mode === 'external') { p.extStartNum = extStartNum; }
     p.updatedAt = Date.now();
     _editingProjectId = null;
     project = p;
+    if (p.mode === 'external') recomputeNumbering();
     save();
     document.getElementById('startBtn').textContent = 'Start Survey';
     document.getElementById('startBtnTop').textContent = 'Start';
@@ -3023,6 +3033,7 @@ function commitNewProject() {
     address: addr,
     plan: { dataUrl: _setupPlan.dataUrl, width: _setupPlan.width, height: _setupPlan.height },
     startNum: 1,
+    extStartNum: extStartNum,
     nextNum: 1,
     pins: [],
     drawings: [],
@@ -3788,24 +3799,46 @@ function hitTestPin(x, y, cx, cy) {
 
 // ---------- Pins ----------
 function recomputeNumbering() {
-  // Each pin reserves max(1, photo count) numbers. Pins keep creation order.
-  // Internal mode counts attached photos; external mode counts the manual extPhotoCount.
   const isExternal = project && project.mode === 'external';
-  const start = project.startNum || 1;
-  let n = start;
-  project.pins.forEach(p => {
-    p.num = n;
-    const c = isExternal ? (p.extPhotoCount || 0) : ((p.photos || []).length);
-    n += Math.max(1, c);
-  });
-  project.nextNum = n;
+  if (isExternal) {
+    // Pin identity: simple sequential order, independent of photo count.
+    project.pins.forEach((p, i) => { p.num = i + 1; });
+    // Photo range: separate running total based on the external camera's starting number.
+    let n = project.extStartNum || 1;
+    project.pins.forEach(p => {
+      const c = p.extPhotoCount || 0;
+      p.extPhotoStart = n;
+      p.extPhotoEnd = c > 0 ? (n + c - 1) : null;
+      n += c;
+    });
+    project.extNextNum = n;
+  } else {
+    // Internal mode — unchanged.
+    const start = project.startNum || 1;
+    let n = start;
+    project.pins.forEach(p => {
+      p.num = n;
+      const c = (p.photos || []).length;
+      n += Math.max(1, c);
+    });
+    project.nextNum = n;
+  }
 }
 function createPin(x, y) {
   snapshot('new pin');
-  const num = project.nextNum || project.startNum || 1;
-  const p = { id: uid(), num, x, y, photos: [], description: '', location: null, category: null, extPhotoCount: 0, isExterior: !!ui.lastIsExterior };
-  project.pins.push(p);
-  project.nextNum = num + 1; // reserves 1 until a photo is taken
+  const isExternal = project && project.mode === 'external';
+  let p;
+  if (isExternal) {
+    const num = project.pins.length + 1;
+    p = { id: uid(), num, x, y, photos: [], description: '', location: null, category: null, extPhotoCount: 0, isExterior: !!ui.lastIsExterior };
+    project.pins.push(p);
+    recomputeNumbering();
+  } else {
+    const num = project.nextNum || project.startNum || 1;
+    p = { id: uid(), num, x, y, photos: [], description: '', location: null, category: null, extPhotoCount: 0, isExterior: !!ui.lastIsExterior };
+    project.pins.push(p);
+    project.nextNum = num + 1; // reserves 1 until a photo is taken
+  }
   saveProject();
   renderPins();
   refreshSubtitle();
@@ -4069,10 +4102,11 @@ function renderExtCount() {
   if (!p) return;
   const c = p.extPhotoCount || 0;
   document.getElementById('extCountVal').textContent = c;
-  // The next picture the user should be on = this pin's starting num + current count.
-  const picNum = (p.num || 1) + c;
+  const rangeStart = p.extPhotoStart || 1;
+  const nextPicNum = rangeStart + c;
+  const rangeText = c > 0 ? (rangeStart + '\u2013' + (rangeStart + c - 1)) : 'none yet';
   document.getElementById('extCountPic').textContent =
-    'You should be on external camera picture #' + picNum;
+    'Pictures ' + rangeText + ' \u00b7 next picture #' + nextPicNum;
 }
 
 function changeExtPhotoCount(delta) {
@@ -4278,11 +4312,13 @@ function renderPhotoStrip() {
     div.appendChild(x);
     strip.appendChild(div);
   });
-  const add = document.createElement('button');
-  add.className = 'add-photo';
-  add.innerHTML = '<span class="ic">📷</span><span>Add</span>';
-  add.onclick = () => document.getElementById('pinPhotoFile').click();
-  strip.appendChild(add);
+  if (!(project && project.mode === 'external')) {
+    const add = document.createElement('button');
+    add.className = 'add-photo';
+    add.innerHTML = '<span class="ic">📷</span><span>Add</span>';
+    add.onclick = () => document.getElementById('pinPhotoFile').click();
+    strip.appendChild(add);
+  }
   const up = document.createElement('button');
   up.className = 'add-photo';
   up.innerHTML = '<span class="ic">📁</span><span>Upload</span>';
@@ -5657,7 +5693,7 @@ async function exportProjectZip() {
     const firstPinNum = pins.length ? pins[0].num : null;
     const csvLines = [isInternal
       ? 'Pin,Type,Description,Photo Count,Photo Numbers,Room,Direction,X,Y,PinID,DescUpdatedAt'
-      : 'Pin,Location,Category,Description,External Photos,Uploaded Photos'];
+      : 'Pin,Location,Category,Description,Photo Range,External Photos,Uploaded Photos'];
     const planW = project.plan.width, planH = project.plan.height;
     const norm = (v, dim) => (typeof v === 'number' && isFinite(v) && dim) ? (Math.round((v / dim) * 1e5) / 1e5).toString() : '';
     pins.forEach(p => {
@@ -5672,7 +5708,8 @@ async function exportProjectZip() {
       } else {
         const extCount = p.extPhotoCount || 0;
         const upCount = (p.photos || []).length;
-        csvLines.push([p.num, csvField(p.location||''), csvField(p.category||''), csvField(desc), extCount, upCount].join(','));
+        const range = p.extPhotoEnd ? (p.extPhotoStart + '-' + p.extPhotoEnd) : (p.extPhotoStart ? String(p.extPhotoStart) : '');
+        csvLines.push([p.num, csvField(p.location||''), csvField(p.category||''), csvField(desc), csvField(range), extCount, upCount].join(','));
       }
     });
     root.file('pins.csv', csvLines.join('\r\n'));
