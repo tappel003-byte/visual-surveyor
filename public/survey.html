@@ -3426,7 +3426,7 @@ function onPointerDown(e) {
   const imgPt = clientToImage(e.clientX, e.clientY);
 
   // Hit-test pins (in image space)
-  const pin = hitTestPin(imgPt.x, imgPt.y, e.clientX, e.clientY);
+  const pin = (ui.tool === 'pin') ? hitTestPin(imgPt.x, imgPt.y, e.clientX, e.clientY) : null;
   if (pin) {
     const tap = { kind: 'pin', pinId: pin.id, startX: e.clientX, startY: e.clientY, moved: false, longPressTimer: null };
     tap.longPressTimer = setTimeout(() => {
