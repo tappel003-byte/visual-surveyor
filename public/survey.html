@@ -781,7 +781,7 @@
       </svg>
     </div>
     <div class="draw-toolbar" id="drawToolbar">
-      <button class="dt-btn active" data-dtool="pencil" title="Pencil">✏️</button>
+      <button class="dt-btn" data-dtool="pencil" title="Pencil">✏️</button>
       <button class="dt-btn" data-dtool="rect" title="Rectangle">▭</button>
       <button class="dt-btn" data-dtool="circle" title="Circle">◯</button>
       <button class="dt-btn" data-dtool="arrow" title="Arrow (drag to point)">➤</button>
@@ -999,7 +999,7 @@ let store = { projects: [] };     // persisted
 let project = null;               // active project ref
 let ui = {
   tool: 'pin',                    // 'pin' | 'draw'
-  drawTool: 'pencil',             // 'pencil' | 'rect' | 'circle' | 'eraser'
+  drawTool: null,                 // null | 'pencil' | 'rect' | 'circle' | 'arrow' | 'text' | 'eraser'
   drawColor: '#1a1a1a',
   drawThick: 1,                   // 1 | 2 | 3
   selectedPinId: null,
@@ -3104,6 +3104,10 @@ function setTool(t) {
   const tp = document.getElementById('toolPin'); if (tp) tp.classList.toggle('active', t === 'pin');
   const td = document.getElementById('toolDraw'); if (td) td.classList.toggle('active', t === 'draw');
   const dtb = document.getElementById('drawToolbar'); if (dtb) dtb.classList.toggle('show', t === 'draw');
+  if (t === 'draw') {
+    ui.drawTool = null;
+    if (dtb) dtb.querySelectorAll('[data-dtool]').forEach(x => x.classList.remove('active'));
+  }
   refreshSubtitle();
   closeMenu();
   if (project) renderDrawings();
@@ -3452,6 +3456,7 @@ function onPointerDown(e) {
 
   // Draw mode start
   if (ui.tool === 'draw') {
+    if (!ui.drawTool) { _maybeTap = null; return; }
     if (ui.drawTool === 'eraser') {
       const idx = hitTestDrawing(imgPt.x, imgPt.y);
       if (idx >= 0) {
