@@ -758,7 +758,7 @@
 
     
     <div class="sep"></div>
-    <button class="danger" onclick="confirmDeleteProject()">🗑 Delete this project</button>
+    <button class="danger" onclick="confirmDeleteProject()">🗑 Move to trash</button>
   </div>
 
   <div class="stage" id="stage">
@@ -1013,6 +1013,7 @@ let ui = {
 
 // ---------- Persistence ----------
 const BACKUP_KEYS = ['pgg_survey_v1.bak1','pgg_survey_v1.bak2','pgg_survey_v1.bak3'];
+let _loadCorrupted = false;
 function load() {
   let raw = null;
   try {
@@ -1020,6 +1021,7 @@ function load() {
     if (raw) store = JSON.parse(raw);
   } catch (e) {
     console.error('load failed', e);
+    _loadCorrupted = true;
     // Loud toast so a corrupt store can't silently wipe the UI.
     setTimeout(() => { try { toast('Saved data unreadable — tap Restore backup on the home screen.'); } catch {} }, 300);
     store = { projects: [] };
@@ -1123,12 +1125,6 @@ function _readBackupCandidates() {
     } catch {}
   }
   return out;
-}
-function hasRestorableBackup() {
-  const currentProjects = (store.projects || []).length;
-  const cands = _readBackupCandidates();
-  // Only offer when a backup has strictly more projects than what's loaded.
-  return cands.some(c => c.projects > currentProjects);
 }
 function restoreFromBackup() {
   const cands = _readBackupCandidates().sort((a,b) => b.projects - a.projects);
@@ -1363,11 +1359,10 @@ function renderHome() {
       reminder.innerHTML = '';
     }
   }
-  // Restore-from-backup banner: only when a backup has more projects than we loaded.
-  if (reminder && hasRestorableBackup()) {
-    const cand = _readBackupCandidates().sort((a,b)=>b.projects-a.projects)[0];
+  // Restore-from-backup banner: only when the main save was actually unreadable, not just when a backup happens to have more projects.
+  if (reminder && _loadCorrupted && _readBackupCandidates().length) {
     reminder.innerHTML = `<div class="export-reminder" style="background:#fff3cd;border-color:#f0c674;color:#5a4a1a">
-      <span>Backup available: ${cand.projects} project${cand.projects===1?'':'s'} found. Current list is smaller — restore?</span>
+      <span>Your saved data couldn't be read. A backup copy is available to restore.</span>
       <button onclick="restoreFromBackup()" style="background:#8b5e34;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600">Restore backup</button>
     </div>`;
   }
@@ -1429,6 +1424,15 @@ function restoreProject(id) {
 function deleteProjectForever(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  const status = exportStatus(proj);
+  if (status.state !== 'ok') {
+    const reason = status.state === 'none' ? 'has never been exported' : 'has unsaved changes since it was last exported';
+    if (confirm('"' + (proj.address || 'This project') + '" ' + reason + '.\n\nTap OK to restore it so you can export it, or Cancel to continue deleting forever without exporting.')) {
+      restoreProject(id);
+      toast('Restored — export it, then trash it again when ready.');
+      return;
+    }
+  }
   if (!confirm('Permanently delete "' + (proj.address || 'this project') + '"?\n\nThis cannot be undone.')) return;
   for (const pin of (proj.pins||[])) {
     for (const entry of (pin.photos||[])) {
@@ -3172,10 +3176,19 @@ document.addEventListener('fullscreenchange', () => {
 function confirmDeleteProject() {
   closeMenu();
   if (!project) return;
-  if (!confirm('Delete "' + project.address + '"? This cannot be undone.')) return;
+  if (!confirm('Move "' + project.address + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
+  project.deletedAt = Date.now();
+  store.trash = store.trash || [];
+  store.trash.push(project);
   store.projects = (store.projects||[]).filter(p => p.id !== project.id);
+  project = null;
+  ui.selectedPinId = null;
+  ui.undo = [];
+  ui.redo = [];
   save();
-  goHome();
+  renderHome();
+  showScreen('screenHome');
+  toast('Moved to trash');
 }
 function clearDrawings() {
   closeMenu();
