@@ -5823,6 +5823,7 @@ async function exportProjectZip() {
     project.lastExportedAt = Date.now();
     save();
     toast('Project ZIP downloaded');
+    closeSheets();
   } catch (err) {
     console.error(err);
     alert('Could not build the ZIP: ' + err.message);
