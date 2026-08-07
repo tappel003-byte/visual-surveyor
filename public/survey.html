@@ -2712,7 +2712,7 @@ function _rvAddRoomAt(cx, cy) {
     const btn = document.getElementById('rvFdBtn');
     if (btn) btn.classList.remove('active');
     const title = document.getElementById('rvTitle');
-    if (title) title.textContent = 'Rooms — pinch zoom, drag move, tap plan to add';
+    if (title) title.textContent = RV_TITLE_DEFAULT;
     _rvRenderBadges();
     return;
   }
