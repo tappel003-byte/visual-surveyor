@@ -2449,9 +2449,9 @@ function openRoomVerify() {
   _rvRenderBadges();
   _rvFdMode = false;
   const fdBtn = document.getElementById('rvFdBtn');
-  if (fdBtn) fdBtn.classList.remove('active');
+  if (fdBtn) { fdBtn.classList.remove('active'); _rvAttachFdDrag(fdBtn, _rvToggleFdMode); }
   const t = document.getElementById('rvTitle');
-  if (t) t.textContent = 'Rooms — pinch zoom, drag move, tap plan to add';
+  if (t) t.textContent = RV_TITLE_DEFAULT;
   ov.classList.add('open');
   requestAnimationFrame(() => { _rvFitToStage(); _applyRvTransform(); });
 }
