@@ -2477,14 +2477,13 @@ function _rvRenderBadges() {
     const fd = document.createElement('div');
     fd.className = 'rv-fd';
     fd.textContent = 'FD';
-    fd.title = 'Front door — tap to move or remove';
+    fd.title = 'Front door — drag to move, tap to remove';
     fd.style.left = (_setupFrontDoor.x * 100) + '%';
     fd.style.top = (_setupFrontDoor.y * 100) + '%';
-    fd.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
     fd.addEventListener('pointerup', (e) => { e.stopPropagation(); });
     fd.addEventListener('touchend', (e) => { e.stopPropagation(); });
-    fd.addEventListener('click', (e) => {
-      e.stopPropagation();
+    fd.addEventListener('click', (e) => { e.stopPropagation(); });
+    _rvAttachFdDrag(fd, () => {
       if (confirm('Remove the front door marker?')) {
         _setupFrontDoor = null;
         _rvRenderBadges();
@@ -2493,6 +2492,7 @@ function _rvRenderBadges() {
     wrap.appendChild(fd);
   }
 }
+const RV_TITLE_DEFAULT = 'Rooms — tap plan to add, drag FD onto the front door';
 function _rvToggleFdMode() {
   if (!_setupPlan) return;
   _rvFdMode = !_rvFdMode;
@@ -2501,7 +2501,74 @@ function _rvToggleFdMode() {
   if (btn) btn.classList.toggle('active', _rvFdMode);
   if (title) title.textContent = _rvFdMode
     ? 'Tap the plan where the FRONT DOOR is'
-    : 'Rooms — pinch zoom, drag move, tap plan to add';
+    : RV_TITLE_DEFAULT;
+}
+// Convert a viewport point to normalized plan coords (0..1), or null if off-plan.
+function _rvPointToPlan(cx, cy) {
+  const stage = document.getElementById('rvStage');
+  if (!stage || !_setupPlan) return null;
+  const r = stage.getBoundingClientRect();
+  const x = ((cx - r.left) - _rvState.tx) / _rvState.scale / _setupPlan.width;
+  const y = ((cy - r.top) - _rvState.ty) / _rvState.scale / _setupPlan.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+  return { x, y };
+}
+// Shared drag-to-place behavior for the FD button and the placed FD marker.
+// A drag drops the front door where you release; a plain tap runs onTap().
+function _rvAttachFdDrag(el, onTap) {
+  if (!el || el._fdDragWired) return;
+  el._fdDragWired = true;
+  let st = null;
+  let ghost = null;
+  const removeGhost = () => { if (ghost) { ghost.remove(); ghost = null; } };
+  const moveGhost = (x, y) => {
+    if (!ghost) {
+      ghost = document.createElement('div');
+      ghost.className = 'rv-fd';
+      ghost.textContent = 'FD';
+      ghost.style.position = 'fixed';
+      ghost.style.pointerEvents = 'none';
+      ghost.style.zIndex = '9999';
+      ghost.style.opacity = '.9';
+      document.body.appendChild(ghost);
+    }
+    ghost.style.left = x + 'px';
+    ghost.style.top = y + 'px';
+  };
+  el.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!_setupPlan) return;
+    st = { id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    e.stopPropagation();
+    if (!st.moved && Math.hypot(e.clientX - st.sx, e.clientY - st.sy) < 6) return;
+    st.moved = true;
+    moveGhost(e.clientX, e.clientY);
+  });
+  const finish = (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    e.stopPropagation();
+    const moved = st.moved;
+    st = null;
+    removeGhost();
+    try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (!moved) { if (onTap) onTap(); return; }
+    const p = _rvPointToPlan(e.clientX, e.clientY);
+    if (!p) return;
+    _setupFrontDoor = { x: p.x, y: p.y };
+    _rvFdMode = false;
+    const btn = document.getElementById('rvFdBtn');
+    if (btn) btn.classList.remove('active');
+    const title = document.getElementById('rvTitle');
+    if (title) title.textContent = RV_TITLE_DEFAULT;
+    _rvRenderBadges();
+  };
+  el.addEventListener('pointerup', finish);
+  el.addEventListener('pointercancel', (e) => { if (st && e.pointerId === st.id) { st = null; removeGhost(); } });
 }
 // Custom rooms are scoped per building type. Storage key: customRoomPresets:<type>.
 // Legacy key 'customRoomPresets' (un-scoped, from older versions) is read into
