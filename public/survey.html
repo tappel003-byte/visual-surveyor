@@ -739,6 +739,7 @@
       <b id="wTitle"></b>
       <small id="wSub"></small>
     </div>
+    <button class="icon-btn" id="wSave" onclick="manualSave()" title="Save">💾</button>
     <button class="icon-btn" id="wUndo" onclick="undo()" title="Undo">↶</button>
     <button class="icon-btn" id="wRedo" onclick="redo()" title="Redo">↷</button>
     
@@ -1061,6 +1062,11 @@ function save() {
     showSaveFailureBanner();
     return false;
   }
+}
+function manualSave() {
+  save();
+  toast('Saved');
+  try { if (navigator.vibrate) navigator.vibrate(20); } catch (_) {}
 }
 
 // Persistent, blocking, hard-to-miss failure notice. Re-shown on every failed save.
