@@ -1308,7 +1308,7 @@ function exportStatus(p) {
   const updated = p.updatedAt || 0;
   const exported = p.lastExportedAt || 0;
   if (!exported) return { state: 'none', label: 'Not exported' };
-  if (updated > exported + 1000) return { state: 'stale', label: 'Unsaved changes' };
+  if (updated > exported + 1000) return { state: 'stale', label: 'Changes since export' };
   return { state: 'ok', label: 'Exported ' + relTime(exported) };
 }
 function renderHome() {
@@ -1426,7 +1426,7 @@ function deleteProjectForever(id) {
   if (!proj) return;
   const status = exportStatus(proj);
   if (status.state !== 'ok') {
-    const reason = status.state === 'none' ? 'has never been exported' : 'has unsaved changes since it was last exported';
+    const reason = status.state === 'none' ? 'has never been exported' : 'has changes since it was last exported';
     showExportReminderModal(proj.address || 'This project', reason, () => {
       restoreProject(id);
       toast('Restored — export it, then trash it again when ready.');
