@@ -1427,12 +1427,19 @@ function deleteProjectForever(id) {
   const status = exportStatus(proj);
   if (status.state !== 'ok') {
     const reason = status.state === 'none' ? 'has never been exported' : 'has unsaved changes since it was last exported';
-    if (confirm('"' + (proj.address || 'This project') + '" ' + reason + '.\n\nTap OK to restore it so you can export it, or Cancel to continue deleting forever without exporting.')) {
+    showExportReminderModal(proj.address || 'This project', reason, () => {
       restoreProject(id);
       toast('Restored — export it, then trash it again when ready.');
-      return;
-    }
+    }, () => {
+      confirmPermanentDelete(id);
+    });
+    return;
   }
+  confirmPermanentDelete(id);
+}
+function confirmPermanentDelete(id) {
+  const proj = (store.trash||[]).find(p => p.id === id);
+  if (!proj) return;
   if (!confirm('Permanently delete "' + (proj.address || 'this project') + '"?\n\nThis cannot be undone.')) return;
   for (const pin of (proj.pins||[])) {
     for (const entry of (pin.photos||[])) {
@@ -1441,6 +1448,24 @@ function deleteProjectForever(id) {
   }
   store.trash = (store.trash||[]).filter(p => p.id !== id);
   save(); renderTrash(); renderHome();
+}
+function showExportReminderModal(address, reason, onExport, onDeleteAnyway) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;';
+  el.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.4);">
+      <div style="font-size:18px;font-weight:700;color:#b3261e;margin-bottom:8px;">⚠️ Not exported yet</div>
+      <div style="font-size:14px;line-height:1.5;color:#222;">
+        "${address}" ${reason}. Deleting it now means this data is gone for good.
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button id="exportReminderExport" style="flex:1;padding:12px;border:0;border-radius:10px;background:#1565c0;color:#fff;font-size:15px;font-weight:600;">Restore &amp; Export</button>
+        <button id="exportReminderDelete" style="flex:1;padding:12px;border:1px solid #b3261e;border-radius:10px;background:#fff;color:#b3261e;font-size:15px;font-weight:600;">Delete Without Exporting</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.querySelector('#exportReminderExport').onclick = () => { document.body.removeChild(el); onExport(); };
+  el.querySelector('#exportReminderDelete').onclick = () => { document.body.removeChild(el); onDeleteAnyway(); };
 }
 function purgeOldTrash() {
   const cutoff = Date.now() - 30*24*60*60*1000;
