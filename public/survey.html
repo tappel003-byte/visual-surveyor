@@ -1065,7 +1065,11 @@ function save() {
 }
 function manualSave() {
   save();
-  toast('Saved');
+  const btn = document.getElementById('wSave');
+  if (btn) {
+    btn.textContent = '✅';
+    setTimeout(() => { btn.textContent = '💾'; }, 1500);
+  }
   try { if (navigator.vibrate) navigator.vibrate(20); } catch (_) {}
 }
 
