@@ -66,6 +66,7 @@ export default defineConfig({
           additionalManifestEntries: [
             // `/` is the React shell route; precache it so the root loads offline.
             { url: "/", revision: null },
+            { url: "/survey.html", revision: null },
           ],
         },
       }),
