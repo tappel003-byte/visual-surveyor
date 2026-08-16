@@ -44,6 +44,19 @@ setCatchHandler(async ({ request }) => {
       (await cache.match("/survey.html")) ||
       (await cache.match("/"));
     if (cached) return cached;
+
+    const names = await caches.keys();
+    for (const name of names) {
+      if (
+        !/precache/i.test(name) &&
+        !name.startsWith("workbox-")
+      )
+        continue;
+      const c = await caches.open(name);
+      const hit =
+        (await c.match("/survey.html")) || (await c.match("/"));
+      if (hit) return hit;
+    }
   }
   return Response.error();
 });
