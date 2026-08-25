@@ -1032,11 +1032,28 @@ function load() {
   purgeOldTrash();
   // Migrate any inline photo dataURLs out of localStorage into IndexedDB
   migratePhotosToIdb();
+  // Migrate any inline plan images out of localStorage into IndexedDB
+  migratePlansToIdb();
 }
 let _saveFailed = false;
+// Serialized form keeps plan images OUT of localStorage: only { id, width, height }.
+// (Plans with no pl_ id yet — e.g. mid-migration — keep their inline dataUrl so
+// nothing is lost; migratePlansToIdb() will give them an id and the next save slims them.)
+function _slimProjectForStorage(p) {
+  if (!p || !p.plan || !isPlanId(p.plan.id)) return p;
+  const c = Object.assign({}, p);
+  c.plan = { id: p.plan.id, width: p.plan.width, height: p.plan.height };
+  return c;
+}
+function _serializeStore() {
+  return JSON.stringify(Object.assign({}, store, {
+    projects: (store.projects || []).map(_slimProjectForStorage),
+    trash: (store.trash || []).map(_slimProjectForStorage),
+  }));
+}
 function save() {
   try {
-    const serialized = JSON.stringify(store);
+    const serialized = _serializeStore();
     // Rolling backup: never overwrite a non-empty backup with an empty store.
     const hasContent = (store.projects && store.projects.length) || (store.trash && store.trash.length);
     if (hasContent) {
@@ -1059,7 +1076,7 @@ function save() {
   catch (e) {
     console.error('save failed', e);
     _saveFailed = true;
-    showSaveFailureBanner();
+    showSaveFailureBanner(e);
     return false;
   }
 }
