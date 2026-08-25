@@ -1619,6 +1619,7 @@ function startNewProject(mode) {
   const esi = document.getElementById('fExtStartNum'); if (esi) esi.value = 1;
   const rc = document.getElementById('roomsChips'); if (rc) rc.innerHTML = '';
   const bt = document.getElementById('fBuildingType'); if (bt) bt.value = 'residential';
+  const fd = document.getElementById('fFrontDoor'); if (fd) fd.value = 'S';
   refreshStartBtn();
   showScreen('screenSetup');
   setTimeout(()=>document.getElementById('fAddress').focus(), 200);
@@ -3127,7 +3128,7 @@ async function editSetup() {
   document.getElementById('fAddress').value = project.address || '';
 
   const fd = document.getElementById('fFrontDoor');
-  if (fd) fd.value = project.frontDoorFacing || '';
+  if (fd) fd.value = project.frontDoorFacing || 'S';
   const bt = document.getElementById('fBuildingType');
   if (bt) bt.value = project.buildingType || 'residential';
 
