@@ -1032,11 +1032,28 @@ function load() {
   purgeOldTrash();
   // Migrate any inline photo dataURLs out of localStorage into IndexedDB
   migratePhotosToIdb();
+  // Migrate any inline plan images out of localStorage into IndexedDB
+  migratePlansToIdb();
 }
 let _saveFailed = false;
+// Serialized form keeps plan images OUT of localStorage: only { id, width, height }.
+// (Plans with no pl_ id yet — e.g. mid-migration — keep their inline dataUrl so
+// nothing is lost; migratePlansToIdb() will give them an id and the next save slims them.)
+function _slimProjectForStorage(p) {
+  if (!p || !p.plan || !isPlanId(p.plan.id)) return p;
+  const c = Object.assign({}, p);
+  c.plan = { id: p.plan.id, width: p.plan.width, height: p.plan.height };
+  return c;
+}
+function _serializeStore() {
+  return JSON.stringify(Object.assign({}, store, {
+    projects: (store.projects || []).map(_slimProjectForStorage),
+    trash: (store.trash || []).map(_slimProjectForStorage),
+  }));
+}
 function save() {
   try {
-    const serialized = JSON.stringify(store);
+    const serialized = _serializeStore();
     // Rolling backup: never overwrite a non-empty backup with an empty store.
     const hasContent = (store.projects && store.projects.length) || (store.trash && store.trash.length);
     if (hasContent) {
@@ -1059,7 +1076,7 @@ function save() {
   catch (e) {
     console.error('save failed', e);
     _saveFailed = true;
-    showSaveFailureBanner();
+    showSaveFailureBanner(e);
     return false;
   }
 }
@@ -1074,7 +1091,7 @@ function manualSave() {
 }
 
 // Persistent, blocking, hard-to-miss failure notice. Re-shown on every failed save.
-function showSaveFailureBanner() {
+function showSaveFailureBanner(err) {
   let el = document.getElementById('saveFailModal');
   if (!el) {
     el = document.createElement('div');
@@ -1084,15 +1101,16 @@ function showSaveFailureBanner() {
       <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.4);">
         <div style="font-size:18px;font-weight:700;color:#b3261e;margin-bottom:8px;">⚠️ Changes were NOT saved</div>
         <div style="font-size:14px;line-height:1.5;color:#222;">
-          Device storage is full, so your most recent changes could <b>not</b> be saved and will be lost if you close the app.
+          The job file (pins, notes, settings — photos and floor plans use separate, larger storage) could <b>not</b> be written to this device, so your most recent changes will be lost if you close the app.
           <br><br>
-          <b>Free up space now before continuing to edit:</b>
+          <b>Things to try before continuing to edit:</b>
           <ul style="margin:8px 0 0 18px;padding:0;">
             <li>Empty Trash on the Home screen</li>
             <li>Delete old projects you've already exported</li>
           </ul>
         </div>
-        <div id="saveFailRetryMsg" style="font-size:12px;color:#666;margin-top:10px;"></div>
+        <div id="saveFailErr" style="font-size:12px;color:#666;margin-top:10px;word-break:break-word;"></div>
+        <div id="saveFailRetryMsg" style="font-size:12px;color:#666;margin-top:6px;"></div>
         <div style="display:flex;gap:8px;margin-top:16px;">
           <button id="saveFailRetry" style="flex:1;padding:12px;border:0;border-radius:10px;background:#1565c0;color:#fff;font-size:15px;font-weight:600;">Retry save</button>
           <button id="saveFailHome" style="flex:1;padding:12px;border:1px solid #ccc;border-radius:10px;background:#f5f5f5;color:#222;font-size:15px;font-weight:600;">Go to Home</button>
@@ -1103,7 +1121,7 @@ function showSaveFailureBanner() {
       const msg = el.querySelector('#saveFailRetryMsg');
       msg.textContent = 'Retrying…';
       if (save()) { /* banner hidden by save() */ }
-      else msg.textContent = 'Still full — please delete something before retrying.';
+      else msg.textContent = 'Still failing — see the error details above.';
     };
     el.querySelector('#saveFailHome').onclick = () => {
       el.style.display = 'none';
@@ -1111,6 +1129,11 @@ function showSaveFailureBanner() {
     };
   }
   el.style.display = 'flex';
+  const errEl = el.querySelector('#saveFailErr');
+  if (errEl) {
+    errEl.textContent = err ? ('Error details: ' + (err.name || 'Error') + (err.message ? ' — ' + err.message : '')) : '';
+    errEl.style.display = err ? '' : 'none';
+  }
   const msg = el.querySelector('#saveFailRetryMsg');
   if (msg) msg.textContent = '';
 }
@@ -1202,6 +1225,46 @@ async function storePhotoDataUrl(dataUrl) {
   const id = newPhotoId();
   await idbPut(id, dataUrl);
   return id;
+}
+
+// ---------- Plan image storage (same IDB as photos, pl_ ids) ----------
+// localStorage only ever holds { id, width, height }; the image bytes live in IDB.
+function newPlanId() { return 'pl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function isPlanId(s) { return typeof s === 'string' && s.startsWith('pl_'); }
+
+async function storePlanDataUrl(dataUrl) {
+  const id = newPlanId();
+  await idbPut(id, dataUrl);
+  return id;
+}
+
+// Make sure proj.plan.dataUrl is populated in memory (loading from IDB if needed).
+async function ensurePlanLoaded(proj) {
+  if (!proj || !proj.plan) return null;
+  if (!proj.plan.dataUrl && isPlanId(proj.plan.id)) {
+    try {
+      const d = await idbGet(proj.plan.id);
+      if (d) proj.plan.dataUrl = d;
+    } catch (e) { console.warn('plan load failed', e); }
+  }
+  return proj.plan.dataUrl || null;
+}
+
+// One-time migration: move legacy inline plan.dataUrl into IDB, tag the job with a pl_ id.
+async function migratePlansToIdb() {
+  let changed = false;
+  for (const list of [store.projects || [], store.trash || []]) {
+    for (const proj of list) {
+      const pl = proj && proj.plan;
+      if (pl && isDataUrl(pl.dataUrl) && !isPlanId(pl.id)) {
+        try {
+          pl.id = await storePlanDataUrl(pl.dataUrl);
+          changed = true;
+        } catch (e) { console.warn('plan migrate failed', e); }
+      }
+    }
+  }
+  if (changed) save(); // save() writes the slim {id,width,height} form
 }
 
 async function migratePhotosToIdb() {
@@ -1456,6 +1519,7 @@ function confirmPermanentDelete(id) {
       if (isPhotoId(entry)) idbDel(entry).catch(()=>{});
     }
   }
+  if (proj.plan && isPlanId(proj.plan.id)) idbDel(proj.plan.id).catch(()=>{});
   store.trash = (store.trash||[]).filter(p => p.id !== id);
   save(); renderTrash(); renderHome();
 }
@@ -1489,6 +1553,7 @@ function purgeOldTrash() {
           if (isPhotoId(entry)) idbDel(entry).catch(()=>{});
         }
       }
+      if (proj.plan && isPlanId(proj.plan.id)) idbDel(proj.plan.id).catch(()=>{});
       purged++;
     } else {
       keep.push(proj);
@@ -1524,9 +1589,10 @@ function renderTrash() {
       </div>`;
   }).join('');
 }
-function openProject(id) {
+async function openProject(id) {
   const p = (store.projects||[]).find(x => x.id === id);
   if (!p) return;
+  await ensurePlanLoaded(p);
   project = p;
   enterWork();
 }
@@ -3047,9 +3113,10 @@ function useGpsCoordsOnly() {
       : _gpsBlockedMsg();
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
 }
-function editSetup() {
+async function editSetup() {
   if (!project) return;
   closeMenu();
+  await ensurePlanLoaded(project);
   _editingProjectId = project.id;
   _setupMode = project.mode;
   _setupPlan = project.plan ? { dataUrl: project.plan.dataUrl, width: project.plan.width, height: project.plan.height } : null;
@@ -3103,7 +3170,7 @@ function setupBack() {
   }
 }
 
-function commitNewProject() {
+async function commitNewProject() {
   const addr = document.getElementById('fAddress').value.trim();
   let startNum = 1;
   if (!addr || !_setupPlan) return;
@@ -3119,7 +3186,15 @@ function commitNewProject() {
     const p = (store.projects || []).find(x => x.id === _editingProjectId);
     if (!p) { _editingProjectId = null; return; }
     p.address = addr;
-    p.plan = { dataUrl: _setupPlan.dataUrl, width: _setupPlan.width, height: _setupPlan.height };
+    // Reuse the existing pl_ id if the image didn't change; otherwise store the
+    // new image bytes in IndexedDB under a fresh id. dataUrl stays in memory for
+    // this session; save() strips it from what hits localStorage.
+    let planId = (p.plan && isPlanId(p.plan.id) && p.plan.dataUrl === _setupPlan.dataUrl) ? p.plan.id : null;
+    if (!planId) {
+      try { planId = await storePlanDataUrl(_setupPlan.dataUrl); }
+      catch (e) { console.warn('plan IDB save failed', e); }
+    }
+    p.plan = { id: planId, dataUrl: _setupPlan.dataUrl, width: _setupPlan.width, height: _setupPlan.height };
     p.frontDoorFacing = fd;
     p.frontDoor = _setupFrontDoor ? { x: _setupFrontDoor.x, y: _setupFrontDoor.y } : null;
     p.rooms = Array.isArray(_setupRooms) ? _setupRooms.slice() : [];
@@ -3138,12 +3213,16 @@ function commitNewProject() {
     return;
   }
 
+  // Store the plan image bytes in IndexedDB; keep dataUrl in memory for this session.
+  let newPlanImageId = null;
+  try { newPlanImageId = await storePlanDataUrl(_setupPlan.dataUrl); }
+  catch (e) { console.warn('plan IDB save failed', e); }
   const now = Date.now();
   project = {
     id: uid(),
     mode: _setupMode,
     address: addr,
-    plan: { dataUrl: _setupPlan.dataUrl, width: _setupPlan.width, height: _setupPlan.height },
+    plan: { id: newPlanImageId, dataUrl: _setupPlan.dataUrl, width: _setupPlan.width, height: _setupPlan.height },
     startNum: 1,
     extStartNum: extStartNum,
     nextNum: 1,
@@ -5770,6 +5849,7 @@ async function exportProjectZip() {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Bundling…'; }
   try {
+    await ensurePlanLoaded(project);
     const zip = new JSZip();
     const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
     const isInternal = project.mode === 'internal';
@@ -6170,6 +6250,7 @@ async function exportProjectPdf() {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Building PDF…'; }
   try {
+    await ensurePlanLoaded(project);
     const pdf = await buildPinLogPdf();
     const blob = pdf.output('blob');
     const url = URL.createObjectURL(blob);
@@ -6205,6 +6286,8 @@ async function exportProjectFile() {
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Packaging…'; }
   try {
+    // Re-hydrates plan.dataUrl so the .pgg stays self-contained (plan embedded inline).
+    await ensurePlanLoaded(project);
     const zip = new JSZip();
     // Collect every photo id referenced by the project
     const photoIds = new Set();
@@ -6311,6 +6394,14 @@ async function importProjectFromBlob(fileBlob) {
   }
   for (const qc of (importedProject.quickCapture || [])) {
     if (qc && isPhotoId(qc.id) && idMap[qc.id]) qc.id = idMap[qc.id];
+  }
+
+  // Plan image travels inline in the .pgg; store it in this device's IDB under a
+  // fresh pl_ id so the job file stays slim here too.
+  if (importedProject.plan && isDataUrl(importedProject.plan.dataUrl)) {
+    try {
+      importedProject.plan.id = await storePlanDataUrl(importedProject.plan.dataUrl);
+    } catch (e) { console.warn('plan import save failed', e); }
   }
 
   // Fresh project id + timestamps. Disambiguate address if it already exists.
