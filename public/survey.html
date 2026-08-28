@@ -6119,49 +6119,83 @@ async function exportProjectZip() {
   }
 }
 
-// Big jobs: never build one giant file. Part 1 = metadata, then photo batches.
+// Big jobs: never build one giant file. Metadata rides in part 1; photos batch out.
 async function _runPartsExport(items, setLabel) {
   const batches = [];
   for (let i = 0; i < items.photos.length; i += PARTS_BATCH) {
     batches.push(items.photos.slice(i, i + PARTS_BATCH));
   }
-  const totalParts = batches.length + 1;
-  alert('This job has ' + items.photos.length + ' photos — it will download in ' + totalParts +
-        ' parts so your phone never has to build one huge file.\n\nSave all ' + totalParts +
-        ' ZIPs into the same folder on your computer and unzip them there.');
-
+  const totalParts = Math.max(1, batches.length);
   const partName = (n) => items.folderName + '--part-' + n + '-of-' + totalParts + '.zip';
 
-  // Part 1 — metadata only
-  setLabel('Part 1 of ' + totalParts + '…');
-  {
-    const zip = new JSZip();
-    const root = zip.folder(items.folderName);
-    _addMetaToZip(root, items.meta);
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    _downloadBlob(blob, partName(1));
-  }
-  if (!(await _awaitPartContinue(1, totalParts))) { toast('Export stopped — parts already saved are fine'); return; }
+  exportPanel.open();
+  exportPanel.msg('Exporting ' + items.photos.length + ' photos in ' + totalParts + ' files…');
 
-  for (let b = 0; b < batches.length; b++) {
-    const partNum = b + 2;
+  const buildPart = async (idx) => {
+    const partNum = idx + 1;
     const zip = new JSZip();
     const root = zip.folder(items.folderName);
-    await _addPhotosToZip(root, batches[b], (n, t) =>
-      setLabel('Part ' + partNum + '/' + totalParts + ' — photo ' + n + '/' + t + '…'));
+    if (idx === 0) {
+      _addMetaToZip(root, items.meta);
+      root.file('README.txt', PARTS_README);
+    }
+    await _addPhotosToZip(root, batches[idx] || [], (n, t) => {
+      const line = 'Part ' + partNum + ' of ' + totalParts + ' — photo ' + n + ' of ' + t + '…';
+      setLabel(line); exportPanel.msg(line);
+    });
+    exportPanel.msg('Writing part ' + partNum + ' of ' + totalParts + '…');
     setLabel('Writing part ' + partNum + '…');
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    _downloadBlob(blob, partName(partNum));
-    if (partNum < totalParts) {
-      if (!(await _awaitPartContinue(partNum, totalParts))) { toast('Export stopped — parts already saved are fine'); return; }
+    return _downloadBlob(blob, partName(partNum));
+  };
+
+  for (let i = 0; i < totalParts; i++) {
+    let ok = false;
+    // Build + download, with retry on failure.
+    for (;;) {
+      try {
+        ok = await buildPart(i);
+      } catch (err) {
+        console.error(err);
+        exportPanel.msg('Part ' + (i + 1) + ' failed: ' + (err && err.message ? err.message : String(err)));
+        const choice = await exportPanel.ask([
+          { label: 'Retry part ' + (i + 1), value: 'retry' },
+          { label: 'Stop — keep parts already saved', value: 'stop' }
+        ]);
+        if (choice === 'retry') continue;
+        exportPanel.close();
+        toast('Export stopped — parts already saved are fine');
+        return;
+      }
+      break;
+    }
+
+    if (i < totalParts - 1) {
+      if (ok) {
+        // Auto-chain: brief pause so iOS finishes writing the previous file.
+        exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' saved — starting the next one…');
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        // The browser refused the automatic download; ask once for this part only.
+        exportPanel.msg('Your phone paused the download after part ' + (i + 1) + ' of ' + totalParts + '.');
+        const choice = await exportPanel.ask([
+          { label: 'Continue to part ' + (i + 2), value: 'go' },
+          { label: 'Stop here', value: 'stop' }
+        ]);
+        if (choice !== 'go') { exportPanel.close(); toast('Export stopped — parts already saved are fine'); return; }
+      }
     }
   }
 
   project.lastExportedAt = Date.now();
   save();
-  toast('All ' + totalParts + ' parts downloaded');
+  exportPanel.msg('Done — ' + totalParts + ' files saved. Put all ' + totalParts +
+    ' in one folder on your computer and unzip them there.');
+  await exportPanel.ask([{ label: 'Done', value: 'ok' }]);
+  exportPanel.close();
   closeSheets();
 }
+
 
 
 function csvField(s) {
