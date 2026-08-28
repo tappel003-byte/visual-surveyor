@@ -1221,6 +1221,36 @@ async function resolvePhoto(entry) {
   return null;
 }
 
+// Data URL -> Blob without going through an extra base64 string copy in the zip lib.
+function dataUrlToBlob(dataUrl) {
+  const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl || '');
+  if (!m) return null;
+  const mime = m[1] || 'application/octet-stream';
+  if (!m[2]) return new Blob([decodeURIComponent(m[3])], { type: mime });
+  const bin = atob(m[3]);
+  const len = bin.length;
+  const buf = new Uint8Array(len);
+  for (let i = 0; i < len; i++) buf[i] = bin.charCodeAt(i);
+  return new Blob([buf], { type: mime });
+}
+
+function mimeExt(mime) {
+  const t = (mime || '').toLowerCase();
+  if (t.includes('jpeg') || t.includes('jpg')) return 'jpg';
+  if (t.includes('png')) return 'png';
+  if (t.includes('webp')) return 'webp';
+  if (t.includes('heic')) return 'heic';
+  return 'jpg';
+}
+
+// Blob-returning sibling of resolvePhoto() — used by both export paths.
+async function resolvePhotoBlob(entry) {
+  const d = await resolvePhoto(entry);
+  if (!d) return null;
+  return dataUrlToBlob(d);
+}
+
+
 async function storePhotoDataUrl(dataUrl) {
   const id = newPhotoId();
   await idbPut(id, dataUrl);
