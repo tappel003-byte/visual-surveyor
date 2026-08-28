@@ -39,9 +39,16 @@ Behavior:
 - If a part fails, you can retry just that part — you don't restart the whole export.
 - Export status ("Changes since export") only flips to exported once the final part completes.
 
+### 3. Automatic — you don't have to remember which button to press
+
+The single Export button decides for you: it counts the photos first, and if the job is over the threshold (100 photos) it switches itself into parts mode and tells you "This job has 230 photos — it'll download in 6 parts." Under the threshold, it behaves exactly as it does today.
+
+At 500 photos this is 11 parts of 50 — same mechanism, just more parts. There is no ceiling: the only thing that grows is the number of downloads, and each individual ZIP stays the same modest size regardless of job size. That's the answer to the capacity concern — the phone never has to hold the whole job in memory at once, so a 500-photo job is no riskier than a 50-photo one.
+
 ### Also
 
 - The existing failure alert will report the real error name and message (and the photo it died on), so if something still fails we know exactly where instead of guessing.
+
 
 ## Nothing else changes
 
