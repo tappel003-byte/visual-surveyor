@@ -5884,6 +5884,28 @@ async function composeMapImage(format) {
 // time as a Blob. Jobs over PARTS_THRESHOLD photos download as numbered parts.
 const PARTS_THRESHOLD = 100;   // photos; above this the export auto-splits
 const PARTS_BATCH = 75;        // photos per part
+const PARTS_PROGRESS_KEY = 'pgg_parts_export_progress_v1';
+
+function _partsExportSignature(items) {
+  return [project && project.id, project && project.updatedAt, items.photos.length, items.folderName].join('|');
+}
+function _readPartsProgress(signature, totalParts) {
+  try {
+    const state = JSON.parse(localStorage.getItem(PARTS_PROGRESS_KEY) || 'null');
+    if (state && state.signature === signature && state.totalParts === totalParts) {
+      return Math.max(0, Math.min(totalParts, Number(state.nextIndex) || 0));
+    }
+  } catch (e) { console.warn('export progress read failed', e); }
+  return 0;
+}
+function _writePartsProgress(signature, totalParts, nextIndex) {
+  try { localStorage.setItem(PARTS_PROGRESS_KEY, JSON.stringify({ signature, totalParts, nextIndex })); }
+  catch (e) { console.warn('export progress write failed', e); }
+}
+function _clearPartsProgress() {
+  try { localStorage.removeItem(PARTS_PROGRESS_KEY); }
+  catch (e) { console.warn('export progress clear failed', e); }
+}
 
 function _downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -6132,9 +6154,22 @@ async function _runPartsExport(items, setLabel) {
   }
   const totalParts = Math.max(1, batches.length);
   const partName = (n) => items.folderName + '--part-' + n + '-of-' + totalParts + '.zip';
+  const signature = _partsExportSignature(items);
+  let startIndex = _readPartsProgress(signature, totalParts);
+
+  if (startIndex >= totalParts) {
+    _clearPartsProgress();
+    project.lastExportedAt = Date.now();
+    save();
+    closeSheets();
+    toast('All ' + totalParts + ' export files are saved');
+    return;
+  }
 
   exportPanel.open();
-  exportPanel.msg('Exporting ' + items.photos.length + ' photos in ' + totalParts + ' files…');
+  exportPanel.msg(startIndex
+    ? 'Continuing with part ' + (startIndex + 1) + ' of ' + totalParts + '…'
+    : 'Exporting ' + items.photos.length + ' photos in ' + totalParts + ' files…');
 
   const buildPart = async (idx) => {
     const partNum = idx + 1;
@@ -6151,10 +6186,13 @@ async function _runPartsExport(items, setLabel) {
     exportPanel.msg('Writing part ' + partNum + ' of ' + totalParts + '…');
     setLabel('Writing part ' + partNum + '…');
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    // iOS opens ZIPs in Quick Look and may suspend or reload this page. Record
+    // the next part before opening the file so a return to Export resumes there.
+    _writePartsProgress(signature, totalParts, idx + 1);
     return _downloadBlob(blob, partName(partNum));
   };
 
-  for (let i = 0; i < totalParts; i++) {
+  for (let i = startIndex; i < totalParts; i++) {
     let ok = false;
     // Build + download, with retry on failure.
     for (;;) {
@@ -6194,6 +6232,7 @@ async function _runPartsExport(items, setLabel) {
 
   project.lastExportedAt = Date.now();
   save();
+  _clearPartsProgress();
   exportPanel.msg('Done — ' + totalParts + ' files saved. Put all ' + totalParts +
     ' in one folder on your computer and unzip them there.');
   await exportPanel.ask([{ label: 'Done', value: 'ok' }]);
