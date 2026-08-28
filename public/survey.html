@@ -6117,6 +6117,7 @@ async function exportProjectZip() {
     }
   } catch (err) {
     console.error(err);
+    exportPanel.close();
     alert('Could not build the ZIP.\n\n' + (err && err.name ? err.name + ': ' : '') + (err && err.message ? err.message : String(err)));
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig || '📦 Finish &amp; Export (ZIP)'; }
