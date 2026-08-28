@@ -5883,7 +5883,7 @@ async function composeMapImage(format) {
 // *manifest* (ids + filenames), and the writer streams each photo in one at a
 // time as a Blob. Jobs over PARTS_THRESHOLD photos download as numbered parts.
 const PARTS_THRESHOLD = 100;   // photos; above this the export auto-splits
-const PARTS_BATCH = 50;        // photos per part
+const PARTS_BATCH = 75;        // photos per part
 
 function _downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -5892,8 +5892,12 @@ function _downloadBlob(blob, filename) {
   a.download = filename;
   _suppressClickUntil = Date.now() + 1200;
   _maybeTap = null;
-  document.body.appendChild(a); a.click(); a.remove();
+  document.body.appendChild(a);
+  let ok = true;
+  try { a.click(); } catch (e) { console.error(e); ok = false; }
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return ok;
 }
 
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
