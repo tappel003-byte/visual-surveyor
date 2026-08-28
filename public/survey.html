@@ -6040,22 +6040,50 @@ function _addMetaToZip(root, meta) {
   for (const f of meta) root.file(f.name, f.data);
 }
 
-// Between parts, wait for an explicit tap — iOS drops back-to-back downloads.
-function _awaitPartContinue(partNum, totalParts) {
-  return new Promise(resolve => {
+// Persistent progress panel used by the parts export.
+const exportPanel = {
+  el: null, msgEl: null, actEl: null,
+  open() {
+    if (this.el) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:24px';
     wrap.innerHTML = '<div style="background:var(--card,#fff);color:var(--ink,#222);border-radius:14px;max-width:340px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.35)">' +
-      '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Part ' + partNum + ' of ' + totalParts + ' saved</div>' +
-      '<div style="font-size:13px;line-height:1.5;color:var(--muted,#666);margin-bottom:14px">Check that the file downloaded, then continue. Save every part into the same folder on your computer.</div>' +
-      '<button id="_partGo" style="width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px">Continue to part ' + (partNum + 1) + '</button>' +
-      '<button id="_partStop" style="width:100%;margin-top:8px;padding:10px;border:0;border-radius:10px;background:transparent;color:var(--muted,#666);font-size:13px">Stop here</button>' +
+      '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Exporting</div>' +
+      '<div id="_expMsg" style="font-size:13px;line-height:1.5;color:var(--muted,#666)">Preparing…</div>' +
+      '<div id="_expAct" style="margin-top:14px"></div>' +
       '</div>';
     document.body.appendChild(wrap);
-    wrap.querySelector('#_partGo').onclick = () => { wrap.remove(); resolve(true); };
-    wrap.querySelector('#_partStop').onclick = () => { wrap.remove(); resolve(false); };
-  });
-}
+    this.el = wrap;
+    this.msgEl = wrap.querySelector('#_expMsg');
+    this.actEl = wrap.querySelector('#_expAct');
+  },
+  msg(t) { if (this.msgEl) this.msgEl.textContent = t; },
+  // Renders buttons and resolves with the chosen value.
+  ask(buttons) {
+    return new Promise(resolve => {
+      if (!this.actEl) return resolve(null);
+      this.actEl.innerHTML = '';
+      buttons.forEach((b, i) => {
+        const el = document.createElement('button');
+        el.textContent = b.label;
+        el.style.cssText = i === 0
+          ? 'width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px'
+          : 'width:100%;margin-top:8px;padding:10px;border:0;border-radius:10px;background:transparent;color:var(--muted,#666);font-size:13px';
+        el.onclick = () => { this.actEl.innerHTML = ''; resolve(b.value); };
+        this.actEl.appendChild(el);
+      });
+    });
+  },
+  clearActions() { if (this.actEl) this.actEl.innerHTML = ''; },
+  close() { if (this.el) { this.el.remove(); this.el = null; this.msgEl = null; this.actEl = null; } }
+};
+
+const PARTS_README =
+  'This export was split into numbered ZIP parts so a phone could build it safely.\n\n' +
+  'Put every "--part-N-of-M.zip" file into the SAME folder on your computer and\n' +
+  'unzip them all there. Each part contains the same top-level folder, so the\n' +
+  'original structure (photos, quick-capture, CSVs, plan, PDF) is rebuilt exactly.\n';
+
 
 async function exportProjectZip() {
   if (!project) return;
