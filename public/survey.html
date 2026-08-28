@@ -5874,176 +5874,263 @@ async function composeMapImage(format) {
   });
 }
 
-async function exportProjectZip() {
-  if (!project) return;
-  const btn = event && event.target;
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Bundling…'; }
-  try {
-    await ensurePlanLoaded(project);
-    const zip = new JSZip();
-    const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
-    const isInternal = project.mode === 'internal';
-    const folderName = sanitizeFilename(project.address);
-    const root = zip.folder(folderName);
+// ---------- Export engine ----------
+// Photos are never all held in memory at once: collectExportItems() returns a
+// *manifest* (ids + filenames), and the writer streams each photo in one at a
+// time as a Blob. Jobs over PARTS_THRESHOLD photos download as numbered parts.
+const PARTS_THRESHOLD = 100;   // photos; above this the export auto-splits
+const PARTS_BATCH = 50;        // photos per part
 
-    // map.png
-    const pngBlob = await composeMapImage('png-blob');
-    root.file('map.png', pngBlob);
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  _suppressClickUntil = Date.now() + 1200;
+  _maybeTap = null;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
 
-    // plan.png — clean plan, no pins/drawings, native dimensions
-    if (isInternal) {
-      const planBlob = await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          const c = document.createElement('canvas');
-          c.width = project.plan.width; c.height = project.plan.height;
-          const ctx = c.getContext('2d');
-          ctx.drawImage(img, 0, 0, c.width, c.height);
-          c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
-        };
-        img.onerror = reject;
-        img.src = project.plan.dataUrl;
-      });
-      root.file('plan.png', planBlob);
-    }
+// Builds everything except the photo bytes: metadata files + an ordered photo manifest.
+async function collectExportItems() {
+  await ensurePlanLoaded(project);
+  const pins = (project.pins || []).slice().sort((a, b) => a.num - b.num);
+  const isInternal = project.mode === 'internal';
+  const folderName = sanitizeFilename(project.address);
+  const meta = [];   // { name, data }  (data = Blob or string)
+  const photos = []; // { name, entry, strokes }
 
-    // Photo numbering: each pin's num is also its starting photo number.
-    // Build per-pin range strings + figure out the total for filename padding.
-    let totalPhotos = 0;
-    const photoRangeFor = (p) => {
-      const n = (p.photos || []).length;
-      if (!n) return '';
-      const start = p.num;
-      const end = p.num + n - 1;
-      if (end > totalPhotos) totalPhotos = end;
-      return n === 1 ? String(start) : (start + ' to ' + end);
-    };
-    // First pass to fill totalPhotos (so pad width is right for the CSV too — though only filenames use pad).
-    if (isInternal) pins.forEach(p => photoRangeFor(p));
-    const padW = String(Math.max(totalPhotos, 1)).length >= 3 ? 3 : 2;
-    const pad = (n) => String(n).padStart(padW, '0');
+  // map.png
+  meta.push({ name: 'map.png', data: await composeMapImage('png-blob') });
 
-    // pins.csv
-    const orientOffset = _orientationOffset(project);
-    const roomLabels = buildRoomLabels(project, orientOffset);
-    const firstPinNum = pins.length ? pins[0].num : null;
-    const csvLines = [isInternal
-      ? 'Pin,Type,Description,Photo Count,Photo Numbers,Room,Direction,X,Y,PinID,DescUpdatedAt'
-      : 'Pin,Location,Category,Description,Photo Range,External Photos,Uploaded Photos'];
-    const planW = project.plan.width, planH = project.plan.height;
-    const norm = (v, dim) => (typeof v === 'number' && isFinite(v) && dim) ? (Math.round((v / dim) * 1e5) / 1e5).toString() : '';
-    pins.forEach(p => {
-      const desc = (p.description || '').trim();
-      const type = p.isExterior ? 'Exterior' : 'Interior';
-      if (isInternal) {
-        const photoCount = (p.photos || []).length;
-        const range = photoRangeFor(p);
-        const dir = pinCardinal(project, p, orientOffset);
-        const room = p.location || pinRoom(project, p, roomLabels);
-        csvLines.push([p.num, type, csvField(desc), photoCount, csvField(range), csvField(room), csvField(dir), norm(p.x, planW), norm(p.y, planH), csvField(String(p.id == null ? '' : p.id)), csvField(p.descUpdatedAt ? new Date(p.descUpdatedAt).toISOString() : '')].join(','));
-      } else {
-        const extCount = p.extPhotoCount || 0;
-        const upCount = (p.photos || []).length;
-        const range = p.extPhotoEnd ? (p.extPhotoStart + '-' + p.extPhotoEnd) : (p.extPhotoStart ? String(p.extPhotoStart) : '');
-        csvLines.push([p.num, csvField(p.location||''), csvField(p.category||''), csvField(desc), csvField(range), extCount, upCount].join(','));
-      }
+  // plan.png — clean plan, no pins/drawings, native dimensions
+  if (isInternal) {
+    const planBlob = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = project.plan.width; c.height = project.plan.height;
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+      };
+      img.onerror = reject;
+      img.src = project.plan.dataUrl;
     });
-    root.file('pins.csv', csvLines.join('\r\n'));
+    meta.push({ name: 'plan.png', data: planBlob });
+  }
 
-    // photos/  — global numbering: filename = photo-{pin.num + offset}.{ext}
+  // Photo numbering: each pin's num is also its starting photo number.
+  let totalPhotos = 0;
+  const photoRangeFor = (p) => {
+    const n = (p.photos || []).length;
+    if (!n) return '';
+    const start = p.num;
+    const end = p.num + n - 1;
+    if (end > totalPhotos) totalPhotos = end;
+    return n === 1 ? String(start) : (start + ' to ' + end);
+  };
+  if (isInternal) pins.forEach(p => photoRangeFor(p));
+  const padW = String(Math.max(totalPhotos, 1)).length >= 3 ? 3 : 2;
+  const pad = (n) => String(n).padStart(padW, '0');
+
+  // pins.csv
+  const orientOffset = _orientationOffset(project);
+  const roomLabels = buildRoomLabels(project, orientOffset);
+  const csvLines = [isInternal
+    ? 'Pin,Type,Description,Photo Count,Photo Numbers,Room,Direction,X,Y,PinID,DescUpdatedAt'
+    : 'Pin,Location,Category,Description,Photo Range,External Photos,Uploaded Photos'];
+  const planW = project.plan.width, planH = project.plan.height;
+  const norm = (v, dim) => (typeof v === 'number' && isFinite(v) && dim) ? (Math.round((v / dim) * 1e5) / 1e5).toString() : '';
+  pins.forEach(p => {
+    const desc = (p.description || '').trim();
+    const type = p.isExterior ? 'Exterior' : 'Interior';
     if (isInternal) {
-      const photosFolder = root.folder('photos');
-      for (const p of pins) {
-        const photos = p.photos || [];
-        for (let i = 0; i < photos.length; i++) {
-          const entry = photos[i];
-          let dataUrl = await resolvePhoto(entry);
-          if (!dataUrl) continue;
-          const strokes = (p.photoStrokes && isPhotoId(entry)) ? (p.photoStrokes[entry] || []) : [];
-          if (strokes.length) {
-            try { dataUrl = await compositePhotoWithStrokes(dataUrl, strokes); }
-            catch (e) { console.warn('annotate composite failed', e); }
-          }
-          const m = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-          if (!m) continue;
-          const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
-          const photoNum = p.num + i;
-          const name = 'photo-' + pad(photoNum) + '.' + ext;
-          photosFolder.file(name, m[2], { base64: true });
-        }
-      }
+      const photoCount = (p.photos || []).length;
+      const range = photoRangeFor(p);
+      const dir = pinCardinal(project, p, orientOffset);
+      const room = p.location || pinRoom(project, p, roomLabels);
+      csvLines.push([p.num, type, csvField(desc), photoCount, csvField(range), csvField(room), csvField(dir), norm(p.x, planW), norm(p.y, planH), csvField(String(p.id == null ? '' : p.id)), csvField(p.descUpdatedAt ? new Date(p.descUpdatedAt).toISOString() : '')].join(','));
     } else {
-      // External mode: bundle any photos the user uploaded from their library.
-      const upPins = pins.filter(p => (p.photos || []).length);
-      if (upPins.length) {
-        const upFolder = root.folder('photos');
-        for (const p of upPins) {
-          for (let i = 0; i < p.photos.length; i++) {
-            const entry = p.photos[i];
-            const dataUrl = await resolvePhoto(entry);
-            if (!dataUrl) continue;
-            const m = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-            if (!m) continue;
-            const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
-            const name = 'pin-' + p.num + '-' + String(i+1).padStart(2,'0') + '.' + ext;
-            upFolder.file(name, m[2], { base64: true });
-          }
-        }
+      const extCount = p.extPhotoCount || 0;
+      const upCount = (p.photos || []).length;
+      const range = p.extPhotoEnd ? (p.extPhotoStart + '-' + p.extPhotoEnd) : (p.extPhotoStart ? String(p.extPhotoStart) : '');
+      csvLines.push([p.num, csvField(p.location || ''), csvField(p.category || ''), csvField(desc), csvField(range), extCount, upCount].join(','));
+    }
+  });
+  meta.push({ name: 'pins.csv', data: csvLines.join('\r\n') });
+
+  // photos/ manifest — global numbering: photo-{pin.num + offset}
+  if (isInternal) {
+    for (const p of pins) {
+      const list = p.photos || [];
+      for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        const strokes = (p.photoStrokes && isPhotoId(entry)) ? (p.photoStrokes[entry] || []) : [];
+        photos.push({ folder: 'photos', base: 'photo-' + pad(p.num + i), entry, strokes });
       }
     }
-
-    // quick-capture/  — untethered burst photos (Quick Capture)
-    const qc = (project.quickCapture || []);
-    if (qc.length) {
-      const qcFolder = root.folder('quick-capture');
-      const qcPad = String(qc.length).length >= 3 ? 3 : 2;
-      const qcLines = ['File,Timestamp,Latitude,Longitude'];
-      for (let i = 0; i < qc.length; i++) {
-        const e = qc[i];
-        const dataUrl = await resolvePhoto(e.id);
-        if (!dataUrl) continue;
-        const m = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-        if (!m) continue;
-        const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
-        const name = 'quick-' + String(i+1).padStart(qcPad, '0') + '.' + ext;
-        qcFolder.file(name, m[2], { base64: true });
-        const iso = new Date(e.ts || Date.now()).toISOString();
-        qcLines.push([name, iso, e.lat==null?'':e.lat, e.lng==null?'':e.lng].join(','));
+  } else {
+    for (const p of pins) {
+      const list = p.photos || [];
+      for (let i = 0; i < list.length; i++) {
+        photos.push({ folder: 'photos', base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [] });
       }
-      qcFolder.file('quick-capture.csv', qcLines.join('\r\n'));
     }
+  }
 
+  // quick-capture/ manifest + CSV
+  const qc = (project.quickCapture || []);
+  if (qc.length) {
+    const qcPad = String(qc.length).length >= 3 ? 3 : 2;
+    const qcLines = ['File,Timestamp,Latitude,Longitude'];
+    for (let i = 0; i < qc.length; i++) {
+      const e = qc[i];
+      const base = 'quick-' + String(i + 1).padStart(qcPad, '0');
+      photos.push({ folder: 'quick-capture', base, entry: e.id, strokes: [] });
+      qcLines.push([base + '.jpg', new Date(e.ts || Date.now()).toISOString(), e.lat == null ? '' : e.lat, e.lng == null ? '' : e.lng].join(','));
+    }
+    meta.push({ name: 'quick-capture/quick-capture.csv', data: qcLines.join('\r\n') });
+  }
 
-    // pinlog.pdf — same shared builder as the standalone Preview PDF button.
+  // pinlog.pdf
+  try {
+    const pdfDoc = await buildPinLogPdf();
+    meta.push({ name: 'pinlog.pdf', data: pdfDoc.output('blob') });
+  } catch (e) {
+    console.warn('pinlog.pdf skipped:', e);
+  }
+
+  return { folderName, meta, photos, isInternal };
+}
+
+// Streams a slice of the photo manifest into a zip root, one photo at a time.
+async function _addPhotosToZip(root, photos, onProgress) {
+  for (let i = 0; i < photos.length; i++) {
+    const item = photos[i];
+    if (onProgress) onProgress(i + 1, photos.length);
+    let blob = null;
     try {
-      const pdfDoc = await buildPinLogPdf();
-      const pdfBlob = pdfDoc.output('blob');
-      root.file('pinlog.pdf', pdfBlob);
+      if (item.strokes && item.strokes.length) {
+        const d = await resolvePhoto(item.entry);
+        if (!d) continue;
+        let out = d;
+        try { out = await compositePhotoWithStrokes(d, item.strokes); }
+        catch (e) { console.warn('annotate composite failed', e); }
+        blob = dataUrlToBlob(out);
+      } else {
+        blob = await resolvePhotoBlob(item.entry);
+      }
     } catch (e) {
-      console.warn('pinlog.pdf skipped:', e);
+      throw new Error('Photo "' + item.base + '" failed to read: ' + (e && e.message ? e.message : e));
     }
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = folderName + '.zip';
-    _suppressClickUntil = Date.now() + 1200;
-    _maybeTap = null;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    project.lastExportedAt = Date.now();
-    save();
-    toast('Project ZIP downloaded');
-    closeSheets();
-  } catch (err) {
-    console.error(err);
-    alert('Could not build the ZIP: ' + err.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = orig || '📦 Download Project (ZIP)'; }
+    if (!blob) continue;
+    const name = item.base + '.' + mimeExt(blob.type);
+    root.folder(item.folder).file(name, blob);
+    blob = null;
+    if (i % 10 === 0) await new Promise(r => setTimeout(r, 0)); // let Safari breathe / GC
   }
 }
+
+function _addMetaToZip(root, meta) {
+  for (const f of meta) root.file(f.name, f.data);
+}
+
+// Between parts, wait for an explicit tap — iOS drops back-to-back downloads.
+function _awaitPartContinue(partNum, totalParts) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:24px';
+    wrap.innerHTML = '<div style="background:var(--card,#fff);color:var(--ink,#222);border-radius:14px;max-width:340px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.35)">' +
+      '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Part ' + partNum + ' of ' + totalParts + ' saved</div>' +
+      '<div style="font-size:13px;line-height:1.5;color:var(--muted,#666);margin-bottom:14px">Check that the file downloaded, then continue. Save every part into the same folder on your computer.</div>' +
+      '<button id="_partGo" style="width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px">Continue to part ' + (partNum + 1) + '</button>' +
+      '<button id="_partStop" style="width:100%;margin-top:8px;padding:10px;border:0;border-radius:10px;background:transparent;color:var(--muted,#666);font-size:13px">Stop here</button>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.querySelector('#_partGo').onclick = () => { wrap.remove(); resolve(true); };
+    wrap.querySelector('#_partStop').onclick = () => { wrap.remove(); resolve(false); };
+  });
+}
+
+async function exportProjectZip() {
+  if (!project) return;
+  const btn = document.getElementById('exportZipBtn');
+  const orig = btn ? btn.innerHTML : '';
+  const setLabel = (t) => { if (btn) btn.textContent = t; };
+  if (btn) { btn.disabled = true; }
+  setLabel('Bundling…');
+  try {
+    const items = await collectExportItems();
+    const total = items.photos.length;
+
+    if (total > PARTS_THRESHOLD) {
+      await _runPartsExport(items, setLabel);
+    } else {
+      const zip = new JSZip();
+      const root = zip.folder(items.folderName);
+      _addMetaToZip(root, items.meta);
+      await _addPhotosToZip(root, items.photos, (n, t) => setLabel('Photo ' + n + ' of ' + t + '…'));
+      setLabel('Writing ZIP…');
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      _downloadBlob(blob, items.folderName + '.zip');
+      project.lastExportedAt = Date.now();
+      save();
+      toast('Project ZIP downloaded');
+      closeSheets();
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Could not build the ZIP.\n\n' + (err && err.name ? err.name + ': ' : '') + (err && err.message ? err.message : String(err)));
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig || '📦 Finish &amp; Export (ZIP)'; }
+  }
+}
+
+// Big jobs: never build one giant file. Part 1 = metadata, then photo batches.
+async function _runPartsExport(items, setLabel) {
+  const batches = [];
+  for (let i = 0; i < items.photos.length; i += PARTS_BATCH) {
+    batches.push(items.photos.slice(i, i + PARTS_BATCH));
+  }
+  const totalParts = batches.length + 1;
+  alert('This job has ' + items.photos.length + ' photos — it will download in ' + totalParts +
+        ' parts so your phone never has to build one huge file.\n\nSave all ' + totalParts +
+        ' ZIPs into the same folder on your computer and unzip them there.');
+
+  const partName = (n) => items.folderName + '--part-' + n + '-of-' + totalParts + '.zip';
+
+  // Part 1 — metadata only
+  setLabel('Part 1 of ' + totalParts + '…');
+  {
+    const zip = new JSZip();
+    const root = zip.folder(items.folderName);
+    _addMetaToZip(root, items.meta);
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    _downloadBlob(blob, partName(1));
+  }
+  if (!(await _awaitPartContinue(1, totalParts))) { toast('Export stopped — parts already saved are fine'); return; }
+
+  for (let b = 0; b < batches.length; b++) {
+    const partNum = b + 2;
+    const zip = new JSZip();
+    const root = zip.folder(items.folderName);
+    await _addPhotosToZip(root, batches[b], (n, t) =>
+      setLabel('Part ' + partNum + '/' + totalParts + ' — photo ' + n + '/' + t + '…'));
+    setLabel('Writing part ' + partNum + '…');
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    _downloadBlob(blob, partName(partNum));
+    if (partNum < totalParts) {
+      if (!(await _awaitPartContinue(partNum, totalParts))) { toast('Export stopped — parts already saved are fine'); return; }
+    }
+  }
+
+  project.lastExportedAt = Date.now();
+  save();
+  toast('All ' + totalParts + ' parts downloaded');
+  closeSheets();
+}
+
 
 function csvField(s) {
   if (s == null) return '';
