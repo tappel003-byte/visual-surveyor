@@ -5883,7 +5883,7 @@ async function composeMapImage(format) {
 // *manifest* (ids + filenames), and the writer streams each photo in one at a
 // time as a Blob. Jobs over PARTS_THRESHOLD photos download as numbered parts.
 const PARTS_THRESHOLD = 100;   // photos; above this the export auto-splits
-const PARTS_BATCH = 75;        // photos per part
+const PARTS_BATCH = 100;        // photos per part
 const PARTS_PROGRESS_KEY = 'pgg_parts_export_progress_v1';
 
 function _partsExportSignature(items) {
