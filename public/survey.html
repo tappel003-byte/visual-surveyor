@@ -6293,8 +6293,6 @@ async function _runPartsExport(items, setLabel) {
   }
 
   finish();
-  exportPanel.msg('Done — all ' + totalParts + ' files sent. On your computer, put them in one folder and unzip them there.');
-  await exportPanel.ask([{ label: 'Done', value: 'ok' }]);
   exportPanel.close();
   closeSheets();
 }
