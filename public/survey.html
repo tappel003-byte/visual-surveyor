@@ -889,8 +889,9 @@
     <button class="primary-btn" id="exportZipBtn" onclick="exportProjectZip()">
       📦 Finish &amp; Export (ZIP)
     </button>
+    <div class="sheet-sub" id="exportResumeNote" style="display:none;margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
     <div class="sheet-sub" style="margin-top:8px;line-height:1.4;font-size:12px">
-      Big jobs (over 100 photos) download automatically as numbered parts — save every part into the same folder and unzip them there.
+      Big jobs (over 100 photos) download as numbered parts — save every part into the same folder and unzip them there.
     </div>
 
     <div class="sheet-sub" style="margin-top:14px;line-height:1.5">
@@ -5776,6 +5777,20 @@ function openExport() {
   document.getElementById('exportQcNote').style.display = qcCount ? '' : 'none';
   const extras = (qcCount ? ' + ' + qcCount + ' Quick Capture' : '');
   document.getElementById('exportSub').textContent = (isInternal ? 'Map + pin list + photos' : 'Map + pin list') + extras;
+  const resume = _readPartsProgressForProject();
+  const exportBtn = document.getElementById('exportZipBtn');
+  const resumeNote = document.getElementById('exportResumeNote');
+  if (resume && resume.nextIndex < resume.totalParts) {
+    const nextPart = resume.nextIndex + 1;
+    if (exportBtn) exportBtn.textContent = '📦 Continue export — part ' + nextPart + ' of ' + resume.totalParts;
+    if (resumeNote) {
+      resumeNote.textContent = 'Part ' + resume.nextIndex + ' is complete. Continue with part ' + nextPart + '.';
+      resumeNote.style.display = '';
+    }
+  } else {
+    if (exportBtn) exportBtn.innerHTML = '📦 Finish &amp; Export (ZIP)';
+    if (resumeNote) resumeNote.style.display = 'none';
+  }
   document.getElementById('scrim').classList.add('active');
   document.getElementById('exportSheet').classList.add('open');
 }
@@ -5887,19 +5902,41 @@ const PARTS_BATCH = 100;        // photos per part
 const PARTS_PROGRESS_KEY = 'pgg_parts_export_progress_v1';
 
 function _partsExportSignature(items) {
-  return [project && project.id, project && project.updatedAt, items.photos.length, items.folderName].join('|');
+  // Do not include updatedAt: ordinary edits/autosaves must not make a paused
+  // iPhone export forget that part 1 was already handed off.
+  const photoSet = items.photos.map(item => [item.folder, item.base, item.entry].join('/')).join('|');
+  let hash = 2166136261;
+  for (let i = 0; i < photoSet.length; i++) {
+    hash ^= photoSet.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return [project && project.id, items.photos.length, items.folderName, hash >>> 0].join('|');
+}
+function _readPartsProgressForProject() {
+  try {
+    const state = JSON.parse(localStorage.getItem(PARTS_PROGRESS_KEY) || 'null');
+    const projectId = project && String(project.id);
+    const stateProjectId = state && (state.projectId || String(state.signature || '').split('|')[0]);
+    if (state && projectId && stateProjectId === projectId && Number(state.totalParts) > 1) return state;
+  } catch (e) { console.warn('export progress read failed', e); }
+  return null;
 }
 function _readPartsProgress(signature, totalParts) {
   try {
     const state = JSON.parse(localStorage.getItem(PARTS_PROGRESS_KEY) || 'null');
-    if (state && state.signature === signature && state.totalParts === totalParts) {
+    const projectId = project && String(project.id);
+    const stateProjectId = state && (state.projectId || String(state.signature || '').split('|')[0]);
+    // Accept the previous timestamp-based signature once so an export already
+    // paused on part 1 resumes instead of sending part 1 again.
+    if (state && state.totalParts === totalParts &&
+        (state.signature === signature || (projectId && stateProjectId === projectId))) {
       return Math.max(0, Math.min(totalParts, Number(state.nextIndex) || 0));
     }
   } catch (e) { console.warn('export progress read failed', e); }
   return 0;
 }
 function _writePartsProgress(signature, totalParts, nextIndex) {
-  try { localStorage.setItem(PARTS_PROGRESS_KEY, JSON.stringify({ signature, totalParts, nextIndex })); }
+  try { localStorage.setItem(PARTS_PROGRESS_KEY, JSON.stringify({ signature, projectId: project && String(project.id), totalParts, nextIndex })); }
   catch (e) { console.warn('export progress write failed', e); }
 }
 function _clearPartsProgress() {
@@ -6171,6 +6208,10 @@ async function _runPartsExport(items, setLabel) {
     ? 'Continuing with part ' + (startIndex + 1) + ' of ' + totalParts + '…'
     : 'Exporting ' + items.photos.length + ' photos in ' + totalParts + ' files…');
 
+  // The export sheet must not remain underneath iOS Quick Look / Mail. Keep
+  // only this progress panel visible so the next action is clear on return.
+  closeSheets();
+
   const buildPart = async (idx) => {
     const partNum = idx + 1;
     const zip = new JSZip();
@@ -6214,18 +6255,19 @@ async function _runPartsExport(items, setLabel) {
     }
 
     if (i < totalParts - 1) {
-      if (ok) {
-        // Auto-chain: brief pause so iOS finishes writing the previous file.
-        exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' saved — starting the next one…');
-        await new Promise(r => setTimeout(r, 2000));
-      } else {
-        // The browser refused the automatic download; ask once for this part only.
-        exportPanel.msg('Your phone paused the download after part ' + (i + 1) + ' of ' + totalParts + '.');
-        const choice = await exportPanel.ask([
-          { label: 'Continue to part ' + (i + 2), value: 'go' },
-          { label: 'Stop here', value: 'stop' }
-        ]);
-        if (choice !== 'go') { exportPanel.close(); toast('Export stopped — parts already saved are fine'); return; }
+      // iOS only reliably allows one download for each real tap. Automatic
+      // chaining after Quick Look / Mail returns is silently blocked, even
+      // though a.click() reports success. Wait for one explicit tap per part;
+      // the persisted nextIndex also makes this resumable after a reload.
+      exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' is ready. Return here after saving or sending it.');
+      const choice = await exportPanel.ask([
+        { label: 'Continue to part ' + (i + 2) + ' of ' + totalParts, value: 'go' },
+        { label: 'Stop here — resume later', value: 'stop' }
+      ]);
+      if (choice !== 'go') {
+        exportPanel.close();
+        toast('Export paused — tap Export later to continue with part ' + (i + 2));
+        return;
       }
     }
   }
