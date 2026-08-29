@@ -5777,20 +5777,12 @@ function openExport() {
   document.getElementById('exportQcNote').style.display = qcCount ? '' : 'none';
   const extras = (qcCount ? ' + ' + qcCount + ' Quick Capture' : '');
   document.getElementById('exportSub').textContent = (isInternal ? 'Map + pin list + photos' : 'Map + pin list') + extras;
-  const resume = _readPartsProgressForProject();
+  // Parts are now built in one pass and delivered together, so there is no
+  // mid-export resume state to advertise here.
   const exportBtn = document.getElementById('exportZipBtn');
   const resumeNote = document.getElementById('exportResumeNote');
-  if (resume && resume.nextIndex < resume.totalParts) {
-    const nextPart = resume.nextIndex + 1;
-    if (exportBtn) exportBtn.textContent = '📦 Continue export — part ' + nextPart + ' of ' + resume.totalParts;
-    if (resumeNote) {
-      resumeNote.textContent = 'Part ' + resume.nextIndex + ' is complete. Continue with part ' + nextPart + '.';
-      resumeNote.style.display = '';
-    }
-  } else {
-    if (exportBtn) exportBtn.innerHTML = '📦 Finish &amp; Export (ZIP)';
-    if (resumeNote) resumeNote.style.display = 'none';
-  }
+  if (exportBtn) exportBtn.innerHTML = '📦 Finish &amp; Export (ZIP)';
+  if (resumeNote) resumeNote.style.display = 'none';
   document.getElementById('scrim').classList.add('active');
   document.getElementById('exportSheet').classList.add('open');
 }
