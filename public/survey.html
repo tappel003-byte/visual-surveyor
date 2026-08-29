@@ -6171,6 +6171,10 @@ async function _runPartsExport(items, setLabel) {
     ? 'Continuing with part ' + (startIndex + 1) + ' of ' + totalParts + '…'
     : 'Exporting ' + items.photos.length + ' photos in ' + totalParts + ' files…');
 
+  // The export sheet must not remain underneath iOS Quick Look / Mail. Keep
+  // only this progress panel visible so the next action is clear on return.
+  closeSheets();
+
   const buildPart = async (idx) => {
     const partNum = idx + 1;
     const zip = new JSZip();
@@ -6214,18 +6218,19 @@ async function _runPartsExport(items, setLabel) {
     }
 
     if (i < totalParts - 1) {
-      if (ok) {
-        // Auto-chain: brief pause so iOS finishes writing the previous file.
-        exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' saved — starting the next one…');
-        await new Promise(r => setTimeout(r, 2000));
-      } else {
-        // The browser refused the automatic download; ask once for this part only.
-        exportPanel.msg('Your phone paused the download after part ' + (i + 1) + ' of ' + totalParts + '.');
-        const choice = await exportPanel.ask([
-          { label: 'Continue to part ' + (i + 2), value: 'go' },
-          { label: 'Stop here', value: 'stop' }
-        ]);
-        if (choice !== 'go') { exportPanel.close(); toast('Export stopped — parts already saved are fine'); return; }
+      // iOS only reliably allows one download for each real tap. Automatic
+      // chaining after Quick Look / Mail returns is silently blocked, even
+      // though a.click() reports success. Wait for one explicit tap per part;
+      // the persisted nextIndex also makes this resumable after a reload.
+      exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' is ready. Return here after saving or sending it.');
+      const choice = await exportPanel.ask([
+        { label: 'Continue to part ' + (i + 2) + ' of ' + totalParts, value: 'go' },
+        { label: 'Stop here — resume later', value: 'stop' }
+      ]);
+      if (choice !== 'go') {
+        exportPanel.close();
+        toast('Export paused — tap Export later to continue with part ' + (i + 2));
+        return;
       }
     }
   }
