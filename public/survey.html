@@ -6183,7 +6183,9 @@ async function exportProjectZip() {
   }
 }
 
-// Big jobs: never build one giant file. Metadata rides in part 1; photos batch out.
+// Big jobs: never build one giant file. Metadata rides in part 1; photos batch
+// out. All parts are BUILT first (one at a time, so peak memory stays small),
+// then delivered together through the iOS share sheet — one email, one Mail Drop.
 async function _runPartsExport(items, setLabel) {
   const batches = [];
   for (let i = 0; i < items.photos.length; i += PARTS_BATCH) {
@@ -6192,24 +6194,10 @@ async function _runPartsExport(items, setLabel) {
   const totalParts = Math.max(1, batches.length);
   const partName = (n) => items.folderName + '--part-' + n + '-of-' + totalParts + '.zip';
   const signature = _partsExportSignature(items);
-  let startIndex = _readPartsProgress(signature, totalParts);
-
-  if (startIndex >= totalParts) {
-    _clearPartsProgress();
-    project.lastExportedAt = Date.now();
-    save();
-    closeSheets();
-    toast('All ' + totalParts + ' export files are saved');
-    return;
-  }
 
   exportPanel.open();
-  exportPanel.msg(startIndex
-    ? 'Continuing with part ' + (startIndex + 1) + ' of ' + totalParts + '…'
-    : 'Exporting ' + items.photos.length + ' photos in ' + totalParts + ' files…');
-
-  // The export sheet must not remain underneath iOS Quick Look / Mail. Keep
-  // only this progress panel visible so the next action is clear on return.
+  exportPanel.msg('Building ' + totalParts + ' files from ' + items.photos.length + ' photos…');
+  // The export sheet must not remain underneath iOS Quick Look / Mail.
   closeSheets();
 
   const buildPart = async (idx) => {
@@ -6221,62 +6209,99 @@ async function _runPartsExport(items, setLabel) {
       root.file('README.txt', PARTS_README);
     }
     await _addPhotosToZip(root, batches[idx] || [], (n, t) => {
-      const line = 'Part ' + partNum + ' of ' + totalParts + ' — photo ' + n + ' of ' + t + '…';
+      const line = 'Building part ' + partNum + ' of ' + totalParts + ' — photo ' + n + ' of ' + t + '…';
       setLabel(line); exportPanel.msg(line);
     });
     exportPanel.msg('Writing part ' + partNum + ' of ' + totalParts + '…');
     setLabel('Writing part ' + partNum + '…');
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    // iOS opens ZIPs in Quick Look and may suspend or reload this page. Record
-    // the next part before opening the file so a return to Export resumes there.
-    _writePartsProgress(signature, totalParts, idx + 1);
-    return _downloadBlob(blob, partName(partNum));
+    return zip.generateAsync({ type: 'blob', compression: 'STORE' });
   };
 
-  for (let i = startIndex; i < totalParts; i++) {
-    let ok = false;
-    // Build + download, with retry on failure.
+  // ---- Stage 1: build every part, holding only finished Blobs (disk-backed). ----
+  const parts = [];
+  for (let i = 0; i < totalParts; i++) {
     for (;;) {
       try {
-        ok = await buildPart(i);
+        parts.push({ name: partName(i + 1), blob: await buildPart(i) });
       } catch (err) {
         console.error(err);
         exportPanel.msg('Part ' + (i + 1) + ' failed: ' + (err && err.message ? err.message : String(err)));
         const choice = await exportPanel.ask([
           { label: 'Retry part ' + (i + 1), value: 'retry' },
-          { label: 'Stop — keep parts already saved', value: 'stop' }
+          { label: 'Stop export', value: 'stop' }
         ]);
         if (choice === 'retry') continue;
         exportPanel.close();
-        toast('Export stopped — parts already saved are fine');
+        toast('Export stopped');
         return;
       }
       break;
     }
-
-    if (i < totalParts - 1) {
-      // iOS only reliably allows one download for each real tap. Automatic
-      // chaining after Quick Look / Mail returns is silently blocked, even
-      // though a.click() reports success. Wait for one explicit tap per part;
-      // the persisted nextIndex also makes this resumable after a reload.
-      exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' is ready. Return here after saving or sending it.');
-      const choice = await exportPanel.ask([
-        { label: 'Continue to part ' + (i + 2) + ' of ' + totalParts, value: 'go' },
-        { label: 'Stop here — resume later', value: 'stop' }
-      ]);
-      if (choice !== 'go') {
-        exportPanel.close();
-        toast('Export paused — tap Export later to continue with part ' + (i + 2));
-        return;
-      }
-    }
   }
 
-  project.lastExportedAt = Date.now();
-  save();
-  _clearPartsProgress();
-  exportPanel.msg('Done — ' + totalParts + ' files saved. Put all ' + totalParts +
-    ' in one folder on your computer and unzip them there.');
+  // ---- Stage 2: deliver. Share sheet first, sequential downloads as fallback. ----
+  const finish = () => {
+    project.lastExportedAt = Date.now();
+    save();
+    _clearPartsProgress();
+  };
+
+  const shareAll = async () => {
+    const files = parts.map(p => new File([p.blob], p.name, { type: 'application/zip' }));
+    if (!navigator.canShare || !navigator.canShare({ files })) return 'unsupported';
+    try {
+      await navigator.share({ files, title: items.folderName });
+      return 'shared';
+    } catch (err) {
+      if (err && err.name === 'AbortError') return 'cancelled';
+      console.error(err);
+      return 'failed';
+    }
+  };
+
+  const downloadAll = async () => {
+    for (let i = 0; i < parts.length; i++) {
+      _writePartsProgress(signature, totalParts, i + 1);
+      _downloadBlob(parts[i].blob, parts[i].name);
+      if (i < parts.length - 1) {
+        exportPanel.msg('Part ' + (i + 1) + ' of ' + totalParts + ' saved. Return here to continue.');
+        const choice = await exportPanel.ask([
+          { label: 'Continue to part ' + (i + 2) + ' of ' + totalParts, value: 'go' },
+          { label: 'Stop here', value: 'stop' }
+        ]);
+        if (choice !== 'go') {
+          exportPanel.close();
+          toast('Export paused — parts already saved are fine');
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  for (;;) {
+    exportPanel.msg(totalParts + ' files ready — ' + items.folderName + '. Send them all in one email (Mail Drop handles the size), or save them one at a time.');
+    const choice = await exportPanel.ask([
+      { label: 'Send / Save all ' + totalParts + ' files', value: 'share' },
+      { label: 'Download one by one', value: 'download' }
+    ]);
+
+    if (choice === 'share') {
+      exportPanel.msg('Opening share sheet…');
+      const res = await shareAll();
+      if (res === 'shared') break;
+      if (res === 'cancelled') continue;
+      exportPanel.msg('Sharing all files at once is not available here — saving them one at a time instead.');
+      if (!(await downloadAll())) return;
+      break;
+    }
+
+    if (!(await downloadAll())) return;
+    break;
+  }
+
+  finish();
+  exportPanel.msg('Done — all ' + totalParts + ' files sent. On your computer, put them in one folder and unzip them there.');
   await exportPanel.ask([{ label: 'Done', value: 'ok' }]);
   exportPanel.close();
   closeSheets();
