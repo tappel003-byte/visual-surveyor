@@ -6206,9 +6206,9 @@ async function exportProjectZip() {
   setLabel('Bundling…');
   try {
     const items = await collectExportItems();
-    const total = items.photos.length;
+    const totalBytes = await _totalPhotoBytes(items.photos);
 
-    if (total > PARTS_THRESHOLD) {
+    if (totalBytes > PART_SIZE_TARGET) {
       await _runPartsExport(items, setLabel);
     } else {
       const zip = new JSZip();
