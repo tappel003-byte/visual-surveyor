@@ -6236,10 +6236,11 @@ async function exportProjectZip() {
 // out. All parts are BUILT first (one at a time, so peak memory stays small),
 // then delivered together through the iOS share sheet — one email, one Mail Drop.
 async function _runPartsExport(items, setLabel) {
-  const batches = [];
-  for (let i = 0; i < items.photos.length; i += PARTS_BATCH) {
-    batches.push(items.photos.slice(i, i + PARTS_BATCH));
-  }
+  exportPanel.open();
+  exportPanel.msg('Measuring ' + items.photos.length + ' photos…');
+  const batches = await _sizeBatches(items.photos, (n, t) => {
+    exportPanel.msg('Measuring photos… ' + n + ' of ' + t);
+  });
   const totalParts = Math.max(1, batches.length);
   const partName = (n) => items.folderName + '--part-' + n + '-of-' + totalParts + '.zip';
   const signature = _partsExportSignature(items);
