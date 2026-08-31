@@ -6139,6 +6139,24 @@ const PARTS_README =
   'unzip them all there. Each part contains the same top-level folder, so the\n' +
   'original structure (photos, quick-capture, CSVs, plan, PDF) is rebuilt exactly.\n';
 
+// Cloud transfer: parts upload to Lovable Cloud storage, one link downloads all.
+const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
+const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
+
+async function _uploadPart(jobId, part) {
+  const res = await fetch(PGG_SUPA_URL + '/storage/v1/object/exports/' + jobId + '/' + encodeURIComponent(part.name), {
+    method: 'POST',
+    headers: {
+      'apikey': PGG_SUPA_KEY,
+      'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+      'Content-Type': 'application/zip',
+      'x-upsert': 'true'
+    },
+    body: part.blob
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()).slice(0, 200));
+}
+
 
 async function exportProjectZip() {
   if (!project) return;
