@@ -891,7 +891,7 @@
     </button>
     <div class="sheet-sub" id="exportResumeNote" style="display:none;margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
     <div class="sheet-sub" style="margin-top:8px;line-height:1.4;font-size:12px">
-      Big jobs (over 100 photos) download as numbered parts — save every part into the same folder and unzip them there.
+      Big jobs (over ~45MB of photos) download as numbered parts — save every part into the same folder and unzip them there.
     </div>
 
     <div class="sheet-sub" style="margin-top:14px;line-height:1.5">
@@ -5888,10 +5888,49 @@ async function composeMapImage(format) {
 // ---------- Export engine ----------
 // Photos are never all held in memory at once: collectExportItems() returns a
 // *manifest* (ids + filenames), and the writer streams each photo in one at a
-// time as a Blob. Jobs over PARTS_THRESHOLD photos download as numbered parts.
-const PARTS_THRESHOLD = 100;   // photos; above this the export auto-splits
-const PARTS_BATCH = 100;        // photos per part
+// time as a Blob. Splitting is SIZE-based, not photo-count-based: jobs whose
+// photos total more than PART_SIZE_TARGET bytes download as numbered parts.
+const PART_SIZE_TARGET = 45 * 1024 * 1024;  // ~45MB of photo bytes per part
 const PARTS_PROGRESS_KEY = 'pgg_parts_export_progress_v1';
+
+// Estimated decoded byte size of one export photo (base64 length * 3/4).
+// Reads the IDB string once; callers must not hold the result.
+async function _photoByteSize(entry) {
+  try {
+    if (isDataUrl(entry)) return Math.round(entry.length * 0.75);
+    if (isPhotoId(entry)) {
+      const d = await idbGet(entry);
+      return d ? Math.round(d.length * 0.75) : 0;
+    }
+  } catch (e) { console.warn('size probe failed', e); }
+  return 0;
+}
+
+// Total estimated photo bytes for a manifest (used to decide single vs parts).
+async function _totalPhotoBytes(photos) {
+  let sum = 0;
+  for (const p of photos) sum += await _photoByteSize(p.entry);
+  return sum;
+}
+
+// Group the photo manifest into batches of ~PART_SIZE_TARGET bytes each.
+// One oversized photo gets its own part rather than being dropped.
+async function _sizeBatches(photos, onProgress) {
+  const batches = [];
+  let current = [], currentBytes = 0;
+  for (let i = 0; i < photos.length; i++) {
+    const item = photos[i];
+    const sz = await _photoByteSize(item.entry);
+    if (onProgress) onProgress(i + 1, photos.length);
+    if (current.length && currentBytes + sz > PART_SIZE_TARGET) {
+      batches.push(current); current = []; currentBytes = 0;
+    }
+    current.push(item); currentBytes += sz;
+    if (i % 10 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
 
 function _partsExportSignature(items) {
   // Do not include updatedAt: ordinary edits/autosaves must not make a paused
@@ -6167,9 +6206,9 @@ async function exportProjectZip() {
   setLabel('Bundling…');
   try {
     const items = await collectExportItems();
-    const total = items.photos.length;
+    const totalBytes = await _totalPhotoBytes(items.photos);
 
-    if (total > PARTS_THRESHOLD) {
+    if (totalBytes > PART_SIZE_TARGET) {
       await _runPartsExport(items, setLabel);
     } else {
       const zip = new JSZip();
@@ -6197,10 +6236,11 @@ async function exportProjectZip() {
 // out. All parts are BUILT first (one at a time, so peak memory stays small),
 // then delivered together through the iOS share sheet — one email, one Mail Drop.
 async function _runPartsExport(items, setLabel) {
-  const batches = [];
-  for (let i = 0; i < items.photos.length; i += PARTS_BATCH) {
-    batches.push(items.photos.slice(i, i + PARTS_BATCH));
-  }
+  exportPanel.open();
+  exportPanel.msg('Measuring ' + items.photos.length + ' photos…');
+  const batches = await _sizeBatches(items.photos, (n, t) => {
+    exportPanel.msg('Measuring photos… ' + n + ' of ' + t);
+  });
   const totalParts = Math.max(1, batches.length);
   const partName = (n) => items.folderName + '--part-' + n + '-of-' + totalParts + '.zip';
   const signature = _partsExportSignature(items);
