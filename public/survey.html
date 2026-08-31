@@ -6289,12 +6289,81 @@ async function _runPartsExport(items, setLabel) {
     return true;
   };
 
+  // Upload each part to cloud storage, then show ONE link to download them all.
+  const uploadAll = async () => {
+    if (!navigator.onLine) {
+      exportPanel.msg('No internet connection — uploading needs a connection. Use one of the other options, or try again when you are online.');
+      await exportPanel.ask([{ label: 'OK', value: 'ok' }]);
+      return false;
+    }
+    const jobId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
+    for (let i = 0; i < parts.length; i++) {
+      for (;;) {
+        exportPanel.msg('Uploading part ' + (i + 1) + ' of ' + totalParts + '…');
+        try {
+          await _uploadPart(jobId, parts[i]);
+          break;
+        } catch (err) {
+          console.error(err);
+          exportPanel.msg('Upload failed on part ' + (i + 1) + ': ' + (err && err.message ? err.message : String(err)));
+          const c = await exportPanel.ask([
+            { label: 'Retry upload', value: 'retry' },
+            { label: 'Choose another way', value: 'back' }
+          ]);
+          if (c === 'retry') continue;
+          return false;
+        }
+      }
+    }
+    const link = window.location.origin + '/get?job=' + encodeURIComponent(jobId);
+    exportPanel.msg('All ' + totalParts + ' parts uploaded. Open this link on your computer to download everything:');
+    await new Promise(resolve => {
+      const act = exportPanel.actEl;
+      if (!act) return resolve();
+      act.innerHTML = '';
+      const box = document.createElement('input');
+      box.readOnly = true;
+      box.value = link;
+      box.style.cssText = 'width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px;margin-bottom:8px;background:var(--bg,#fff);color:var(--ink,#222)';
+      box.onclick = () => { box.select(); };
+      act.appendChild(box);
+      const mk = (label, primary, fn) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.style.cssText = primary
+          ? 'width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px;margin-bottom:8px'
+          : 'width:100%;padding:10px;border:0;border-radius:10px;background:transparent;color:var(--muted,#666);font-size:13px;margin-bottom:4px';
+        b.onclick = fn;
+        act.appendChild(b);
+        return b;
+      };
+      const copyBtn = mk('Copy link', true, async () => {
+        try { await navigator.clipboard.writeText(link); copyBtn.textContent = 'Copied!'; }
+        catch (e) { box.select(); document.execCommand && document.execCommand('copy'); copyBtn.textContent = 'Copied!'; }
+        setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 1500);
+      });
+      if (navigator.share) {
+        mk('Share link (text / email)', false, () => {
+          navigator.share({ text: link, title: items.folderName }).catch(() => {});
+        });
+      }
+      mk('Done', false, () => { act.innerHTML = ''; resolve(); });
+    });
+    return true;
+  };
+
   for (;;) {
-    exportPanel.msg(totalParts + ' files ready — ' + items.folderName + '. Send them all in one email (Mail Drop handles the size), or save them one at a time.');
+    exportPanel.msg(totalParts + ' files ready — ' + items.folderName + '. Upload them and get ONE link to download on your computer, send them in one email (Mail Drop), or save them one at a time.');
     const choice = await exportPanel.ask([
+      { label: '☁️ Upload & get one link', value: 'upload' },
       { label: 'Send / Save all ' + totalParts + ' files', value: 'share' },
       { label: 'Download one by one', value: 'download' }
     ]);
+
+    if (choice === 'upload') {
+      if (await uploadAll()) break;
+      continue;
+    }
 
     if (choice === 'share') {
       exportPanel.msg('Opening share sheet…');
