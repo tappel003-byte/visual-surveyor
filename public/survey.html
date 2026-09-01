@@ -6391,6 +6391,44 @@ async function _uploadRawAssets(items, onStatus) {
   _writeRawProgress(signature, jobId, done);
   if (failure) throw failure;
 
+// Shows the one-link handoff with copy/share actions.
+function _showTransferLink(link, title) {
+  exportPanel.msg('Upload complete. Open this link on your computer to download everything as one ZIP:');
+  return new Promise(resolve => {
+    const act = exportPanel.actEl;
+    if (!act) return resolve();
+    act.innerHTML = '';
+    const box = document.createElement('input');
+    box.readOnly = true;
+    box.value = link;
+    box.style.cssText = 'width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px;margin-bottom:8px;background:var(--bg,#fff);color:var(--ink,#222)';
+    box.onclick = () => { box.select(); };
+    act.appendChild(box);
+    const mk = (label, primary, fn) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = primary
+        ? 'width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px;margin-bottom:8px'
+        : 'width:100%;padding:10px;border:0;border-radius:10px;background:transparent;color:var(--muted,#666);font-size:13px;margin-bottom:4px';
+      b.onclick = fn;
+      act.appendChild(b);
+      return b;
+    };
+    const copyBtn = mk('Copy link', true, async () => {
+      try { await navigator.clipboard.writeText(link); copyBtn.textContent = 'Copied!'; }
+      catch (e) { box.select(); document.execCommand && document.execCommand('copy'); copyBtn.textContent = 'Copied!'; }
+      setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 1500);
+    });
+    if (navigator.share) {
+      mk('Share link (text / email)', false, () => {
+        navigator.share({ text: link, title: title || 'PGG export' }).catch(() => {});
+      });
+    }
+    mk('Done', false, () => { act.innerHTML = ''; resolve(); });
+  });
+}
+
+
   const manifest = {
     version: 1,
     folderName: items.folderName,
