@@ -5893,9 +5893,11 @@ async function composeMapImage(format) {
 // ---------- Export engine ----------
 // Photos are never all held in memory at once: collectExportItems() returns a
 // *manifest* (ids + filenames), and the writer streams each photo in one at a
-// time as a Blob. Splitting is SIZE-based, not photo-count-based: jobs whose
-// photos total more than PART_SIZE_TARGET bytes download as numbered parts.
-const PART_SIZE_TARGET = 45 * 1024 * 1024;  // ~45MB of photo bytes per part
+// time as a Blob. PART_SIZE_TARGET is the size of each part *when* a job has to
+// be split. SINGLE_ZIP_LIMIT is the much higher bar at which we stop trying to
+// build one ZIP on the phone at all.
+const PART_SIZE_TARGET = 45 * 1024 * 1024;   // ~45MB of photo bytes per part
+const SINGLE_ZIP_LIMIT = 400 * 1024 * 1024;  // build one ZIP up to ~400MB of photos
 const PARTS_PROGRESS_KEY = 'pgg_parts_export_progress_v1';
 
 // Estimated decoded byte size of one export photo (base64 length * 3/4).
