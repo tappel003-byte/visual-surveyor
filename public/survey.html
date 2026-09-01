@@ -6254,6 +6254,154 @@ async function _uploadPart(jobId, part, onProgress) {
   throw lastError || new Error('Upload failed after automatic retries');
 }
 
+// ================= Raw asset transfer =================
+// The phone never builds a ZIP for large jobs. Every photo and metadata file is
+// uploaded on its own (one blob in memory at a time, 3 in flight), then the
+// computer assembles a single ZIP from the manifest. No parts, no giant blobs.
+const RAW_PROGRESS_KEY = 'pgg_raw_upload_v1';
+
+function _readRawProgress(signature) {
+  try {
+    const s = JSON.parse(localStorage.getItem(RAW_PROGRESS_KEY) || 'null');
+    if (s && s.signature === signature && s.jobId) return { jobId: s.jobId, done: new Set(s.done || []) };
+  } catch (e) { console.warn('raw progress read failed', e); }
+  return null;
+}
+function _writeRawProgress(signature, jobId, doneSet) {
+  try { localStorage.setItem(RAW_PROGRESS_KEY, JSON.stringify({ signature, jobId, done: Array.from(doneSet) })); }
+  catch (e) { console.warn('raw progress write failed', e); }
+}
+function _clearRawProgress() {
+  try { localStorage.removeItem(RAW_PROGRESS_KEY); } catch (e) { /* ignore */ }
+}
+
+// Resolves ONE export photo to a Blob (with annotations composited if present).
+async function _photoBlobForExport(item) {
+  if (item.strokes && item.strokes.length) {
+    const d = await resolvePhoto(item.entry);
+    if (!d) return null;
+    let out = d;
+    try { out = await compositePhotoWithStrokes(d, item.strokes); }
+    catch (e) { console.warn('annotate composite failed', e); }
+    return dataUrlToBlob(out);
+  }
+  return resolvePhotoBlob(item.entry);
+}
+
+// Single-object upload with automatic retry/backoff. Objects are small
+// (one photo), so a plain request is both faster and safer than chunking.
+async function _uploadRawObject(jobId, path, blob, contentType) {
+  const url = PGG_SUPA_URL + '/storage/v1/object/exports/' +
+    (jobId + '/' + path).split('/').map(encodeURIComponent).join('/');
+  let lastError = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90 * 1000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': PGG_SUPA_KEY,
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+          'Content-Type': contentType || 'application/octet-stream',
+          'x-upsert': 'true'
+        },
+        body: blob,
+        signal: controller.signal
+      });
+      if (res.ok) return;
+      const detail = (await res.text()).slice(0, 160);
+      lastError = new Error('HTTP ' + res.status + ': ' + detail);
+      if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (error && /^HTTP 4(0[0-79]|1[0-9]|2[0-8])/.test(error.message || '')) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise(r => setTimeout(r, Math.min(10000, 800 * Math.pow(2, attempt))));
+  }
+  throw lastError || new Error('Upload failed after automatic retries');
+}
+
+// Uploads every metadata file + photo individually. Resumable: completed paths
+// are remembered, so a retry picks up exactly where it stopped.
+async function _uploadRawAssets(items, onStatus) {
+  const signature = _partsExportSignature(items);
+  const prior = _readRawProgress(signature);
+  const jobId = (prior && prior.jobId) ||
+    (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
+  const done = (prior && prior.done) || new Set();
+
+  const tasks = [];
+  for (const f of items.meta) {
+    tasks.push({
+      path: 'files/' + f.name,
+      type: (f.data && f.data.type) || (/\.csv$/i.test(f.name) ? 'text/csv' : /\.pdf$/i.test(f.name) ? 'application/pdf' : 'text/plain'),
+      get: async () => (typeof f.data === 'string' ? new Blob([f.data], { type: 'text/plain' }) : f.data)
+    });
+  }
+  for (const item of items.photos) {
+    tasks.push({
+      photo: item,
+      get: async () => _photoBlobForExport(item)
+    });
+  }
+
+  const total = tasks.length;
+  let completed = 0, next = 0, failure = null;
+  const manifestFiles = [];
+  const tick = () => onStatus && onStatus(completed, total);
+
+  const worker = async () => {
+    for (;;) {
+      if (failure) return;
+      const i = next++;
+      if (i >= total) return;
+      const t = tasks[i];
+      let blob = null;
+      try {
+        blob = await t.get();
+      } catch (e) {
+        failure = new Error('Could not read "' + (t.photo ? t.photo.base : t.path) + '": ' + (e && e.message ? e.message : e));
+        return;
+      }
+      if (!blob) { completed++; tick(); continue; }
+      const path = t.path || ('files/' + t.photo.folder + '/' + t.photo.base + '.' + mimeExt(blob.type));
+      const type = t.type || blob.type || 'image/jpeg';
+      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, '') });
+      if (done.has(path)) { completed++; blob = null; tick(); continue; }
+      try {
+        await _uploadRawObject(jobId, path, blob, type);
+      } catch (e) {
+        failure = e;
+        return;
+      } finally {
+        blob = null;
+      }
+      done.add(path);
+      completed++;
+      if (completed % 5 === 0) _writeRawProgress(signature, jobId, done);
+      tick();
+      await new Promise(r => setTimeout(r, 0));
+    }
+  };
+
+  await Promise.all([worker(), worker(), worker()]);
+  _writeRawProgress(signature, jobId, done);
+  if (failure) throw failure;
+
+  const manifest = {
+    version: 1,
+    folderName: items.folderName,
+    createdAt: new Date().toISOString(),
+    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath))
+  };
+  await _uploadRawObject(jobId, 'manifest.json', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'application/json');
+  _clearRawProgress();
+  return jobId;
+}
+
 
 async function exportProjectZip() {
   if (!project) return;
