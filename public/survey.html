@@ -6586,14 +6586,25 @@ async function exportProjectZip() {
         const zip = new JSZip();
         const root = zip.folder(items.folderName);
         _addMetaToZip(root, items.meta);
+        // Timing: reading photos out of IndexedDB vs JSZip writing the archive.
+        const t0 = performance.now();
         await _addPhotosToZip(root, items.photos, (n, t) => setLabel('Photo ' + n + ' of ' + t + '…'));
+        const t1 = performance.now();
         setLabel('Writing ZIP…');
         const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        const t2 = performance.now();
+        const readS = ((t1 - t0) / 1000).toFixed(1), writeS = ((t2 - t1) / 1000).toFixed(1);
+        window._pggLastExportTiming = {
+          photos: items.photos.length, bytes: totalBytes,
+          readSeconds: +readS, writeSeconds: +writeS, totalSeconds: +(((t2 - t0) / 1000).toFixed(1))
+        };
+        console.log('[export timing]', window._pggLastExportTiming);
         _downloadBlob(blob, items.folderName + '.zip');
         project.lastExportedAt = Date.now();
         save();
-        toast('Project ZIP downloaded');
+        toast('ZIP downloaded — ' + items.photos.length + ' photos · read ' + readS + 's · write ' + writeS + 's');
         closeSheets();
+
       } catch (zipErr) {
         // Ran out of room building one file — fall back to the split/cloud paths
         // instead of dead-ending on an alert.
