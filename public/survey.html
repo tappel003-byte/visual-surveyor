@@ -5879,10 +5879,16 @@ async function _refreshExportSizeNote() {
   const mb = bytes / 1024 / 1024;
   const near = bytes > SINGLE_ZIP_LIMIT * 0.8;
   const over = bytes > SINGLE_ZIP_LIMIT;
-  sizeNote.textContent = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
+  let txt = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
     (over ? ' — too big for one ZIP, so it will be split or uploaded.'
           : near ? ' — close to the one-ZIP limit.'
                  : ' — fits in one ZIP.');
+  try {
+    const t = JSON.parse(localStorage.getItem('pgg_last_export_timing') || 'null');
+    if (t) txt += '\nLast ZIP: ' + t.photos + ' photos · ' + t.mb + ' MB · read ' + t.readSeconds + 's · write ' + t.writeSeconds + 's.';
+  } catch (e) {}
+  sizeNote.style.whiteSpace = 'pre-line';
+  sizeNote.textContent = txt;
   if (cloudBtn) cloudBtn.style.display = '';
   if (cloudNote) {
     cloudNote.textContent = (near || over)
@@ -6648,15 +6654,21 @@ async function exportProjectZip() {
         const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
         const t2 = performance.now();
         const readS = ((t1 - t0) / 1000).toFixed(1), writeS = ((t2 - t1) / 1000).toFixed(1);
-        window._pggLastExportTiming = {
-          photos: items.photos.length, bytes: totalBytes,
-          readSeconds: +readS, writeSeconds: +writeS, totalSeconds: +(((t2 - t0) / 1000).toFixed(1))
+        const timing = {
+          photos: items.photos.length, mb: totalMb,
+          readSeconds: +readS, writeSeconds: +writeS, totalSeconds: +(((t2 - t0) / 1000).toFixed(1)),
+          at: Date.now()
         };
-        console.log('[export timing]', window._pggLastExportTiming);
+        window._pggLastExportTiming = timing;
+        console.log('[export timing]', timing);
+        try { localStorage.setItem('pgg_last_export_timing', JSON.stringify(timing)); } catch (e) {}
         _downloadBlob(blob, items.folderName + '.zip');
         project.lastExportedAt = Date.now();
         save();
-        toast('ZIP downloaded — ' + items.photos.length + ' photos · read ' + readS + 's · write ' + writeS + 's');
+        // A toast disappears behind iOS's download overlay — make the numbers
+        // stick around so they can actually be read.
+        alert('ZIP downloaded\n\n' + items.photos.length + ' photos · ' + totalMb + ' MB\n' +
+              'Reading photos: ' + readS + 's\nWriting ZIP: ' + writeS + 's\nTotal: ' + timing.totalSeconds + 's');
         closeSheets();
 
       } catch (zipErr) {
