@@ -6330,6 +6330,41 @@ async function _uploadRawObject(jobId, path, blob, contentType) {
   throw lastError || new Error('Upload failed after automatic retries');
 }
 
+// Asks the bucket which files already exist for this job so a resume never
+// re-sends anything that made it up on an earlier attempt.
+async function _listUploadedPaths(jobId) {
+  const found = new Set();
+  const url = PGG_SUPA_URL + '/storage/v1/object/list/exports';
+  for (const prefix of [jobId + '/files', jobId]) {
+    let offset = 0;
+    for (;;) {
+      let page = null;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'apikey': PGG_SUPA_KEY,
+            'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ prefix: prefix, limit: 1000, offset: offset })
+        });
+        if (!res.ok) return found;
+        page = await res.json();
+      } catch (e) { console.warn('remote list failed', e); return found; }
+      if (!Array.isArray(page) || !page.length) break;
+      for (const row of page) {
+        if (!row || !row.name || !row.id) continue;
+        const rel = (prefix + '/' + row.name).slice(jobId.length + 1);
+        found.add(rel);
+      }
+      if (page.length < 1000) break;
+      offset += page.length;
+    }
+  }
+  return found;
+}
+
 // Uploads every metadata file + photo individually. Resumable: completed paths
 // are remembered, so a retry picks up exactly where it stopped.
 async function _uploadRawAssets(items, onStatus) {
@@ -6338,6 +6373,14 @@ async function _uploadRawAssets(items, onStatus) {
   const jobId = (prior && prior.jobId) ||
     (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
   const done = (prior && prior.done) || new Set();
+  if (prior) {
+    try {
+      const remote = await _listUploadedPaths(jobId);
+      remote.forEach(p => done.add(p));
+      if (remote.size) _writeRawProgress(signature, jobId, done);
+    } catch (e) { console.warn('resume check failed', e); }
+  }
+
 
   const tasks = [];
   for (const f of items.meta) {
@@ -6387,7 +6430,7 @@ async function _uploadRawAssets(items, onStatus) {
       }
       done.add(path);
       completed++;
-      if (completed % 5 === 0) _writeRawProgress(signature, jobId, done);
+      _writeRawProgress(signature, jobId, done);
       tick();
       await new Promise(r => setTimeout(r, 0));
     }
@@ -6554,7 +6597,7 @@ async function _runPartsExport(items, setLabel, opts) {
         exportPanel.msg('Upload paused: ' + (err && err.message ? err.message : String(err)) + '\nFiles already uploaded are safe — resuming continues from there.');
         const c = await exportPanel.ask([
           { label: 'Resume upload', value: 'retry' },
-          { label: 'Choose another way', value: 'back' }
+          { label: 'Save to this phone in parts', value: 'back' }
         ]);
         if (c === 'retry') continue;
         break;
