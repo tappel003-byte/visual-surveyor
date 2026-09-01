@@ -123,6 +123,7 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
 <style>
   :root{
     --bg:#f7f5f2; --paper:#ffffff; --ink:#1f1b16; --muted:#6b6357;
@@ -6182,18 +6183,75 @@ const PARTS_README =
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
 const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 
-async function _uploadPart(jobId, part) {
-  const res = await fetch(PGG_SUPA_URL + '/storage/v1/object/exports/' + jobId + '/' + encodeURIComponent(part.name), {
-    method: 'POST',
-    headers: {
-      'apikey': PGG_SUPA_KEY,
-      'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-      'Content-Type': 'application/zip',
-      'x-upsert': 'true'
-    },
-    body: part.blob
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()).slice(0, 200));
+async function _uploadPart(jobId, part, onProgress) {
+  const objectName = jobId + '/' + part.name;
+  // Large mobile uploads use TUS: 6 MB chunks, automatic backoff, and resume
+  // from the last accepted chunk after a Wi-Fi/cellular interruption.
+  if (window.tus && window.tus.Upload) {
+    return new Promise(async (resolve, reject) => {
+      const upload = new window.tus.Upload(part.blob, {
+        endpoint: PGG_SUPA_URL + '/storage/v1/upload/resumable',
+        retryDelays: [0, 1500, 3000, 5000, 10000, 20000],
+        chunkSize: 6 * 1024 * 1024,
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        headers: {
+          'apikey': PGG_SUPA_KEY,
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+          'x-upsert': 'true'
+        },
+        metadata: {
+          bucketName: 'exports',
+          objectName,
+          contentType: 'application/zip',
+          cacheControl: '3600'
+        },
+        onProgress(bytesUploaded, bytesTotal) {
+          if (onProgress) onProgress(bytesUploaded, bytesTotal);
+        },
+        onSuccess() { resolve(); },
+        onError(error) { reject(error); }
+      });
+      try {
+        const previous = await upload.findPreviousUploads();
+        if (previous && previous.length) upload.resumeFromPreviousUpload(previous[0]);
+        upload.start();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // CDN unavailable fallback. Retry transient failures without requiring a tap.
+  let lastError = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4 * 60 * 1000);
+    try {
+      const res = await fetch(PGG_SUPA_URL + '/storage/v1/object/exports/' + jobId + '/' + encodeURIComponent(part.name), {
+        method: 'POST',
+        headers: {
+          'apikey': PGG_SUPA_KEY,
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+          'Content-Type': 'application/zip',
+          'x-upsert': 'true'
+        },
+        body: part.blob,
+        signal: controller.signal
+      });
+      if (res.ok) return;
+      const detail = (await res.text()).slice(0, 200);
+      lastError = new Error('HTTP ' + res.status + ': ' + detail);
+      if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (error && error.message && error.message.startsWith('HTTP 4') && !error.message.startsWith('HTTP 408') && !error.message.startsWith('HTTP 429')) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise(r => setTimeout(r, Math.min(12000, 1200 * Math.pow(2, attempt))));
+  }
+  throw lastError || new Error('Upload failed after automatic retries');
 }
 
 
@@ -6267,34 +6325,14 @@ async function _runPartsExport(items, setLabel) {
     return zip.generateAsync({ type: 'blob', compression: 'STORE' });
   };
 
-  // ---- Stage 1: build every part, holding only finished Blobs (disk-backed). ----
-  const parts = [];
-  for (let i = 0; i < totalParts; i++) {
-    for (;;) {
-      try {
-        parts.push({ name: partName(i + 1), blob: await buildPart(i) });
-      } catch (err) {
-        console.error(err);
-        exportPanel.msg('Part ' + (i + 1) + ' failed: ' + (err && err.message ? err.message : String(err)));
-        const choice = await exportPanel.ask([
-          { label: 'Retry part ' + (i + 1), value: 'retry' },
-          { label: 'Stop export', value: 'stop' }
-        ]);
-        if (choice === 'retry') continue;
-        exportPanel.close();
-        toast('Export stopped');
-        return;
-      }
-      break;
-    }
-  }
-
-  // ---- Stage 2: deliver. Share sheet first, sequential downloads as fallback. ----
+  // ---- Delivery helpers. Cloud transfer builds/uploads/releases one part at a time. ----
   const finish = () => {
     project.lastExportedAt = Date.now();
     save();
     _clearPartsProgress();
   };
+
+  let parts = [];
 
   const shareAll = async () => {
     const files = parts.map(p => new File([p.blob], p.name, { type: 'application/zip' }));
@@ -6329,7 +6367,7 @@ async function _runPartsExport(items, setLabel) {
     return true;
   };
 
-  // Upload each part to cloud storage, then show ONE link to download them all.
+  // Build, upload, then release each part. The phone never holds all 25+ ZIPs.
   const uploadAll = async () => {
     if (!navigator.onLine) {
       exportPanel.msg('No internet connection — uploading needs a connection. Use one of the other options, or try again when you are online.');
@@ -6337,17 +6375,27 @@ async function _runPartsExport(items, setLabel) {
       return false;
     }
     const jobId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < totalParts; i++) {
+      let part = null;
       for (;;) {
-        exportPanel.msg('Uploading part ' + (i + 1) + ' of ' + totalParts + '…');
         try {
-          await _uploadPart(jobId, parts[i]);
+          if (!part) {
+            exportPanel.msg('Building part ' + (i + 1) + ' of ' + totalParts + '…');
+            part = { name: partName(i + 1), blob: await buildPart(i) };
+          }
+          exportPanel.msg('Uploading part ' + (i + 1) + ' of ' + totalParts + ' — 0%');
+          await _uploadPart(jobId, part, (sent, total) => {
+            const pct = total ? Math.min(100, Math.round(sent / total * 100)) : 0;
+            exportPanel.msg('Uploading part ' + (i + 1) + ' of ' + totalParts + ' — ' + pct + '%');
+          });
+          part = null;
+          await new Promise(r => setTimeout(r, 250));
           break;
         } catch (err) {
           console.error(err);
-          exportPanel.msg('Upload failed on part ' + (i + 1) + ': ' + (err && err.message ? err.message : String(err)));
+          exportPanel.msg('Part ' + (i + 1) + ' paused after automatic retries. Completed parts are safe.');
           const c = await exportPanel.ask([
-            { label: 'Retry upload', value: 'retry' },
+            { label: 'Resume part ' + (i + 1), value: 'retry' },
             { label: 'Choose another way', value: 'back' }
           ]);
           if (c === 'retry') continue;
@@ -6392,18 +6440,47 @@ async function _runPartsExport(items, setLabel) {
     return true;
   };
 
+  exportPanel.msg(totalParts + ' parts needed. Cloud transfer is the reliable option for a job this large because it uploads one part at a time.');
+  const firstChoice = await exportPanel.ask([
+    { label: '☁️ Upload & get one link', value: 'upload' },
+    { label: 'Use phone sharing instead', value: 'other' }
+  ]);
+  if (firstChoice === 'upload' && await uploadAll()) {
+    finish();
+    exportPanel.close();
+    closeSheets();
+    return;
+  }
+
+  // File sharing/download needs all finished blobs, so build them only when chosen.
+  exportPanel.msg('Building ' + totalParts + ' files for phone sharing…');
+  parts = [];
+  for (let i = 0; i < totalParts; i++) {
+    for (;;) {
+      try {
+        parts.push({ name: partName(i + 1), blob: await buildPart(i) });
+      } catch (err) {
+        console.error(err);
+        exportPanel.msg('Part ' + (i + 1) + ' failed: ' + (err && err.message ? err.message : String(err)));
+        const choice = await exportPanel.ask([
+          { label: 'Retry part ' + (i + 1), value: 'retry' },
+          { label: 'Stop export', value: 'stop' }
+        ]);
+        if (choice === 'retry') continue;
+        exportPanel.close();
+        toast('Export stopped');
+        return;
+      }
+      break;
+    }
+  }
+
   for (;;) {
-    exportPanel.msg(totalParts + ' files ready — ' + items.folderName + '. Upload them and get ONE link to download on your computer, send them in one email (Mail Drop), or save them one at a time.');
+    exportPanel.msg(totalParts + ' files ready — send them through the phone share sheet or save them one at a time.');
     const choice = await exportPanel.ask([
-      { label: '☁️ Upload & get one link', value: 'upload' },
       { label: 'Send / Save all ' + totalParts + ' files', value: 'share' },
       { label: 'Download one by one', value: 'download' }
     ]);
-
-    if (choice === 'upload') {
-      if (await uploadAll()) break;
-      continue;
-    }
 
     if (choice === 'share') {
       exportPanel.msg('Opening share sheet…');
