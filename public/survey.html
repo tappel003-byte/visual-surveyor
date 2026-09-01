@@ -5879,10 +5879,16 @@ async function _refreshExportSizeNote() {
   const mb = bytes / 1024 / 1024;
   const near = bytes > SINGLE_ZIP_LIMIT * 0.8;
   const over = bytes > SINGLE_ZIP_LIMIT;
-  sizeNote.textContent = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
+  let txt = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
     (over ? ' — too big for one ZIP, so it will be split or uploaded.'
           : near ? ' — close to the one-ZIP limit.'
                  : ' — fits in one ZIP.');
+  try {
+    const t = JSON.parse(localStorage.getItem('pgg_last_export_timing') || 'null');
+    if (t) txt += '\nLast ZIP: ' + t.photos + ' photos · ' + t.mb + ' MB · read ' + t.readSeconds + 's · write ' + t.writeSeconds + 's.';
+  } catch (e) {}
+  sizeNote.style.whiteSpace = 'pre-line';
+  sizeNote.textContent = txt;
   if (cloudBtn) cloudBtn.style.display = '';
   if (cloudNote) {
     cloudNote.textContent = (near || over)
