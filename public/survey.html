@@ -6431,7 +6431,7 @@ async function _uploadRawAssets(items, onStatus) {
       }
       done.add(path);
       completed++;
-      if (completed % 5 === 0) _writeRawProgress(signature, jobId, done);
+      _writeRawProgress(signature, jobId, done);
       tick();
       await new Promise(r => setTimeout(r, 0));
     }
