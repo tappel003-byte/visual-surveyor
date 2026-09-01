@@ -6648,15 +6648,21 @@ async function exportProjectZip() {
         const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
         const t2 = performance.now();
         const readS = ((t1 - t0) / 1000).toFixed(1), writeS = ((t2 - t1) / 1000).toFixed(1);
-        window._pggLastExportTiming = {
-          photos: items.photos.length, bytes: totalBytes,
-          readSeconds: +readS, writeSeconds: +writeS, totalSeconds: +(((t2 - t0) / 1000).toFixed(1))
+        const timing = {
+          photos: items.photos.length, mb: totalMb,
+          readSeconds: +readS, writeSeconds: +writeS, totalSeconds: +(((t2 - t0) / 1000).toFixed(1)),
+          at: Date.now()
         };
-        console.log('[export timing]', window._pggLastExportTiming);
+        window._pggLastExportTiming = timing;
+        console.log('[export timing]', timing);
+        try { localStorage.setItem('pgg_last_export_timing', JSON.stringify(timing)); } catch (e) {}
         _downloadBlob(blob, items.folderName + '.zip');
         project.lastExportedAt = Date.now();
         save();
-        toast('ZIP downloaded — ' + items.photos.length + ' photos · read ' + readS + 's · write ' + writeS + 's');
+        // A toast disappears behind iOS's download overlay — make the numbers
+        // stick around so they can actually be read.
+        alert('ZIP downloaded\n\n' + items.photos.length + ' photos · ' + totalMb + ' MB\n' +
+              'Reading photos: ' + readS + 's\nWriting ZIP: ' + writeS + 's\nTotal: ' + timing.totalSeconds + 's');
         closeSheets();
 
       } catch (zipErr) {
