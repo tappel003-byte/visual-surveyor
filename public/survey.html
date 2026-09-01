@@ -6166,33 +6166,54 @@ async function collectExportItems() {
   return { folderName, meta, photos, isInternal };
 }
 
-// Streams a slice of the photo manifest into a zip root, one photo at a time.
+// Streams a slice of the photo manifest into a zip root. Plain photos are read
+// from IndexedDB a few at a time (the read is I/O-bound, so overlapping them is
+// most of the speed win); annotated photos stay strictly sequential because
+// each one decodes onto a canvas. Peak memory stays flat: every blob is handed
+// to JSZip and released before the next chunk starts.
+const ZIP_READ_CONCURRENCY = 4;
 async function _addPhotosToZip(root, photos, onProgress) {
-  for (let i = 0; i < photos.length; i++) {
-    const item = photos[i];
-    if (onProgress) onProgress(i + 1, photos.length);
-    let blob = null;
-    try {
-      if (item.strokes && item.strokes.length) {
+  let done = 0;
+  const readFail = (item, e) =>
+    new Error('Photo "' + item.base + '" failed to read: ' + (e && e.message ? e.message : e));
+
+  for (let i = 0; i < photos.length; i += ZIP_READ_CONCURRENCY) {
+    const chunk = photos.slice(i, i + ZIP_READ_CONCURRENCY);
+    const blobs = new Map();
+
+    // Overlapping IDB reads.
+    await Promise.all(chunk
+      .filter(it => !(it.strokes && it.strokes.length))
+      .map(async (item) => {
+        try { blobs.set(item, await resolvePhotoBlob(item.entry)); }
+        catch (e) { throw readFail(item, e); }
+      }));
+
+    // Canvas work, one at a time.
+    for (const item of chunk) {
+      if (!(item.strokes && item.strokes.length)) continue;
+      try {
         const d = await resolvePhoto(item.entry);
-        if (!d) continue;
+        if (!d) { blobs.set(item, null); continue; }
         let out = d;
         try { out = await compositePhotoWithStrokes(d, item.strokes); }
         catch (e) { console.warn('annotate composite failed', e); }
-        blob = dataUrlToBlob(out);
-      } else {
-        blob = await resolvePhotoBlob(item.entry);
-      }
-    } catch (e) {
-      throw new Error('Photo "' + item.base + '" failed to read: ' + (e && e.message ? e.message : e));
+        blobs.set(item, dataUrlToBlob(out));
+      } catch (e) { throw readFail(item, e); }
     }
-    if (!blob) continue;
-    const name = item.base + '.' + mimeExt(blob.type);
-    root.folder(item.folder).file(name, blob);
-    blob = null;
-    if (i % 10 === 0) await new Promise(r => setTimeout(r, 0)); // let Safari breathe / GC
+
+    for (const item of chunk) {
+      done++;
+      if (onProgress) onProgress(done, photos.length);
+      const blob = blobs.get(item);
+      if (!blob) continue;
+      root.folder(item.folder).file(item.base + '.' + mimeExt(blob.type), blob);
+    }
+    blobs.clear();
+    await new Promise(r => setTimeout(r, 0)); // let Safari breathe / GC
   }
 }
+
 
 function _addMetaToZip(root, meta) {
   for (const f of meta) root.file(f.name, f.data);
