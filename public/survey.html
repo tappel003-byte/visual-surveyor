@@ -5862,6 +5862,7 @@ async function _refreshExportSizeNote() {
   const proj = project;
   sizeNote.textContent = 'Measuring job size…';
   if (cloudBtn) cloudBtn.style.display = 'none';
+  if (shrinkBtn) shrinkBtn.style.display = 'none';
   let bytes = 0;
   try {
     // Cheap estimate straight off the project — deliberately does NOT call
