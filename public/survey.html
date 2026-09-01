@@ -3046,8 +3046,15 @@ function _shrinkDataUrl(dataUrl, maxDim) {
     img.src = dataUrl;
   });
 }
-async function shrinkPhotos() {
-  closeMenu();
+// Same as shrinkPhotos() but keeps the Export sheet open and re-measures the
+// job size afterward so you can see it drop and then tap Export without leaving.
+async function exportShrinkFromSheet() {
+  await shrinkPhotos(true);
+  _refreshExportSizeNote();
+}
+
+async function shrinkPhotos(keepSheetOpen) {
+  if (!keepSheetOpen) closeMenu();
   if (!project) return;
   const ids = [];
   (project.pins || []).forEach(p => (p.photos || []).forEach(e => { if (isPhotoId(e)) ids.push(e); }));
