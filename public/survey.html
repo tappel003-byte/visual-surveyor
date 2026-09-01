@@ -6391,6 +6391,18 @@ async function _uploadRawAssets(items, onStatus) {
   _writeRawProgress(signature, jobId, done);
   if (failure) throw failure;
 
+  const manifest = {
+    version: 1,
+    folderName: items.folderName,
+    createdAt: new Date().toISOString(),
+    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath))
+  };
+  await _uploadRawObject(jobId, 'manifest.json', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'application/json');
+  _clearRawProgress();
+  return jobId;
+}
+
+
 // Shows the one-link handoff with copy/share actions.
 function _showTransferLink(link, title) {
   exportPanel.msg('Upload complete. Open this link on your computer to download everything as one ZIP:');
@@ -6426,18 +6438,6 @@ function _showTransferLink(link, title) {
     }
     mk('Done', false, () => { act.innerHTML = ''; resolve(); });
   });
-}
-
-
-  const manifest = {
-    version: 1,
-    folderName: items.folderName,
-    createdAt: new Date().toISOString(),
-    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath))
-  };
-  await _uploadRawObject(jobId, 'manifest.json', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'application/json');
-  _clearRawProgress();
-  return jobId;
 }
 
 
