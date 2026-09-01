@@ -5862,14 +5862,19 @@ async function _refreshExportSizeNote() {
   if (cloudBtn) cloudBtn.style.display = 'none';
   let bytes = 0;
   try {
-    const items = await collectExportItems();
-    bytes = await _totalPhotoBytes(items.photos);
+    // Cheap estimate straight off the project — deliberately does NOT call
+    // collectExportItems(), which would render the pin-log PDF just to open a sheet.
+    const entries = [];
+    for (const p of (proj.pins || [])) for (const e of (p.photos || [])) entries.push(e);
+    for (const e of (proj.quickCapture || [])) entries.push(e.id);
+    for (const e of entries) bytes += await _photoByteSize(e);
   } catch (e) {
     console.warn('size readout failed', e);
     sizeNote.textContent = '';
     if (cloudBtn) cloudBtn.style.display = '';
     return;
   }
+
   if (project !== proj) return; // sheet moved on while we measured
   const mb = bytes / 1024 / 1024;
   const near = bytes > SINGLE_ZIP_LIMIT * 0.8;
