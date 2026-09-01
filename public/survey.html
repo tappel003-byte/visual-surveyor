@@ -6443,7 +6443,49 @@ async function exportProjectZip() {
 // then delivered together through the iOS share sheet — one email, one Mail Drop.
 async function _runPartsExport(items, setLabel) {
   exportPanel.open();
+  closeSheets();
+  exportPanel.msg('This job is too big to build on the phone as one file. Cloud transfer sends each photo on its own — nothing large is built here — and gives you one link that downloads everything as a single ZIP on your computer.');
+  const cloudFirst = await exportPanel.ask([
+    { label: '☁️ Upload & get one link', value: 'cloud' },
+    { label: 'Use phone sharing instead', value: 'other' }
+  ]);
+  if (cloudFirst === 'cloud') {
+    for (;;) {
+      if (!navigator.onLine) {
+        exportPanel.msg('No internet connection — uploading needs one.');
+        const c = await exportPanel.ask([{ label: 'Try again', value: 'retry' }, { label: 'Choose another way', value: 'back' }]);
+        if (c === 'retry') continue;
+        break;
+      }
+      try {
+        exportPanel.msg('Uploading…');
+        setLabel('Uploading…');
+        const jobId = await _uploadRawAssets(items, (n, t) => {
+          const line = 'Uploading ' + n + ' of ' + t + ' files…';
+          exportPanel.msg(line); setLabel(line);
+        });
+        project.lastExportedAt = Date.now();
+        save();
+        _clearPartsProgress();
+        await _showTransferLink(window.location.origin + '/get?job=' + encodeURIComponent(jobId), items.folderName);
+        exportPanel.close();
+        closeSheets();
+        return;
+      } catch (err) {
+        console.error(err);
+        exportPanel.msg('Upload paused: ' + (err && err.message ? err.message : String(err)) + '\nFiles already uploaded are safe — resuming continues from there.');
+        const c = await exportPanel.ask([
+          { label: 'Resume upload', value: 'retry' },
+          { label: 'Choose another way', value: 'back' }
+        ]);
+        if (c === 'retry') continue;
+        break;
+      }
+    }
+  }
+
   exportPanel.msg('Measuring ' + items.photos.length + ' photos…');
+
   const batches = await _sizeBatches(items.photos, (n, t) => {
     exportPanel.msg('Measuring photos… ' + n + ' of ' + t);
   });
