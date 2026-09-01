@@ -7297,8 +7297,11 @@ async function qcCaptureFrame(){
   _qc.busy = true;
   try {
     const v = document.getElementById('qcVideo');
-    const w = v.videoWidth, h = v.videoHeight;
-    if (!w || !h) return;
+    const vw = v.videoWidth, vh = v.videoHeight;
+    if (!vw || !vh) return;
+    // Downscale to the same cap as pin photos so burst jobs stay export-sized.
+    const scale = Math.min(1, MAX_PHOTO_DIM / Math.max(vw, vh));
+    const w = Math.round(vw * scale), h = Math.round(vh * scale);
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(v, 0, 0, w, h);
