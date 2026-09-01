@@ -7305,7 +7305,7 @@ async function qcCaptureFrame(){
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(v, 0, 0, w, h);
-    const dataUrl = c.toDataURL('image/jpeg', 0.88);
+    const dataUrl = c.toDataURL('image/jpeg', 0.85);
     const id = await storePhotoDataUrl(dataUrl);
     project.quickCapture = project.quickCapture || [];
     project.quickCapture.push({
