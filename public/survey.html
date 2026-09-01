@@ -755,6 +755,7 @@
     <button onclick="confirmQuickCapture()">📸 Quick Capture</button>
     <div class="sep"></div>
     <button onclick="clearDrawings()">✎ Clear all drawings</button>
+    <button onclick="shrinkPhotos()">🗜 Shrink photos</button>
     
     
 
@@ -3017,6 +3018,60 @@ function resizeImage(dataUrl, maxDim, cb) {
   img.onerror = () => toast('Could not load that image.');
   img.src = dataUrl;
 }
+
+// ---------- One-time cleanup: recompress oversized photos in place ----------
+function _dataUrlBytes(d) {
+  const i = (d || '').indexOf(',');
+  if (i < 0) return 0;
+  return Math.round((d.length - i - 1) * 0.75);
+}
+function _shrinkDataUrl(dataUrl, maxDim) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      if (!iw || !ih) return resolve(null);
+      const scale = Math.min(1, maxDim / Math.max(iw, ih));
+      if (scale >= 1) return resolve(null); // already within cap
+      const w = Math.round(iw * scale), h = Math.round(ih * scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+async function shrinkPhotos() {
+  closeMenu();
+  if (!project) return;
+  const ids = [];
+  (project.pins || []).forEach(p => (p.photos || []).forEach(e => { if (isPhotoId(e)) ids.push(e); }));
+  (project.quickCapture || []).forEach(e => { if (isPhotoId(e.id)) ids.push(e.id); });
+  if (!ids.length) { toast('No stored photos to shrink.'); return; }
+  if (!confirm('Recompress ' + ids.length + ' photo' + (ids.length === 1 ? '' : 's') + ' to report size? Photos stay in place — this only reduces file size.')) return;
+  let before = 0, after = 0, changed = 0;
+  for (let i = 0; i < ids.length; i++) {
+    toast('Shrinking ' + (i + 1) + ' / ' + ids.length);
+    let d = null;
+    try { d = await idbGet(ids[i]); } catch { d = null; }
+    if (!d) continue;
+    const b = _dataUrlBytes(d);
+    before += b;
+    const smaller = await _shrinkDataUrl(d, MAX_PHOTO_DIM);
+    if (smaller && _dataUrlBytes(smaller) < b) {
+      try { await idbPut(ids[i], smaller); after += _dataUrlBytes(smaller); changed++; }
+      catch { after += b; }
+    } else {
+      after += b;
+    }
+  }
+  const mb = n => (n / (1024 * 1024)).toFixed(1) + ' MB';
+  if (!changed) toast('Already optimized — ' + mb(before) + ' total.');
+  else toast('Shrunk ' + changed + ' photo' + (changed === 1 ? '' : 's') + ': ' + mb(before) + ' → ' + mb(after));
+}
+
 
 // Add a uniform white gutter around a plan image. `pct` is fraction per side (0.05 = 5%).
 function addPlanGutter(dataUrl, w, h, pct, cb) {
@@ -7297,12 +7352,15 @@ async function qcCaptureFrame(){
   _qc.busy = true;
   try {
     const v = document.getElementById('qcVideo');
-    const w = v.videoWidth, h = v.videoHeight;
-    if (!w || !h) return;
+    const vw = v.videoWidth, vh = v.videoHeight;
+    if (!vw || !vh) return;
+    // Downscale to the same cap as pin photos so burst jobs stay export-sized.
+    const scale = Math.min(1, MAX_PHOTO_DIM / Math.max(vw, vh));
+    const w = Math.round(vw * scale), h = Math.round(vh * scale);
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(v, 0, 0, w, h);
-    const dataUrl = c.toDataURL('image/jpeg', 0.88);
+    const dataUrl = c.toDataURL('image/jpeg', 0.85);
     const id = await storePhotoDataUrl(dataUrl);
     project.quickCapture = project.quickCapture || [];
     project.quickCapture.push({
