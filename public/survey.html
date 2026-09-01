@@ -6458,20 +6458,29 @@ async function exportProjectZip() {
     const items = await collectExportItems();
     const totalBytes = await _totalPhotoBytes(items.photos);
 
-    if (totalBytes > PART_SIZE_TARGET) {
+    if (totalBytes > SINGLE_ZIP_LIMIT) {
       await _runPartsExport(items, setLabel);
     } else {
-      const zip = new JSZip();
-      const root = zip.folder(items.folderName);
-      _addMetaToZip(root, items.meta);
-      await _addPhotosToZip(root, items.photos, (n, t) => setLabel('Photo ' + n + ' of ' + t + '…'));
-      setLabel('Writing ZIP…');
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-      _downloadBlob(blob, items.folderName + '.zip');
-      project.lastExportedAt = Date.now();
-      save();
-      toast('Project ZIP downloaded');
-      closeSheets();
+      try {
+        const zip = new JSZip();
+        const root = zip.folder(items.folderName);
+        _addMetaToZip(root, items.meta);
+        await _addPhotosToZip(root, items.photos, (n, t) => setLabel('Photo ' + n + ' of ' + t + '…'));
+        setLabel('Writing ZIP…');
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        _downloadBlob(blob, items.folderName + '.zip');
+        project.lastExportedAt = Date.now();
+        save();
+        toast('Project ZIP downloaded');
+        closeSheets();
+      } catch (zipErr) {
+        // Ran out of room building one file — fall back to the split/cloud paths
+        // instead of dead-ending on an alert.
+        console.error(zipErr);
+        await _runPartsExport(items, setLabel, {
+          intro: 'This phone ran out of room building one ZIP. You can send each photo to the cloud and get one link, or download the job as numbered parts.'
+        });
+      }
     }
   } catch (err) {
     console.error(err);
@@ -6482,18 +6491,43 @@ async function exportProjectZip() {
   }
 }
 
+// Manual cloud transfer: available on every job, whatever the size.
+async function exportProjectCloud() {
+  if (!project) return;
+  const btn = document.getElementById('cloudUploadBtn');
+  const orig = btn ? btn.innerHTML : '';
+  const setLabel = (t) => { if (btn) btn.textContent = t; };
+  if (btn) { btn.disabled = true; }
+  setLabel('Preparing…');
+  try {
+    const items = await collectExportItems();
+    await _runPartsExport(items, setLabel, { forceCloud: true });
+  } catch (err) {
+    console.error(err);
+    exportPanel.close();
+    alert('Could not start the upload.\n\n' + (err && err.message ? err.message : String(err)));
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig || '☁️ Upload &amp; get one link'; }
+  }
+}
+
 // Big jobs: never build one giant file. Metadata rides in part 1; photos batch
 // out. All parts are BUILT first (one at a time, so peak memory stays small),
 // then delivered together through the iOS share sheet — one email, one Mail Drop.
-async function _runPartsExport(items, setLabel) {
+async function _runPartsExport(items, setLabel, opts) {
+  opts = opts || {};
   exportPanel.open();
   closeSheets();
-  exportPanel.msg('This job is too big to build on the phone as one file. Cloud transfer sends each photo on its own — nothing large is built here — and gives you one link that downloads everything as a single ZIP on your computer.');
-  const cloudFirst = await exportPanel.ask([
-    { label: '☁️ Upload & get one link', value: 'cloud' },
-    { label: 'Use phone sharing instead', value: 'other' }
-  ]);
+  let cloudFirst = 'cloud';
+  if (!opts.forceCloud) {
+    exportPanel.msg(opts.intro || 'This job is too big to build on the phone as one file. Cloud transfer sends each photo on its own — nothing large is built here — and gives you one link that downloads everything as a single ZIP on your computer.');
+    cloudFirst = await exportPanel.ask([
+      { label: '☁️ Upload & get one link', value: 'cloud' },
+      { label: 'Use phone sharing instead', value: 'other' }
+    ]);
+  }
   if (cloudFirst === 'cloud') {
+
     for (;;) {
       if (!navigator.onLine) {
         exportPanel.msg('No internet connection — uploading needs one.');
