@@ -5847,7 +5847,45 @@ function openExport() {
   if (resumeNote) resumeNote.style.display = 'none';
   document.getElementById('scrim').classList.add('active');
   document.getElementById('exportSheet').classList.add('open');
+  _refreshExportSizeNote();
 }
+
+// Shows how big this job is before you tap, and only frames cloud upload as
+// relevant once the job is actually near or over the one-ZIP limit.
+async function _refreshExportSizeNote() {
+  const sizeNote = document.getElementById('exportSizeNote');
+  const cloudBtn = document.getElementById('cloudUploadBtn');
+  const cloudNote = document.getElementById('exportCloudNote');
+  if (!sizeNote) return;
+  const proj = project;
+  sizeNote.textContent = 'Measuring job size…';
+  if (cloudBtn) cloudBtn.style.display = 'none';
+  let bytes = 0;
+  try {
+    const items = await collectExportItems();
+    bytes = await _totalPhotoBytes(items.photos);
+  } catch (e) {
+    console.warn('size readout failed', e);
+    sizeNote.textContent = '';
+    if (cloudBtn) cloudBtn.style.display = '';
+    return;
+  }
+  if (project !== proj) return; // sheet moved on while we measured
+  const mb = bytes / 1024 / 1024;
+  const near = bytes > SINGLE_ZIP_LIMIT * 0.8;
+  const over = bytes > SINGLE_ZIP_LIMIT;
+  sizeNote.textContent = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
+    (over ? ' — too big for one ZIP, so it will be split or uploaded.'
+          : near ? ' — close to the one-ZIP limit.'
+                 : ' — fits in one ZIP.');
+  if (cloudBtn) cloudBtn.style.display = '';
+  if (cloudNote) {
+    cloudNote.textContent = (near || over)
+      ? 'This job is at the edge of what one ZIP can hold on the phone. Cloud upload is the reliable path here — it needs signal, but it resumes if it drops.'
+      : 'The ZIP saves straight to this device and works with no signal — from there it moves to a computer by cable, AirDrop, or a synced folder. Cloud upload is for jobs too big to fit in one ZIP, or for sending a job to someone else remotely.';
+  }
+}
+
 
 // Render the plan + overlays to a canvas at high res for PDF embedding
 async function composeMapImage(format) {
