@@ -1,49 +1,42 @@
-# One ZIP, one wait — build it in the cloud, not on the phone
+# Keep the offline ZIP. Make it faster. Don't touch quality yet.
 
-You're right about the destination: one file, one wait, done. The disagreement is only about *where* the ZIP gets built.
+The previous draft was wrong in the ways you named. Conceding them plainly:
 
-## Why the phone can't build the one big ZIP
+- It didn't touch the five minutes — it reused `_uploadRawAssets` unchanged and added a server step after it.
+- It made the upload heavier by raising photos to 2560/0.92.
+- It traded away offline export for exactly the large jobs that are the pain point.
 
-That's the original failure. To hand Safari a single 400MB ZIP, the phone has to hold the whole thing in memory at once — every photo decoded, plus the assembled archive. That's exactly what was crashing on the 230-photo job, and it's why the export got split into 25 parts in the first place. Making the ZIP bigger makes that worse, not better.
+Scrapped. Here's what the code actually says and what follows from it.
 
-Uploading 250 individual files looks like more work but is actually less: each file is a few hundred KB, memory never spikes, and if the connection drops it resumes at file 187 instead of starting a 400MB upload over.
+## What's already true in the live code
 
-## The fix: the phone uploads files, the server hands back one ZIP
+- `SINGLE_ZIP_LIMIT` is 400 MB (line ~5955). Any job under that already builds **one ZIP, on device, fully offline**. No parts, no upload, no signal.
+- The 250-file cloud upload only happens two ways: the job exceeds 400 MB, or you tap the cloud button yourself.
+- Pin photos are capped at 1600 px / 0.85; Quick Capture now matches after the shrink change.
 
-Same end result you described, with the heavy lifting moved somewhere that can take it.
+So the one-file offline export you want already exists. The five-minute wait came from being pushed into the upload path — which means the real question isn't "how do we make uploading better," it's "why did this job leave the offline path at all."
 
-```text
-phone                          cloud
------                          -----
-upload photo 1..250   ------>  stored as raw files
-upload manifest.json  ------>
-                               [server streams them into one ZIP]
-open link             <------  job-1234.zip   (one file, one download)
-```
+## The work
 
-From your side it's still: tap Export, wait, get one ZIP. You just get it from a link instead of out of the phone's memory.
+1. **Find out where the time actually goes.** Instrument the on-device ZIP build to report elapsed time for the two stages that can be slow: reading photos out of IndexedDB, and JSZip writing the archive. Right now `_addPhotosToZip` reads photos strictly one at a time and yields to Safari every 10 (line ~6168). That's conservative and may be leaving real speed on the table — but I'm not going to claim it's the bottleneck before measuring it.
 
-## What gets built
+2. **Speed up the read loop based on what step 1 shows.** Most likely change: read photos from IndexedDB a few at a time instead of strictly one-by-one, keeping the periodic yield so Safari doesn't get starved. Memory stays flat because each blob is handed to JSZip and released immediately. If measurement says the time is in `generateAsync` instead, this step changes shape — that's why it comes second.
 
-1. **Packaging endpoint** — a server route that reads a job's uploaded files and streams them back as a single ZIP. Streaming means the server never holds the whole archive in memory either, so there's no size ceiling to run into later.
-2. **The pin log PDF and CSV** get generated into that same ZIP, so the downloaded file is identical in structure to today's on-device export.
-3. **Export screen becomes one path** — upload with a progress count ("photo 143 of 250"), then a "Download ZIP" link when it finishes. The multi-part export path gets removed; it exists only to work around the memory limit we're no longer hitting.
-4. **Resume stays** — if the app is backgrounded mid-upload, reopening picks up where it left off. Already how the raw upload works; this keeps it.
+3. **Make the offline path harder to fall out of.** Show the job's photo total in the export sheet before you tap, so a job creeping toward the 400 MB line is visible rather than a surprise. If a job does exceed it, the prompt says why in plain terms and offers the cloud path as a choice, not a default.
 
-## Photo quality goes back up
+4. **Cloud upload stays exactly as built.** It's tested, it resumes, and it's the right tool when a job genuinely is too big. It just stops being anything you land in by accident.
 
-The reason quality got cut to 1600px was to make on-device ZIPs fit. Once the ZIP isn't built on-device, that constraint is gone. Photos get stored at a defensible evidence resolution instead — 2560px long edge at high quality, so a hairline crack survives being zoomed into.
+## Photo quality — separate decision, deliberately not bundled here
 
-Quick Capture bursts stay at the lower setting, since those are context shots, not evidence.
+Raising resolution costs export time and job size, and you're right that folding it into a plan about speed is working against itself. It's a real question for an engineering firm and it deserves its own answer with numbers: how many photos a typical job holds, what 2048 or 2560 does to the total, and how much headroom is left under 400 MB. I'd rather bring you that measurement and let you decide than slip a 2.5x pixel increase into a performance fix.
+
+## What this does not change
+
+Offline export, on-device ZIP, ZIP contents, pins, photos, CSV, the pin-log PDF, the `/get` download page, or the resume logic.
 
 ## Technical notes
 
-- New server route under `src/routes/api/` that lists a job's objects in storage and streams a ZIP response (sequential ZIP writing, no full buffering — safe inside the Worker runtime).
-- Reuses the existing `_uploadRawAssets` / tus upload path in `public/survey.html`; no change to how files get up there.
-- `buildPinLogPdf()` output and `pins.csv` are uploaded alongside the photos so the server just packs what it's given.
-- Removes the multipart ZIP part-splitting code and its resume bookkeeping.
-- `MAX_PHOTO_DIM` raised to 2560 with quality 0.92 for pin photos; Quick Capture keeps 1600 / 0.85.
-
-## What this costs you
-
-Export now needs signal to complete. Today's on-device ZIP works with no connection at all. If you're in a basement with no bars, the upload waits until you have service. Worth naming before we commit to it — if fully-offline export has to keep working, we keep the on-device ZIP as a fallback for small jobs and this becomes the path for big ones.
+- `public/survey.html` only; no backend, no `src/routes/get.tsx` change.
+- Timing instrumentation around `_addPhotosToZip` and `zip.generateAsync` in `exportProjectZip()` (line ~6548), reported into the existing export panel so it's visible on device rather than only in a desktop console.
+- Any concurrency change stays inside `_addPhotosToZip`; the annotated-photo branch (`compositePhotoWithStrokes`) stays sequential since it decodes to a canvas.
+- Export sheet gains a size readout from the existing `_totalPhotoBytes()` helper.
