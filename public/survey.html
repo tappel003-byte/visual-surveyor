@@ -892,6 +892,7 @@
       📦 Finish &amp; Export (ZIP)
     </button>
     <div class="sheet-sub" id="exportSizeNote" style="margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
+    <button class="ghost" id="exportShrinkBtn" onclick="exportShrinkFromSheet()" style="display:none;margin-top:6px">🗜 Shrink photos to fit one ZIP</button>
     <button class="ghost" id="cloudUploadBtn" onclick="exportProjectCloud()" style="margin-top:8px">
       ☁️ Upload &amp; get one link
     </button>
@@ -3045,8 +3046,15 @@ function _shrinkDataUrl(dataUrl, maxDim) {
     img.src = dataUrl;
   });
 }
-async function shrinkPhotos() {
-  closeMenu();
+// Same as shrinkPhotos() but keeps the Export sheet open and re-measures the
+// job size afterward so you can see it drop and then tap Export without leaving.
+async function exportShrinkFromSheet() {
+  await shrinkPhotos(true);
+  _refreshExportSizeNote();
+}
+
+async function shrinkPhotos(keepSheetOpen) {
+  if (!keepSheetOpen) closeMenu();
   if (!project) return;
   const ids = [];
   (project.pins || []).forEach(p => (p.photos || []).forEach(e => { if (isPhotoId(e)) ids.push(e); }));
@@ -5856,10 +5864,12 @@ async function _refreshExportSizeNote() {
   const sizeNote = document.getElementById('exportSizeNote');
   const cloudBtn = document.getElementById('cloudUploadBtn');
   const cloudNote = document.getElementById('exportCloudNote');
+  const shrinkBtn = document.getElementById('exportShrinkBtn');
   if (!sizeNote) return;
   const proj = project;
   sizeNote.textContent = 'Measuring job size…';
   if (cloudBtn) cloudBtn.style.display = 'none';
+  if (shrinkBtn) shrinkBtn.style.display = 'none';
   let bytes = 0;
   try {
     // Cheap estimate straight off the project — deliberately does NOT call
@@ -5890,6 +5900,7 @@ async function _refreshExportSizeNote() {
   sizeNote.style.whiteSpace = 'pre-line';
   sizeNote.textContent = txt;
   if (cloudBtn) cloudBtn.style.display = '';
+  if (shrinkBtn) shrinkBtn.style.display = (near || over) ? '' : 'none';
   if (cloudNote) {
     cloudNote.textContent = (near || over)
       ? 'This job is at the edge of what one ZIP can hold on the phone. Cloud upload is the reliable path here — it needs signal, but it resumes if it drops.'
