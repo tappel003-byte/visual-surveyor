@@ -6621,9 +6621,20 @@ async function exportProjectZip() {
   try {
     const items = await collectExportItems();
     const totalBytes = await _totalPhotoBytes(items.photos);
+    const totalMb = Math.round(totalBytes / 1024 / 1024);
 
     if (totalBytes > SINGLE_ZIP_LIMIT) {
-      await _runPartsExport(items, setLabel);
+      // Say the actual numbers: guessing why a job is "too big" wastes a trip.
+      let biggest = 0;
+      for (const p of items.photos) biggest = Math.max(biggest, await _photoByteSize(p.entry));
+      const avgMb = (totalBytes / items.photos.length / 1024 / 1024).toFixed(1);
+      console.log('[export size]', { photos: items.photos.length, totalMb, avgMb, biggestMb: (biggest / 1024 / 1024).toFixed(1) });
+      await _runPartsExport(items, setLabel, {
+        intro: items.photos.length + ' photos · about ' + totalMb + ' MB (avg ' + avgMb + ' MB each) — over the ' +
+          Math.round(SINGLE_ZIP_LIMIT / 1024 / 1024) + ' MB one-ZIP limit for this phone.\n\n' +
+          'If that average looks high, these are full-resolution photos taken before the size fix — run 🗜 Shrink photos from the ⋯ menu and the job will fit in one ZIP.'
+      });
+
     } else {
       try {
         const zip = new JSZip();
