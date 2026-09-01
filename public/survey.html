@@ -6374,7 +6374,6 @@ async function _uploadRawAssets(items, onStatus) {
     (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
   const done = (prior && prior.done) || new Set();
   if (prior) {
-    onStatus && onStatus(0, 0);
     try {
       const remote = await _listUploadedPaths(jobId);
       remote.forEach(p => done.add(p));
@@ -6598,7 +6597,7 @@ async function _runPartsExport(items, setLabel, opts) {
         exportPanel.msg('Upload paused: ' + (err && err.message ? err.message : String(err)) + '\nFiles already uploaded are safe — resuming continues from there.');
         const c = await exportPanel.ask([
           { label: 'Resume upload', value: 'retry' },
-          { label: 'Choose another way', value: 'back' }
+          { label: 'Save to this phone in parts', value: 'back' }
         ]);
         if (c === 'retry') continue;
         break;
