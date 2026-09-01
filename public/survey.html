@@ -5893,6 +5893,7 @@ async function _refreshExportSizeNote() {
   sizeNote.style.whiteSpace = 'pre-line';
   sizeNote.textContent = txt;
   if (cloudBtn) cloudBtn.style.display = '';
+  if (shrinkBtn) shrinkBtn.style.display = (near || over) ? '' : 'none';
   if (cloudNote) {
     cloudNote.textContent = (near || over)
       ? 'This job is at the edge of what one ZIP can hold on the phone. Cloud upload is the reliable path here — it needs signal, but it resumes if it drops.'
