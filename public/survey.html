@@ -5155,7 +5155,7 @@ function compositePhotoWithStrokes(dataUrl, strokes) {
       const ctx = c.getContext('2d');
       ctx.drawImage(img, 0, 0);
       drawStrokesOnCtx(ctx, strokes, c.width, c.height);
-      resolve(c.toDataURL('image/jpeg', 0.9));
+      resolve(c.toDataURL('image/jpeg', 0.95));
     };
     img.onerror = reject;
     img.src = dataUrl;
