@@ -1006,7 +1006,7 @@
 // =====================================================================
 const STORAGE_KEY = 'pgg_survey_v1';
 const MAX_IMG_DIM = 2400;        // floor plan downscale cap
-const MAX_PHOTO_DIM = 1600;      // photo downscale cap
+const MAX_PHOTO_DIM = 3000;       // photo downscale cap
 const UNDO_LIMIT = 30;
 
 // ---- State ----
@@ -3016,7 +3016,7 @@ function resizeImage(dataUrl, maxDim, cb) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(img, 0, 0, w, h);
-    cb(c.toDataURL('image/jpeg', 0.85), w, h);
+    cb(c.toDataURL('image/jpeg', 0.95), w, h);
   };
   img.onerror = () => toast('Could not load that image.');
   img.src = dataUrl;
@@ -3040,7 +3040,7 @@ function _shrinkDataUrl(dataUrl, maxDim) {
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(c.toDataURL('image/jpeg', 0.85));
+      resolve(c.toDataURL('image/jpeg', 0.95));
     };
     img.onerror = () => resolve(null);
     img.src = dataUrl;
@@ -7471,7 +7471,7 @@ async function qcCaptureFrame(){
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(v, 0, 0, w, h);
-    const dataUrl = c.toDataURL('image/jpeg', 0.85);
+    const dataUrl = c.toDataURL('image/jpeg', 0.95);
     const id = await storePhotoDataUrl(dataUrl);
     project.quickCapture = project.quickCapture || [];
     project.quickCapture.push({
