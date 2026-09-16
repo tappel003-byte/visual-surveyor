@@ -6154,7 +6154,8 @@ async function collectExportItems() {
   // Survey date = earliest photo taken (photo ids are 'ph_' + base36 of Date.now()),
   // falling back to quick-capture timestamps, then the day the job was created.
   const surveyDate = _surveyDate(project);
-  const photoDir = [sanitizeFilename(project.jobNumber || ''), _ymd(surveyDate)].filter(Boolean).join('_');
+  const jobNum = (project.jobNumber || '').trim();
+  const photoDir = (jobNum ? sanitizeFilename(jobNum) + '_' : '') + _ymd(surveyDate);
 
   // misc/map.png
   meta.push({ name: 'misc/map.png', data: await composeMapImage('png-blob') });
