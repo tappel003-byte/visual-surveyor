@@ -645,6 +645,12 @@
   </div>
   <div class="setup-body">
     <div class="field">
+      <label>Job number</label>
+      <input type="text" id="fJobNum" placeholder="4–6 digit job number (optional)" autocomplete="off"
+        inputmode="numeric" maxlength="12" style="width:100%" />
+    </div>
+
+    <div class="field">
       <label>Address</label>
       <input type="text" id="fAddress" placeholder="Street, City, State — or tap a button below" autocomplete="off"
         style="width:100%" oninput="validateSetup()" />
@@ -1655,6 +1661,7 @@ function startNewProject(mode) {
   _setupRoomsToken++;
   document.getElementById('setupTitle').textContent = mode === 'internal' ? 'New PGG Photo Documentation' : 'New External Survey';
   document.getElementById('fAddress').value = '';
+  document.getElementById('fJobNum').value = '';
   document.getElementById('planPreview').style.display = 'none';
   document.getElementById('planDropZone').style.display = '';
   document.getElementById('fPlanFile').value = '';
@@ -3231,6 +3238,7 @@ async function editSetup() {
 
   document.getElementById('setupTitle').textContent = 'Edit Setup';
   document.getElementById('fAddress').value = project.address || '';
+  document.getElementById('fJobNum').value = project.jobNumber || '';
 
   const fd = document.getElementById('fFrontDoor');
   if (fd) fd.value = project.frontDoorFacing || 'S';
@@ -3278,6 +3286,7 @@ function setupBack() {
 
 async function commitNewProject() {
   const addr = document.getElementById('fAddress').value.trim();
+  const jobNum = document.getElementById('fJobNum').value.trim();
   let startNum = 1;
   if (!addr || !_setupPlan) return;
 
