@@ -1,82 +1,17 @@
-# Rename export folders and lock in photo dates
+# Job Number field on New Survey
 
-## New export layout
+## What you'll see
 
-Today a job unzips like this:
+On the New Survey setup screen, a new **Job number** field appears **above the Address field** (where your red circle was). A single-line text box with room for a typical 4–6 digit job number.
 
-```text
-1234-main-st/
-  photos/            photo-01.jpg ...
-  quick-capture/
-  pinlog.pdf
-  map.png
-  plan.png
-  pins.csv
-```
+- Label: "Job number"
+- Optional — surveys can still be started without one
+- Saved with the project and shown alongside the address in the jobs list so you can tell jobs apart at a glance
 
-After this change:
+## Scope
 
-```text
-1234-main-st/
-  2026-08-26_damage-locations/
-    photo-01.jpg ...
-    quick-01.jpg ...
-    quick-capture.csv
-    picture-map.pdf
-  MISC 2026-08-26/
-    map.png
-    plan.png
-    pins.csv
-```
+- New field on the setup screen only, plus storing it on the project and showing it in the jobs list.
+- Existing projects simply have no job number until you add one.
+- Nothing else changes: address, floor plan, front door, photo numbering, export — all untouched.
 
-- `pinlog.pdf` is renamed **picture-map.pdf** and moves inside the photos folder.
-- The photos folder is renamed **`<date>_damage-locations`**.
-- Quick Capture photos and their CSV live in that same photos folder, alongside
-  the numbered photos — not in MISC.
-- The map, plan and pins CSV move into **`MISC <date>`**.
-- Date format is `YYYY-MM-DD` so folders sort correctly; easy to change later.
-- The date used is the date of the earliest photo in the job (the day the survey
-  was walked). If a job has no photos, the date the job was created is used.
-
-
-## Locking in the picture date
-
-Yes, this is doable. Every photo already carries the moment it was taken inside
-its internal ID, so we can stamp that exact date onto each file as it is written
-into the ZIP. When you unzip on the computer, the file's date shows the day the
-picture was taken instead of the day you downloaded it.
-
-Caveats worth knowing up front:
-
-- This sets the file's **modified date**, which is what Finder/Explorer show and
-  sort by. macOS and Windows both set "date created" to the moment of unzipping;
-  no ZIP can control that.
-- Photos imported from the camera roll rather than taken in the app get stamped
-  with the time they were added to the job, which is the closest thing the app
-  knows.
-- Quick-capture photos already store a real timestamp and use that.
-- The PDF, CSV, map and plan files get the survey date too, so the whole export
-  reads as one day's work.
-
-## Technical notes
-
-All in `public/survey.html`:
-
-- `collectExportItems()` gains a survey-date helper (earliest photo timestamp,
-  decoded from the `ph_<base36>` id, falling back to `quickCapture[].ts`, then
-  `project.createdAt`). It returns `{ ..., dates }` alongside the manifest.
-- Pin photos and quick-capture photos both get `folder` set to the dated damage
-  folder, keeping their `photo-NN` / `quick-NN` names; `quick-capture.csv` moves
-  there too. `map.png`, `plan.png` and `pins.csv` get the `MISC <date>/` prefix;
-  `pinlog.pdf` becomes `<dated folder>/picture-map.pdf`.
-- Each manifest item carries a `date`; `_addPhotosToZip()` and `_addMetaToZip()`
-  pass `{ date }` to `JSZip.file()` so the entry's DOS timestamp is the capture
-  time.
-- The parts export and the cloud manifest reuse the same names automatically,
-  since both already build from `collectExportItems()`.
-- The `/get` download page needs no change — it rebuilds from the manifest's
-  `zipPath` values.
-- Export sheet help text is updated to describe the new folder names.
-
-Nothing changes in pins, capture, photo quality, the PDF layout, CSV columns, or
-the size/parts logic.
+(The export folder-rename idea from earlier is set aside; we can come back to it after this.)
