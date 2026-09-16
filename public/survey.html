@@ -909,20 +909,16 @@
 
 
     <div class="sheet-sub" style="margin-top:14px;line-height:1.5">
-      Final deliverable. One ZIP containing:<br>
-      • <code>plan.png</code> — clean floor plan, no pins or markup<br>
-      • <code>map.png</code> — floor plan with numbered pins<br>
-      • <code>pins.csv</code> — location, type, description, photo numbers, <b>Room</b>, <b>Direction</b> (N/S/E/W relative to front door), X,Y<br>
-      <span style="color:var(--muted);font-size:12px">Cardinal directions are derived from the "Front door faces" setting chosen when the project was created.</span><br>
-      <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total<br></span>
-      • <code>pinlog.pdf</code> — 11×17 plan + pin log table, print-ready
-      <span id="exportQcNote" style="display:none"><br>• <code>quick-capture/</code> — untethered walk-around photos + CSV with timestamp &amp; GPS</span>
+      Final deliverable. One ZIP containing two folders:<br>
+      • <code>&lt;job number&gt;_&lt;survey date&gt;/</code> — every photo as <code>photo-NN.jpg</code>, quick-capture photos + their CSV, and <code>picture map.pdf</code> (11×17 plan + pin log, print-ready)<br>
+      • <code>misc/</code> — <code>plan.png</code> (clean floor plan), <code>map.png</code> (plan with numbered pins), <code>pins.csv</code> (location, type, description, photo numbers, <b>Room</b>, <b>Direction</b>, X,Y)<br>
+      <span style="color:var(--muted);font-size:12px">Survey date is the day the earliest photo was taken. Cardinal directions come from the "Front door faces" setting.</span>
     </div>
     <button class="ghost" style="margin-top:14px;width:100%" onclick="exportProjectPdf()">
       📄 Preview PDF (Plan + Pin Log)
     </button>
     <div class="sheet-sub" style="margin-top:6px">
-      Opens the PDF in a new tab so you can review before saving. Same file is also included as <code>pinlog.pdf</code> inside the ZIP.
+      Opens the PDF in a new tab so you can review before saving. Same file is also included as <code>picture map.pdf</code> inside the ZIP.
     </div>
 
     <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
@@ -5852,9 +5848,7 @@ function openExport() {
   }
   _sheetOpenedAt = performance.now();
   const isInternal = project.mode === 'internal';
-  document.getElementById('exportPhotosNote').style.display = isInternal ? '' : 'none';
   const qcCount = (project.quickCapture || []).length;
-  document.getElementById('exportQcNote').style.display = qcCount ? '' : 'none';
   const extras = (qcCount ? ' + ' + qcCount + ' Quick Capture' : '');
   document.getElementById('exportSub').textContent = (isInternal ? 'Map + pin list + photos' : 'Map + pin list') + extras;
   // Parts are now built in one pass and delivered together, so there is no
@@ -6124,6 +6118,30 @@ function _downloadBlob(blob, filename) {
   return ok;
 }
 
+// Local YYYY-MM-DD so folders sort correctly.
+function _ymd(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+// Day the survey was walked: earliest photo capture time. Photo ids are
+// 'ph_' + base36(Date.now()), so the timestamp is recoverable. Falls back to
+// quick-capture timestamps, then the day the job was created.
+function _surveyDate(proj) {
+  let best = Infinity;
+  const consider = (t) => { if (typeof t === 'number' && isFinite(t) && t > 0 && t < best) best = t; };
+  for (const p of (proj.pins || [])) {
+    for (const entry of (p.photos || [])) {
+      if (!isPhotoId(entry)) continue;
+      const t = parseInt(entry.slice(3), 36);
+      if (!isNaN(t)) consider(t);
+    }
+  }
+  for (const e of (proj.quickCapture || [])) consider(e && e.ts);
+  if (best === Infinity) consider(proj.createdAt);
+  return new Date(best === Infinity ? Date.now() : best);
+}
+
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
 async function collectExportItems() {
   await ensurePlanLoaded(project);
@@ -6133,8 +6151,14 @@ async function collectExportItems() {
   const meta = [];   // { name, data }  (data = Blob or string)
   const photos = []; // { name, entry, strokes }
 
-  // map.png
-  meta.push({ name: 'map.png', data: await composeMapImage('png-blob') });
+  // Survey date = earliest photo taken (photo ids are 'ph_' + base36 of Date.now()),
+  // falling back to quick-capture timestamps, then the day the job was created.
+  const surveyDate = _surveyDate(project);
+  const jobNum = (project.jobNumber || '').trim();
+  const photoDir = (jobNum ? sanitizeFilename(jobNum) + '_' : '') + _ymd(surveyDate);
+
+  // misc/map.png
+  meta.push({ name: 'misc/map.png', data: await composeMapImage('png-blob') });
 
   // plan.png — clean plan, no pins/drawings, native dimensions
   if (isInternal) {
@@ -6149,7 +6173,7 @@ async function collectExportItems() {
       img.onerror = reject;
       img.src = project.plan.dataUrl;
     });
-    meta.push({ name: 'plan.png', data: planBlob });
+    meta.push({ name: 'misc/plan.png', data: planBlob });
   }
 
   // Photo numbering: each pin's num is also its starting photo number.
@@ -6190,28 +6214,28 @@ async function collectExportItems() {
       csvLines.push([p.num, csvField(p.location || ''), csvField(p.category || ''), csvField(desc), csvField(range), extCount, upCount].join(','));
     }
   });
-  meta.push({ name: 'pins.csv', data: csvLines.join('\r\n') });
+  meta.push({ name: 'misc/pins.csv', data: csvLines.join('\r\n') });
 
-  // photos/ manifest — global numbering: photo-{pin.num + offset}
+  // <jobNumber>_<date>/ manifest — global numbering: photo-{pin.num + offset}
   if (isInternal) {
     for (const p of pins) {
       const list = p.photos || [];
       for (let i = 0; i < list.length; i++) {
         const entry = list[i];
         const strokes = (p.photoStrokes && isPhotoId(entry)) ? (p.photoStrokes[entry] || []) : [];
-        photos.push({ folder: 'photos', base: 'photo-' + pad(p.num + i), entry, strokes });
+        photos.push({ folder: photoDir, base: 'photo-' + pad(p.num + i), entry, strokes });
       }
     }
   } else {
     for (const p of pins) {
       const list = p.photos || [];
       for (let i = 0; i < list.length; i++) {
-        photos.push({ folder: 'photos', base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [] });
+        photos.push({ folder: photoDir, base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [] });
       }
     }
   }
 
-  // quick-capture/ manifest + CSV
+  // Quick-capture photos live alongside the numbered photos, with their CSV.
   const qc = (project.quickCapture || []);
   if (qc.length) {
     const qcPad = String(qc.length).length >= 3 ? 3 : 2;
@@ -6219,21 +6243,21 @@ async function collectExportItems() {
     for (let i = 0; i < qc.length; i++) {
       const e = qc[i];
       const base = 'quick-' + String(i + 1).padStart(qcPad, '0');
-      photos.push({ folder: 'quick-capture', base, entry: e.id, strokes: [] });
+      photos.push({ folder: photoDir, base, entry: e.id, strokes: [] });
       qcLines.push([base + '.jpg', new Date(e.ts || Date.now()).toISOString(), e.lat == null ? '' : e.lat, e.lng == null ? '' : e.lng].join(','));
     }
-    meta.push({ name: 'quick-capture/quick-capture.csv', data: qcLines.join('\r\n') });
+    meta.push({ name: photoDir + '/quick-capture.csv', data: qcLines.join('\r\n') });
   }
 
-  // pinlog.pdf
+  // picture map.pdf (formerly pinlog.pdf)
   try {
     const pdfDoc = await buildPinLogPdf();
-    meta.push({ name: 'pinlog.pdf', data: pdfDoc.output('blob') });
+    meta.push({ name: photoDir + '/picture map.pdf', data: pdfDoc.output('blob') });
   } catch (e) {
-    console.warn('pinlog.pdf skipped:', e);
+    console.warn('picture map.pdf skipped:', e);
   }
 
-  return { folderName, meta, photos, isInternal };
+  return { folderName, meta, photos, isInternal, photoDir, surveyDate };
 }
 
 // Streams a slice of the photo manifest into a zip root. Plain photos are read
@@ -6331,7 +6355,7 @@ const PARTS_README =
   'This export was split into numbered ZIP parts so a phone could build it safely.\n\n' +
   'Put every "--part-N-of-M.zip" file into the SAME folder on your computer and\n' +
   'unzip them all there. Each part contains the same top-level folder, so the\n' +
-  'original structure (photos, quick-capture, CSVs, plan, PDF) is rebuilt exactly.\n';
+  'original structure (the dated photo folder and misc) is rebuilt exactly.\n';
 
 // Cloud transfer: parts upload to Lovable Cloud storage, one link downloads all.
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
