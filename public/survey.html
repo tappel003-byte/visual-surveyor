@@ -5848,9 +5848,7 @@ function openExport() {
   }
   _sheetOpenedAt = performance.now();
   const isInternal = project.mode === 'internal';
-  document.getElementById('exportPhotosNote').style.display = isInternal ? '' : 'none';
   const qcCount = (project.quickCapture || []).length;
-  document.getElementById('exportQcNote').style.display = qcCount ? '' : 'none';
   const extras = (qcCount ? ' + ' + qcCount + ' Quick Capture' : '');
   document.getElementById('exportSub').textContent = (isInternal ? 'Map + pin list + photos' : 'Map + pin list') + extras;
   // Parts are now built in one pass and delivered together, so there is no
