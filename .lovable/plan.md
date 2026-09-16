@@ -20,20 +20,24 @@ After this change:
 1234-main-st/
   2026-08-26_damage-locations/
     photo-01.jpg ...
+    quick-01.jpg ...
+    quick-capture.csv
     picture-map.pdf
   MISC 2026-08-26/
     map.png
     plan.png
     pins.csv
-    quick-capture/ (photos + csv, unchanged inside)
 ```
 
 - `pinlog.pdf` is renamed **picture-map.pdf** and moves inside the photos folder.
 - The photos folder is renamed **`<date>_damage-locations`**.
-- Everything else moves into **`MISC <date>`**.
+- Quick Capture photos and their CSV live in that same photos folder, alongside
+  the numbered photos — not in MISC.
+- The map, plan and pins CSV move into **`MISC <date>`**.
 - Date format is `YYYY-MM-DD` so folders sort correctly; easy to change later.
 - The date used is the date of the earliest photo in the job (the day the survey
   was walked). If a job has no photos, the date the job was created is used.
+
 
 ## Locking in the picture date
 
