@@ -6133,8 +6133,13 @@ async function collectExportItems() {
   const meta = [];   // { name, data }  (data = Blob or string)
   const photos = []; // { name, entry, strokes }
 
-  // map.png
-  meta.push({ name: 'map.png', data: await composeMapImage('png-blob') });
+  // Survey date = earliest photo taken (photo ids are 'ph_' + base36 of Date.now()),
+  // falling back to quick-capture timestamps, then the day the job was created.
+  const surveyDate = _surveyDate(project);
+  const photoDir = [sanitizeFilename(project.jobNumber || ''), _ymd(surveyDate)].filter(Boolean).join('_');
+
+  // misc/map.png
+  meta.push({ name: 'misc/map.png', data: await composeMapImage('png-blob') });
 
   // plan.png — clean plan, no pins/drawings, native dimensions
   if (isInternal) {
