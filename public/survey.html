@@ -6314,7 +6314,7 @@ async function _addPhotosToZip(root, photos, onProgress) {
       if (onProgress) onProgress(done, photos.length);
       const blob = blobs.get(item);
       if (!blob) continue;
-      root.folder(item.folder).file(item.base + '.' + mimeExt(blob.type), blob);
+      root.folder(item.folder).file(item.base + '.' + mimeExt(blob.type), blob, item.date ? { date: item.date } : undefined);
     }
     blobs.clear();
     await new Promise(r => setTimeout(r, 0)); // let Safari breathe / GC
@@ -6323,7 +6323,7 @@ async function _addPhotosToZip(root, photos, onProgress) {
 
 
 function _addMetaToZip(root, meta) {
-  for (const f of meta) root.file(f.name, f.data);
+  for (const f of meta) root.file(f.name, f.data, f.date ? { date: f.date } : undefined);
 }
 
 // Persistent progress panel used by the parts export.
