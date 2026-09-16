@@ -6195,28 +6195,28 @@ async function collectExportItems() {
       csvLines.push([p.num, csvField(p.location || ''), csvField(p.category || ''), csvField(desc), csvField(range), extCount, upCount].join(','));
     }
   });
-  meta.push({ name: 'pins.csv', data: csvLines.join('\r\n') });
+  meta.push({ name: 'misc/pins.csv', data: csvLines.join('\r\n') });
 
-  // photos/ manifest — global numbering: photo-{pin.num + offset}
+  // <jobNumber>_<date>/ manifest — global numbering: photo-{pin.num + offset}
   if (isInternal) {
     for (const p of pins) {
       const list = p.photos || [];
       for (let i = 0; i < list.length; i++) {
         const entry = list[i];
         const strokes = (p.photoStrokes && isPhotoId(entry)) ? (p.photoStrokes[entry] || []) : [];
-        photos.push({ folder: 'photos', base: 'photo-' + pad(p.num + i), entry, strokes });
+        photos.push({ folder: photoDir, base: 'photo-' + pad(p.num + i), entry, strokes });
       }
     }
   } else {
     for (const p of pins) {
       const list = p.photos || [];
       for (let i = 0; i < list.length; i++) {
-        photos.push({ folder: 'photos', base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [] });
+        photos.push({ folder: photoDir, base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [] });
       }
     }
   }
 
-  // quick-capture/ manifest + CSV
+  // Quick-capture photos live alongside the numbered photos, with their CSV.
   const qc = (project.quickCapture || []);
   if (qc.length) {
     const qcPad = String(qc.length).length >= 3 ? 3 : 2;
@@ -6224,21 +6224,21 @@ async function collectExportItems() {
     for (let i = 0; i < qc.length; i++) {
       const e = qc[i];
       const base = 'quick-' + String(i + 1).padStart(qcPad, '0');
-      photos.push({ folder: 'quick-capture', base, entry: e.id, strokes: [] });
+      photos.push({ folder: photoDir, base, entry: e.id, strokes: [] });
       qcLines.push([base + '.jpg', new Date(e.ts || Date.now()).toISOString(), e.lat == null ? '' : e.lat, e.lng == null ? '' : e.lng].join(','));
     }
-    meta.push({ name: 'quick-capture/quick-capture.csv', data: qcLines.join('\r\n') });
+    meta.push({ name: photoDir + '/quick-capture.csv', data: qcLines.join('\r\n') });
   }
 
-  // pinlog.pdf
+  // picture map.pdf (formerly pinlog.pdf)
   try {
     const pdfDoc = await buildPinLogPdf();
-    meta.push({ name: 'pinlog.pdf', data: pdfDoc.output('blob') });
+    meta.push({ name: photoDir + '/picture map.pdf', data: pdfDoc.output('blob') });
   } catch (e) {
-    console.warn('pinlog.pdf skipped:', e);
+    console.warn('picture map.pdf skipped:', e);
   }
 
-  return { folderName, meta, photos, isInternal };
+  return { folderName, meta, photos, isInternal, photoDir, surveyDate };
 }
 
 // Streams a slice of the photo manifest into a zip root. Plain photos are read
