@@ -6142,6 +6142,16 @@ function _surveyDate(proj) {
   return new Date(best === Infinity ? Date.now() : best);
 }
 
+// Capture time of a single photo entry, decoded from its 'ph_<base36>' id.
+// Anything else (imported/legacy entries) falls back to the survey date.
+function _entryDate(entry, fallback) {
+  if (isPhotoId(entry)) {
+    const t = parseInt(String(entry).slice(3), 36);
+    if (!isNaN(t) && t > 0) return new Date(t);
+  }
+  return fallback;
+}
+
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
 async function collectExportItems() {
   await ensurePlanLoaded(project);
@@ -6223,14 +6233,14 @@ async function collectExportItems() {
       for (let i = 0; i < list.length; i++) {
         const entry = list[i];
         const strokes = (p.photoStrokes && isPhotoId(entry)) ? (p.photoStrokes[entry] || []) : [];
-        photos.push({ folder: photoDir, base: 'photo-' + pad(p.num + i), entry, strokes });
+        photos.push({ folder: photoDir, base: 'photo-' + pad(p.num + i), entry, strokes, date: _entryDate(entry, surveyDate) });
       }
     }
   } else {
     for (const p of pins) {
       const list = p.photos || [];
       for (let i = 0; i < list.length; i++) {
-        photos.push({ folder: photoDir, base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [] });
+        photos.push({ folder: photoDir, base: 'pin-' + p.num + '-' + String(i + 1).padStart(2, '0'), entry: list[i], strokes: [], date: _entryDate(list[i], surveyDate) });
       }
     }
   }
@@ -6243,7 +6253,7 @@ async function collectExportItems() {
     for (let i = 0; i < qc.length; i++) {
       const e = qc[i];
       const base = 'quick-' + String(i + 1).padStart(qcPad, '0');
-      photos.push({ folder: photoDir, base, entry: e.id, strokes: [] });
+      photos.push({ folder: photoDir, base, entry: e.id, strokes: [], date: (e.ts ? new Date(e.ts) : _entryDate(e.id, surveyDate)) });
       qcLines.push([base + '.jpg', new Date(e.ts || Date.now()).toISOString(), e.lat == null ? '' : e.lat, e.lng == null ? '' : e.lng].join(','));
     }
     meta.push({ name: photoDir + '/quick-capture.csv', data: qcLines.join('\r\n') });
@@ -6256,6 +6266,9 @@ async function collectExportItems() {
   } catch (e) {
     console.warn('picture map.pdf skipped:', e);
   }
+
+  // Every generated file carries the survey date, so nothing is stamped "today".
+  for (const f of meta) if (!f.date) f.date = surveyDate;
 
   return { folderName, meta, photos, isInternal, photoDir, surveyDate };
 }
@@ -6301,7 +6314,7 @@ async function _addPhotosToZip(root, photos, onProgress) {
       if (onProgress) onProgress(done, photos.length);
       const blob = blobs.get(item);
       if (!blob) continue;
-      root.folder(item.folder).file(item.base + '.' + mimeExt(blob.type), blob);
+      root.folder(item.folder).file(item.base + '.' + mimeExt(blob.type), blob, item.date ? { date: item.date } : undefined);
     }
     blobs.clear();
     await new Promise(r => setTimeout(r, 0)); // let Safari breathe / GC
@@ -6310,7 +6323,7 @@ async function _addPhotosToZip(root, photos, onProgress) {
 
 
 function _addMetaToZip(root, meta) {
-  for (const f of meta) root.file(f.name, f.data);
+  for (const f of meta) root.file(f.name, f.data, f.date ? { date: f.date } : undefined);
 }
 
 // Persistent progress panel used by the parts export.
