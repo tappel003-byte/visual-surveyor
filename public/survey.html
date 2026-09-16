@@ -6124,6 +6124,30 @@ function _downloadBlob(blob, filename) {
   return ok;
 }
 
+// Local YYYY-MM-DD so folders sort correctly.
+function _ymd(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+// Day the survey was walked: earliest photo capture time. Photo ids are
+// 'ph_' + base36(Date.now()), so the timestamp is recoverable. Falls back to
+// quick-capture timestamps, then the day the job was created.
+function _surveyDate(proj) {
+  let best = Infinity;
+  const consider = (t) => { if (typeof t === 'number' && isFinite(t) && t > 0 && t < best) best = t; };
+  for (const p of (proj.pins || [])) {
+    for (const entry of (p.photos || [])) {
+      if (!isPhotoId(entry)) continue;
+      const t = parseInt(entry.slice(3), 36);
+      if (!isNaN(t)) consider(t);
+    }
+  }
+  for (const e of (proj.quickCapture || [])) consider(e && e.ts);
+  if (best === Infinity) consider(proj.createdAt);
+  return new Date(best === Infinity ? Date.now() : best);
+}
+
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
 async function collectExportItems() {
   await ensurePlanLoaded(project);
