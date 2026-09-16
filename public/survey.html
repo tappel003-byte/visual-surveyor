@@ -6267,6 +6267,9 @@ async function collectExportItems() {
     console.warn('picture map.pdf skipped:', e);
   }
 
+  // Every generated file carries the survey date, so nothing is stamped "today".
+  for (const f of meta) if (!f.date) f.date = surveyDate;
+
   return { folderName, meta, photos, isInternal, photoDir, surveyDate };
 }
 
