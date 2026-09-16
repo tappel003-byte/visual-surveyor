@@ -65,9 +65,10 @@ All in `public/survey.html`:
 - `collectExportItems()` gains a survey-date helper (earliest photo timestamp,
   decoded from the `ph_<base36>` id, falling back to `quickCapture[].ts`, then
   `project.createdAt`). It returns `{ ..., dates }` alongside the manifest.
-- Photo manifest entries change `folder` from `photos` to the dated damage
-  folder; `map.png`, `plan.png`, `pins.csv`, `quick-capture/*` get the `MISC
-  <date>/` prefix; `pinlog.pdf` becomes `<dated folder>/picture-map.pdf`.
+- Pin photos and quick-capture photos both get `folder` set to the dated damage
+  folder, keeping their `photo-NN` / `quick-NN` names; `quick-capture.csv` moves
+  there too. `map.png`, `plan.png` and `pins.csv` get the `MISC <date>/` prefix;
+  `pinlog.pdf` becomes `<dated folder>/picture-map.pdf`.
 - Each manifest item carries a `date`; `_addPhotosToZip()` and `_addMetaToZip()`
   pass `{ date }` to `JSZip.file()` so the entry's DOS timestamp is the capture
   time.
