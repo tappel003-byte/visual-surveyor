@@ -909,20 +909,16 @@
 
 
     <div class="sheet-sub" style="margin-top:14px;line-height:1.5">
-      Final deliverable. One ZIP containing:<br>
-      • <code>plan.png</code> — clean floor plan, no pins or markup<br>
-      • <code>map.png</code> — floor plan with numbered pins<br>
-      • <code>pins.csv</code> — location, type, description, photo numbers, <b>Room</b>, <b>Direction</b> (N/S/E/W relative to front door), X,Y<br>
-      <span style="color:var(--muted);font-size:12px">Cardinal directions are derived from the "Front door faces" setting chosen when the project was created.</span><br>
-      <span id="exportPhotosNote">• <code>photos/</code> — every photo as <code>photo-NN.jpg</code>, numbered 1…total<br></span>
-      • <code>pinlog.pdf</code> — 11×17 plan + pin log table, print-ready
-      <span id="exportQcNote" style="display:none"><br>• <code>quick-capture/</code> — untethered walk-around photos + CSV with timestamp &amp; GPS</span>
+      Final deliverable. One ZIP containing two folders:<br>
+      • <code>&lt;job number&gt;_&lt;survey date&gt;/</code> — every photo as <code>photo-NN.jpg</code>, quick-capture photos + their CSV, and <code>picture map.pdf</code> (11×17 plan + pin log, print-ready)<br>
+      • <code>misc/</code> — <code>plan.png</code> (clean floor plan), <code>map.png</code> (plan with numbered pins), <code>pins.csv</code> (location, type, description, photo numbers, <b>Room</b>, <b>Direction</b>, X,Y)<br>
+      <span style="color:var(--muted);font-size:12px">Survey date is the day the earliest photo was taken. Cardinal directions come from the "Front door faces" setting.</span>
     </div>
     <button class="ghost" style="margin-top:14px;width:100%" onclick="exportProjectPdf()">
       📄 Preview PDF (Plan + Pin Log)
     </button>
     <div class="sheet-sub" style="margin-top:6px">
-      Opens the PDF in a new tab so you can review before saving. Same file is also included as <code>pinlog.pdf</code> inside the ZIP.
+      Opens the PDF in a new tab so you can review before saving. Same file is also included as <code>picture map.pdf</code> inside the ZIP.
     </div>
 
     <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
