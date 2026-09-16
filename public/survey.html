@@ -6142,6 +6142,16 @@ function _surveyDate(proj) {
   return new Date(best === Infinity ? Date.now() : best);
 }
 
+// Capture time of a single photo entry, decoded from its 'ph_<base36>' id.
+// Anything else (imported/legacy entries) falls back to the survey date.
+function _entryDate(entry, fallback) {
+  if (isPhotoId(entry)) {
+    const t = parseInt(String(entry).slice(3), 36);
+    if (!isNaN(t) && t > 0) return new Date(t);
+  }
+  return fallback;
+}
+
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
 async function collectExportItems() {
   await ensurePlanLoaded(project);
