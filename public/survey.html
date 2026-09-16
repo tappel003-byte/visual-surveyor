@@ -1452,7 +1452,7 @@ function renderHome() {
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
             <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="${badgeClass}">${status.label}</span></div>
-            <div class="ri-sub">${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
+            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
           </div>
           <div class="ri-actions">
             <button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>
@@ -3301,6 +3301,7 @@ async function commitNewProject() {
     const p = (store.projects || []).find(x => x.id === _editingProjectId);
     if (!p) { _editingProjectId = null; return; }
     p.address = addr;
+    p.jobNumber = jobNum;
     // Reuse the existing pl_ id if the image didn't change; otherwise store the
     // new image bytes in IndexedDB under a fresh id. dataUrl stays in memory for
     // this session; save() strips it from what hits localStorage.
@@ -3337,6 +3338,7 @@ async function commitNewProject() {
     id: uid(),
     mode: _setupMode,
     address: addr,
+    jobNumber: jobNum,
     plan: { id: newPlanImageId, dataUrl: _setupPlan.dataUrl, width: _setupPlan.width, height: _setupPlan.height },
     startNum: 1,
     extStartNum: extStartNum,
