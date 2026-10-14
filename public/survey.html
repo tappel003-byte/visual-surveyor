@@ -302,7 +302,8 @@
   #planSvg image{image-rendering:auto}
 
   .pin{cursor:pointer}
-  .pin .pin-bg{fill:var(--accent);stroke:#fff;stroke-width:2}
+  /* stroke-width set in JS from zoom-aware radius so rings stay proportional */
+  .pin .pin-bg{fill:var(--accent);stroke:#fff}
   .pin.exterior .pin-bg{fill:#6b7280}
   .int-ext-row{display:flex;align-items:center;gap:6px;margin:6px 0 10px;padding:4px;background:#f1f5f9;border-radius:10px}
   .int-ext-row .iex-btn{flex:1;padding:8px 10px;border:0;border-radius:8px;background:transparent;font-weight:600;color:#475569;font-size:13px;cursor:pointer}
@@ -310,8 +311,8 @@
   .int-ext-row .iex-btn.ext.active{background:#6b7280;color:#fff}
   .pin .pin-txt{fill:#fff;font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:central;
     pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  .pin.selected .pin-bg{stroke:#ffd34d;stroke-width:3}
-  .pin.dragging .pin-bg{stroke:#ffd34d;stroke-width:4;filter:drop-shadow(0 0 6px rgba(255,211,77,.9))}
+  .pin.selected .pin-bg{stroke:#ffd34d}
+  .pin.dragging .pin-bg{stroke:#ffd34d;filter:drop-shadow(0 0 6px rgba(255,211,77,.9))}
   .pin.dragging{transform-box:fill-box;transform-origin:center}
   @keyframes pinPulse{0%{transform:scale(1)}50%{transform:scale(1.35)}100%{transform:scale(1.15)}}
   .pin.pulse{animation:pinPulse .25s ease-out forwards;transform-box:fill-box;transform-origin:center}
@@ -3566,6 +3567,7 @@ function mountPlan() {
 }
 
 // ---------- View transform (pan/zoom) ----------
+let _lastPinRenderScale = null;
 function applyTransform() {
   const svg = document.getElementById('planSvg');
   if (!svg) return;
@@ -3579,6 +3581,12 @@ function applyTransform() {
   const vx = -ui.view.tx / s;
   const vy = -ui.view.ty / s;
   svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+  // Pins are sized in image units; rebuild when zoom changes so markers
+  // keep a stable screen size instead of growing with the viewBox.
+  if (_lastPinRenderScale == null || Math.abs(s - _lastPinRenderScale) > 0.02) {
+    _lastPinRenderScale = s;
+    renderPins();
+  }
 }
 function constrainView() {
   if (!project || !project.plan) return;
@@ -4078,9 +4086,9 @@ function onStageClickFallback(e) {
 
 function hitTestPin(x, y, cx, cy) {
   if (!project || !project.pins) return null;
-  const visualR = Math.max(project.plan.width, project.plan.height) * 0.013;
-  // Finger-friendly tap target, but tight enough that adjacent interior/exterior
-  // walls can hold separate pins without colliding.
+  // Match the zoom-aware drawn radius; keep a ~18px finger target so small
+  // zoomed-in markers stay tappable without covering neighboring bays.
+  const visualR = onScreenPinRadius() * 1.35;
   let touchR = visualR;
   if (cx != null && cy != null) {
     try { touchR = Math.max(visualR, screenPixelsToImage(18, cx, cy)); } catch(_) {}
@@ -5619,12 +5627,45 @@ function renderAll() {
   renderDrawings();
   renderNorth();
 }
+// On-screen pin radius in plan/image units. Caps at the historical overview
+// size (0.9% of max dim); when zoomed in, targets ~12px screen radius so
+// markers don't swallow aisle/bay geometry on large facilities.
+function onScreenPinRadius() {
+  if (!project || !project.plan) return 12;
+  const maxDim = Math.max(project.plan.width, project.plan.height) || 1;
+  const baseR = maxDim * 0.009;
+  const stage = document.getElementById('stage');
+  const box = stage ? stage.getBoundingClientRect() : null;
+  const cx = box ? box.left + box.width / 2 : 0;
+  const cy = box ? box.top + box.height / 2 : 0;
+  let targetR = baseR;
+  let minR = maxDim * 0.0015;
+  try {
+    if (box && box.width > 0) {
+      targetR = screenPixelsToImage(12, cx, cy);
+      minR = screenPixelsToImage(9, cx, cy);
+    } else {
+      const s = Math.max(0.5, Number(ui.view && ui.view.scale) || 1);
+      targetR = baseR / s;
+      minR = baseR / 8;
+    }
+  } catch (_) {
+    const s = Math.max(0.5, Number(ui.view && ui.view.scale) || 1);
+    targetR = baseR / s;
+    minR = baseR / 8;
+  }
+  // Cap at historical overview size; floor only applies once zoom would
+  // otherwise make markers smaller than ~9px on screen.
+  return Math.min(baseR, Math.max(minR, targetR));
+}
+
 function renderPins() {
   const g = document.getElementById('gPins');
   if (!g) return;
   g.innerHTML = '';
   if (!project) return;
-  const R = Math.max(project.plan.width, project.plan.height) * 0.009;
+  const R = onScreenPinRadius();
+  _lastPinRenderScale = Math.max(0.5, Math.min(8, Number(ui.view && ui.view.scale) || 1));
   const tol = Math.max(project.plan.width, project.plan.height) * 0.005;
   // Determine which pin is the "top" of each stack (last in array at those coords)
   const pins = project.pins || [];
@@ -5636,8 +5677,10 @@ function renderPins() {
   pins.forEach((p, idx) => {
     const isDragging = _dragPin && _dragPin.pinId === p.id;
     const isExt = !!p.isExterior && project.mode !== 'external';
-    const grp = svgEl('g', { class: 'pin' + (p.id===ui.selectedPinId?' selected':'') + (isDragging?' dragging':'') + (isExt?' exterior':'') });
-    grp.appendChild(svgEl('circle', { class:'pin-bg', cx:p.x, cy:p.y, r:R }));
+    const selected = p.id === ui.selectedPinId;
+    const sw = R * (isDragging ? 0.28 : selected ? 0.22 : 0.18);
+    const grp = svgEl('g', { class: 'pin' + (selected?' selected':'') + (isDragging?' dragging':'') + (isExt?' exterior':'') });
+    grp.appendChild(svgEl('circle', { class:'pin-bg', cx:p.x, cy:p.y, r:R, 'stroke-width': sw }));
     const t = svgEl('text', { class:'pin-txt', x:p.x, y:p.y });
     t.style.fontSize = (R*1.05) + 'px';
     t.textContent = pinPlanLabel(p, idx);
