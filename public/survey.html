@@ -5907,23 +5907,124 @@ async function _refreshExportSizeNote() {
 }
 
 
-// Render the plan + overlays to a canvas at high res for PDF embedding
-async function composeMapImage(format) {
+// Pin radius for map.png / picture-map PDF. Base size matches the old
+// fixed fraction, then shrinks with pin count and nearest-neighbor density
+// so a ~100k sq ft overview stays readable when the walk has many findings.
+// opts.baseFrac / opts.minFrac override the fractions; opts.forceR pins a size.
+function exportPinRadius(W, H, pins, opts) {
+  const o = opts || {};
+  if (o.forceR != null && isFinite(o.forceR) && o.forceR > 0) return o.forceR;
+  const baseFrac = o.baseFrac != null ? o.baseFrac : 0.00875;
+  const minFrac = o.minFrac != null ? o.minFrac : 0.0032;
+  const maxDim = Math.max(W, H) || 1;
+  let R = maxDim * baseFrac;
+  const list = pins || [];
+  const n = list.length;
+  if (n <= 1) return R;
+
+  // Comfortable at ~12 pins on a full-building overview; shrink with sqrt(n).
+  const countScale = Math.min(1, Math.sqrt(12 / n));
+
+  // Nearest-neighbor: ignore exact stacks (handled by ×N badge); if distinct
+  // pins sit closer than ~3R, shrink so markers don't blot each other out.
+  let minD = Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = list[i];
+    for (let j = i + 1; j < n; j++) {
+      const b = list[j];
+      const d = Math.hypot((a.x || 0) - (b.x || 0), (a.y || 0) - (b.y || 0));
+      if (d > maxDim * 0.001) minD = Math.min(minD, d);
+    }
+  }
+  let densScale = 1;
+  if (isFinite(minD) && minD < R * 3) {
+    densScale = Math.max(0.38, minD / (R * 3));
+  }
+
+  R = R * Math.min(countScale, densScale);
+  const minR = Math.max(maxDim * minFrac, 7);
+  const maxR = maxDim * baseFrac;
+  return Math.max(minR, Math.min(maxR, R));
+}
+
+// Split the plan into labeled zone crops that each contain pins. Used for
+// picture-map detail pages after the full-building overview.
+function exportPinZones(pins, W, H) {
+  const list = (pins || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
+  if (list.length < 16 || !W || !H) return [];
+  const midX = W / 2, midY = H / 2;
+  const defs = [
+    { id: 'NW', label: 'Northwest', x0: 0, y0: 0, x1: midX, y1: midY },
+    { id: 'NE', label: 'Northeast', x0: midX, y0: 0, x1: W, y1: midY },
+    { id: 'SW', label: 'Southwest', x0: 0, y0: midY, x1: midX, y1: H },
+    { id: 'SE', label: 'Southeast', x0: midX, y0: midY, x1: W, y1: H }
+  ];
+  const pad = Math.max(W, H) * 0.02;
+  return defs.map(z => {
+    const zonePins = list.filter(p =>
+      p.x >= z.x0 && p.x < z.x1 && p.y >= z.y0 && p.y < z.y1
+    );
+    if (!zonePins.length) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    zonePins.forEach(p => {
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+    });
+    // Prefer the quadrant, but tighten toward the pin cluster with padding so
+    // markers render larger on the detail sheet.
+    const qx0 = z.x0, qy0 = z.y0, qw = z.x1 - z.x0, qh = z.y1 - z.y0;
+    let x = Math.max(qx0, minX - pad);
+    let y = Math.max(qy0, minY - pad);
+    let x1 = Math.min(z.x1, maxX + pad);
+    let y1 = Math.min(z.y1, maxY + pad);
+    let w = Math.max(x1 - x, qw * 0.35);
+    let h = Math.max(y1 - y, qh * 0.35);
+    // Keep crop inside the quadrant bounds.
+    if (x + w > z.x1) x = Math.max(qx0, z.x1 - w);
+    if (y + h > z.y1) y = Math.max(qy0, z.y1 - h);
+    w = Math.min(w, z.x1 - x);
+    h = Math.min(h, z.y1 - y);
+    return { id: z.id, label: z.label, x, y, w, h, pins: zonePins };
+  }).filter(Boolean).filter(z => z.pins.length >= 2 || list.length >= 40);
+}
+
+// Render the plan + overlays to a canvas at high res for PDF embedding.
+// format: 'png-blob' | dataURL jpeg. opts.crop = {x,y,w,h} for zone sheets;
+// opts.pins limits which pins are drawn (defaults to all project pins).
+async function composeMapImage(format, opts) {
+  const o = opts || {};
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const W = project.plan.width, H = project.plan.height;
-      // No padding: map.png matches plan.png pixel-for-pixel so the X,Y
-      // values in pins.csv (normalized to plan.png) overlay correctly on
-      // map.png as well. Edge pins may clip slightly — that's expected.
-      const R = Math.max(W, H) * 0.00875;
+      const fullW = project.plan.width, fullH = project.plan.height;
+      // No padding on the full-plan export: map.png matches plan.png
+      // pixel-for-pixel so pins.csv X,Y overlay correctly. Edge pins may
+      // clip slightly — that's expected. Zone crops intentionally zoom.
+      const crop = o.crop && o.crop.w > 0 && o.crop.h > 0
+        ? {
+            x: Math.max(0, o.crop.x),
+            y: Math.max(0, o.crop.y),
+            w: Math.min(o.crop.w, fullW),
+            h: Math.min(o.crop.h, fullH)
+          }
+        : { x: 0, y: 0, w: fullW, h: fullH };
+      const W = crop.w, H = crop.h;
+      const allPins = o.pins || project.pins || [];
+      const pins = allPins.filter(p =>
+        p && p.x >= crop.x && p.x <= crop.x + crop.w &&
+        p.y >= crop.y && p.y <= crop.y + crop.h
+      );
+      const R = exportPinRadius(W, H, pins, o);
       const c = document.createElement('canvas');
-      c.width = W; c.height = H;
+      c.width = Math.max(1, Math.round(W));
+      c.height = Math.max(1, Math.round(H));
       const ctx = c.getContext('2d');
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(img, 0, 0, W, H);
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, crop.x, crop.y, W, H, 0, 0, c.width, c.height);
 
+      const ox = crop.x, oy = crop.y;
+      const inCrop = (x, y) => x >= ox - 1 && x <= ox + W + 1 && y >= oy - 1 && y <= oy + H + 1;
 
       // drawings
       const baseSw = Math.max(W, H) * 0.004;
@@ -5936,60 +6037,90 @@ async function composeMapImage(format) {
         if (kind === 'path') {
           if (!d.points || d.points.length < 2) return;
           ctx.beginPath();
-          ctx.moveTo(d.points[0][0], d.points[0][1]);
-          for (let i=1;i<d.points.length;i++) ctx.lineTo(d.points[i][0], d.points[i][1]);
+          ctx.moveTo(d.points[0][0] - ox, d.points[0][1] - oy);
+          for (let i=1;i<d.points.length;i++) ctx.lineTo(d.points[i][0] - ox, d.points[i][1] - oy);
           ctx.stroke();
         } else if (kind === 'rect') {
-          const x = Math.min(d.x0,d.x1), y = Math.min(d.y0,d.y1);
+          const x = Math.min(d.x0,d.x1) - ox, y = Math.min(d.y0,d.y1) - oy;
           const w = Math.abs(d.x1-d.x0), h = Math.abs(d.y1-d.y0);
           ctx.strokeRect(x, y, w, h);
         } else if (kind === 'circle') {
-          const cx = (d.x0+d.x1)/2, cy = (d.y0+d.y1)/2;
+          const cx = (d.x0+d.x1)/2 - ox, cy = (d.y0+d.y1)/2 - oy;
           const rx = Math.abs(d.x1-d.x0)/2, ry = Math.abs(d.y1-d.y0)/2;
           ctx.beginPath();
           ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
           ctx.stroke();
         } else if (kind === 'arrow') {
           ctx.beginPath();
-          ctx.moveTo(d.x0, d.y0);
-          ctx.lineTo(d.x1, d.y1);
+          ctx.moveTo(d.x0 - ox, d.y0 - oy);
+          ctx.lineTo(d.x1 - ox, d.y1 - oy);
           ctx.stroke();
           const ang = Math.atan2(d.y1 - d.y0, d.x1 - d.x0);
           const head = Math.max(ctx.lineWidth * 4, Math.max(W, H) * 0.012);
           const a1 = ang + Math.PI - 0.5, a2 = ang + Math.PI + 0.5;
           ctx.beginPath();
-          ctx.moveTo(d.x1, d.y1);
-          ctx.lineTo(d.x1 + Math.cos(a1) * head, d.y1 + Math.sin(a1) * head);
-          ctx.lineTo(d.x1 + Math.cos(a2) * head, d.y1 + Math.sin(a2) * head);
+          ctx.moveTo(d.x1 - ox, d.y1 - oy);
+          ctx.lineTo(d.x1 - ox + Math.cos(a1) * head, d.y1 - oy + Math.sin(a1) * head);
+          ctx.lineTo(d.x1 - ox + Math.cos(a2) * head, d.y1 - oy + Math.sin(a2) * head);
           ctx.closePath();
           ctx.fillStyle = ctx.strokeStyle;
           ctx.fill();
         } else if (kind === 'text') {
+          if (!inCrop(d.x, d.y)) return;
+          const shifted = Object.assign({}, d, { x: d.x - ox, y: d.y - oy });
           if (d.size) {
-            drawTextBoxOnCtx(ctx, d, W, H, 'plan');
+            drawTextBoxOnCtx(ctx, shifted, W, H, 'plan');
           } else {
             const fontPx = Math.max(Math.max(W, H) * (d.thick === 3 ? 0.028 : d.thick === 2 ? 0.02 : 0.014), 10);
             ctx.font = `600 ${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
             ctx.textBaseline = 'top';
             ctx.fillStyle = d.color || '#1a1a1a';
-            const maxW = Math.max(60, Math.min(W - d.x, W * 0.5));
+            const maxW = Math.max(60, Math.min(W - shifted.x, W * 0.5));
             const lines = wrapTextCtx(ctx, d.text, maxW);
-            lines.forEach((ln, i) => ctx.fillText(ln, d.x, d.y + i * fontPx * 1.15));
+            lines.forEach((ln, i) => ctx.fillText(ln, shifted.x, shifted.y + i * fontPx * 1.15));
           }
         }
       });
 
-      // pins
-      ctx.font = `700 ${R*1.05}px -apple-system, "Segoe UI", Roboto, sans-serif`;
-
+      // pins — density-aware radius; stack badge matches on-screen ×N cue
+      const tol = Math.max(fullW, fullH) * 0.005;
+      const topOfStack = new Map();
+      pins.forEach(p => {
+        const key = Math.round(p.x / tol) + ',' + Math.round(p.y / tol);
+        topOfStack.set(key, p.id);
+      });
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      (project.pins||[]).forEach((p, idx) => {
+      pins.forEach((p, idx) => {
+        const px = p.x - ox, py = p.y - oy;
+        const isExt = !!p.isExterior && project.mode !== 'external';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, R, 0, Math.PI*2);
-        const pinFill = '#8b5e34';
-        ctx.fillStyle = pinFill; ctx.fill();
+        ctx.arc(px, py, R, 0, Math.PI*2);
+        ctx.fillStyle = isExt ? '#6b7280' : '#8b5e34';
+        ctx.fill();
         ctx.lineWidth = R*0.18; ctx.strokeStyle = '#fff'; ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.fillText(pinPlanLabel(p, idx), p.x, p.y + R*0.04);
+        ctx.fillStyle = '#fff';
+        ctx.font = `700 ${R*1.05}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+        ctx.fillText(pinPlanLabel(p, idx), px, py + R*0.04);
+
+        const key = Math.round(p.x / tol) + ',' + Math.round(p.y / tol);
+        if (topOfStack.get(key) === p.id) {
+          let stackN = 0;
+          for (const q of pins) {
+            if (Math.abs(q.x - p.x) <= tol && Math.abs(q.y - p.y) <= tol) stackN++;
+          }
+          if (stackN > 1) {
+            const br = R * 0.55;
+            const bx = px + R * 0.85;
+            const by = py - R * 0.85;
+            ctx.beginPath();
+            ctx.arc(bx, by, br, 0, Math.PI*2);
+            ctx.fillStyle = '#facc15'; ctx.fill();
+            ctx.lineWidth = R * 0.08; ctx.strokeStyle = '#1f2937'; ctx.stroke();
+            ctx.fillStyle = '#1f2937';
+            ctx.font = `700 ${br*1.2}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+            ctx.fillText('×' + stackN, bx, by + br*0.05);
+          }
+        }
       });
 
       // north arrow intentionally omitted from export
@@ -6950,17 +7081,22 @@ function sanitizeFilename(s) {
 }
 
 // Shared PDF builder — single source of truth for the standalone PDF button
-// AND the pinlog.pdf embedded in the ZIP export.
+// AND the picture map.pdf embedded in the ZIP export.
+// Overview uses density-aware pin sizing; jobs with many pins also get
+// zoomed zone sheets so markers stay readable on ~100k sq ft plans.
 async function buildPinLogPdf() {
   if (!project) throw new Error('No project loaded');
-  // Composed plan with numbered pins overlay
-  const pngBlob = await composeMapImage('png-blob');
-  const planDataUrl = await new Promise((res, rej) => {
+
+  const blobToDataUrl = (blob) => new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
     r.onerror = rej;
-    r.readAsDataURL(pngBlob);
+    r.readAsDataURL(blob);
   });
+
+  // Composed full-building plan with numbered pins (density-aware radius)
+  const pngBlob = await composeMapImage('png-blob');
+  const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
 
   // 11x17 tabloid, landscape: plan on left, pin log table on right
@@ -6981,13 +7117,6 @@ async function buildPinLogPdf() {
   const tableY = margin;
   const tableH = pageH - margin*2;
 
-  // Scale the plan image to fit its box (preserving aspect)
-  const planScale = Math.min(planBoxW / planW, planBoxH / planH);
-  const planDrawW = planW * planScale;
-  const planDrawH = planH * planScale;
-  const planDrawX = planBoxX + (planBoxW - planDrawW) / 2;
-  const planDrawY = planBoxY + (planBoxH - planDrawH) / 2;
-
   // Table column layout
   const colPhoto = 0.75;
   const colNum = 0.45;
@@ -7001,16 +7130,16 @@ async function buildPinLogPdf() {
     tableX + tableW
   ];
   const headerH = 0.32;
-  const rowH = 0.30;
-  const bodyTop = tableY + headerH;
-  const rowsPerPage = Math.max(1, Math.floor((tableH - headerH) / rowH));
+  const minRowH = 0.30;
+  const lineH = 0.125;
+  const maxNoteLines = 5;
 
   // Build the row data — p.location wins over auto-detected pinRoom guess.
   const orientOffset = _orientationOffset(project);
   const roomLabels = buildRoomLabels(project, orientOffset);
   const pins = (project.pins || []).slice().sort((a,b) => a.num - b.num);
   const isExternalPdf = project && project.mode === 'external';
-  const rows = pins.map(p => {
+  const buildRows = (pinList) => pinList.map(p => {
     let photo = '';
     if (isExternalPdf) {
       if (p.extPhotoEnd) photo = p.extPhotoStart + '–' + p.extPhotoEnd;
@@ -7028,8 +7157,91 @@ async function buildPinLogPdf() {
       notes: (p.description || '').trim()
     };
   });
+  const rows = buildRows(pins);
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+  // Measure note wrap so company review can see descriptions (not just 2 lines).
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9);
+  const notesMax = colNotes - 0.14;
+  rows.forEach(row => {
+    const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
+    row._noteLines = noteLines;
+    const shown = Math.min(maxNoteLines, Math.max(1, noteLines.length || 1));
+    row._shown = shown;
+    row._rowH = Math.max(minRowH, 0.10 + shown * lineH);
+  });
+
+  // Pack variable-height rows into overview pages.
+  const overviewPages = [];
+  {
+    let pageRows = [];
+    let used = 0;
+    const bodyH = tableH - headerH;
+    rows.forEach(row => {
+      if (pageRows.length && used + row._rowH > bodyH) {
+        overviewPages.push(pageRows);
+        pageRows = [];
+        used = 0;
+      }
+      // Single oversized row: still place it (clamped later when drawing).
+      if (!pageRows.length && row._rowH > bodyH) {
+        overviewPages.push([row]);
+        return;
+      }
+      pageRows.push(row);
+      used += row._rowH;
+    });
+    if (pageRows.length || !overviewPages.length) overviewPages.push(pageRows);
+  }
+
+  // Zone detail sheets for dense full-building walks.
+  const zones = exportPinZones(pins, planW, planH);
+  const zoneSheets = [];
+  for (const z of zones) {
+    const zBlob = await composeMapImage('png-blob', {
+      crop: { x: z.x, y: z.y, w: z.w, h: z.h },
+      pins: z.pins,
+      baseFrac: 0.014,
+      minFrac: 0.006
+    });
+    const zRows = buildRows(z.pins.slice().sort((a,b) => a.num - b.num));
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    zRows.forEach(row => {
+      const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
+      row._noteLines = noteLines;
+      const shown = Math.min(maxNoteLines, Math.max(1, noteLines.length || 1));
+      row._shown = shown;
+      row._rowH = Math.max(minRowH, 0.10 + shown * lineH);
+    });
+    const zPages = [];
+    let pageRows = [];
+    let used = 0;
+    const bodyH = tableH - headerH;
+    zRows.forEach(row => {
+      if (pageRows.length && used + row._rowH > bodyH) {
+        zPages.push(pageRows);
+        pageRows = [];
+        used = 0;
+      }
+      if (!pageRows.length && row._rowH > bodyH) {
+        zPages.push([row]);
+        return;
+      }
+      pageRows.push(row);
+      used += row._rowH;
+    });
+    if (pageRows.length || !zPages.length) zPages.push(pageRows);
+    zoneSheets.push({
+      label: z.label,
+      dataUrl: await blobToDataUrl(zBlob),
+      imgW: z.w,
+      imgH: z.h,
+      pages: zPages
+    });
+  }
+
+  const totalPages = overviewPages.length + zoneSheets.reduce((n, z) => n + z.pages.length, 0);
 
   // North arrow anchored to a FIXED spot: right edge of plan box area,
   // vertically aligned with the top of the pin-log table (not tied to
@@ -7069,23 +7281,14 @@ async function buildPinLogPdf() {
     pdf.text('N', lx, ly + 0.04, { align: 'center' });
   };
 
-  const drawPage = (pageIdx) => {
-    // Plan image with pins (repeats on every page)
-    pdf.addImage(planDataUrl, 'PNG', planDrawX, planDrawY, planDrawW, planDrawH, undefined, 'FAST');
-
-    // North arrow (fixed position, drawn on top of plan)
-    drawNorthArrow();
-
-    // Table outer border
+  const drawTableChrome = (subtitle) => {
     pdf.setLineWidth(0.012);
     pdf.setDrawColor(40);
     pdf.rect(tableX, tableY, tableW, tableH);
 
-    // Header row background
     pdf.setFillColor(235, 230, 222);
     pdf.rect(tableX, tableY, tableW, headerH, 'F');
 
-    // Header labels
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10);
     pdf.setTextColor(30);
@@ -7095,61 +7298,69 @@ async function buildPinLogPdf() {
     pdf.text('Location', colX[2] + colLoc/2, hy, { align: 'center' });
     pdf.text('Notes', colX[3] + 0.1, hy);
 
-    // Column separators (full height)
     pdf.line(colX[1], tableY, colX[1], tableY + tableH);
     pdf.line(colX[2], tableY, colX[2], tableY + tableH);
     pdf.line(colX[3], tableY, colX[3], tableY + tableH);
-    // Header bottom
     pdf.line(tableX, tableY + headerH, tableX + tableW, tableY + headerH);
 
-    // Rows
-    const start = pageIdx * rowsPerPage;
+    if (subtitle) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(80);
+      pdf.text(subtitle, planBoxX, pageH - 0.12);
+    }
+  };
+
+  const drawRows = (pageRows) => {
+    const bodyTop = tableY + headerH;
+    let y = bodyTop;
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(9);
-    for (let i = 0; i < rowsPerPage; i++) {
-      const y = bodyTop + i * rowH;
+    pageRows.forEach((row, i) => {
       if (i > 0) {
         pdf.setDrawColor(180);
         pdf.setLineWidth(0.006);
         pdf.line(tableX, y, tableX + tableW, y);
       }
-      const row = rows[start + i];
-      if (!row) continue;
-      const ty = y + rowH/2 + 0.035;
+      const rowH = row._rowH;
+      const ty = y + Math.min(rowH, minRowH) / 2 + 0.035;
       pdf.setTextColor(30);
       if (row.photo) pdf.text(row.photo, colX[0] + colPhoto/2, ty, { align: 'center' });
-      // Pin # in a circle — 25% larger than before (0.11 -> 0.1375),
-      // font scaled proportionally (8 -> 10) so the number still fits centered.
       const cx = colX[1] + colNum/2;
-      const cy = y + rowH/2;
+      const cy = y + Math.min(rowH, minRowH) / 2;
       pdf.setDrawColor(60);
       pdf.setLineWidth(0.010);
       pdf.circle(cx, cy, 0.1375, 'S');
       pdf.setFontSize(10);
       pdf.text(String(row.pinNum), cx, cy + 0.04, { align: 'center' });
       pdf.setFontSize(9);
-      // Location (truncate with ellipsis to fit)
       const locMax = colLoc - 0.12;
       let locTxt = row.location;
       while (locTxt && pdf.getTextWidth(locTxt) > locMax) locTxt = locTxt.slice(0, -1);
       if (locTxt !== row.location && locTxt.length > 1) locTxt = locTxt.slice(0, -1) + '…';
       pdf.text(locTxt || '', colX[2] + 0.06, ty);
-      // Notes
-      const notesMax = colNotes - 0.14;
-      const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
-      const shown = noteLines.slice(0, 2);
-      if (shown.length === 1) {
-        pdf.text(shown[0], colX[3] + 0.07, ty);
-      } else if (shown.length === 2) {
-        pdf.text(shown[0], colX[3] + 0.07, y + rowH/2 - 0.02);
-        const tail = noteLines.length > 2
-          ? (shown[1].length > 3 ? shown[1].slice(0, -1) + '…' : shown[1])
-          : shown[1];
-        pdf.text(tail, colX[3] + 0.07, y + rowH/2 + 0.10);
-      }
-    }
 
-    // Page footer
+      const noteLines = row._noteLines || [];
+      const shownN = row._shown || 1;
+      const shown = noteLines.slice(0, shownN);
+      const truncated = noteLines.length > shownN;
+      if (shown.length <= 1) {
+        const t = truncated && shown[0]
+          ? (shown[0].length > 3 ? shown[0].slice(0, -1) + '…' : shown[0])
+          : (shown[0] || '');
+        if (t) pdf.text(t, colX[3] + 0.07, ty);
+      } else {
+        shown.forEach((ln, li) => {
+          let text = ln;
+          if (truncated && li === shown.length - 1 && text.length > 3) text = text.slice(0, -1) + '…';
+          pdf.text(text, colX[3] + 0.07, y + 0.12 + li * lineH);
+        });
+      }
+      y += rowH;
+    });
+  };
+
+  const drawFooter = (pageIdx) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);
     pdf.setTextColor(120);
@@ -7159,10 +7370,43 @@ async function buildPinLogPdf() {
     );
   };
 
-  for (let p = 0; p < totalPages; p++) {
-    if (p > 0) pdf.addPage([11, 17], 'landscape');
-    drawPage(p);
-  }
+  const fitPlan = (imgW, imgH) => {
+    const planScale = Math.min(planBoxW / imgW, planBoxH / imgH);
+    const planDrawW = imgW * planScale;
+    const planDrawH = imgH * planScale;
+    return {
+      planDrawW,
+      planDrawH,
+      planDrawX: planBoxX + (planBoxW - planDrawW) / 2,
+      planDrawY: planBoxY + (planBoxH - planDrawH) / 2
+    };
+  };
+
+  let pageIdx = 0;
+  const overviewFit = fitPlan(planW, planH);
+  overviewPages.forEach((pageRows, i) => {
+    if (pageIdx > 0) pdf.addPage([11, 17], 'landscape');
+    pdf.addImage(planDataUrl, 'PNG', overviewFit.planDrawX, overviewFit.planDrawY, overviewFit.planDrawW, overviewFit.planDrawH, undefined, 'FAST');
+    drawNorthArrow();
+    drawTableChrome(zones.length ? 'Overview · detail sheets follow' : null);
+    drawRows(pageRows);
+    drawFooter(pageIdx);
+    pageIdx++;
+  });
+
+  zoneSheets.forEach(sheet => {
+    const fit = fitPlan(sheet.imgW, sheet.imgH);
+    sheet.pages.forEach((pageRows) => {
+      pdf.addPage([11, 17], 'landscape');
+      pdf.addImage(sheet.dataUrl, 'PNG', fit.planDrawX, fit.planDrawY, fit.planDrawW, fit.planDrawH, undefined, 'FAST');
+      drawNorthArrow();
+      drawTableChrome('Detail · ' + sheet.label);
+      drawRows(pageRows);
+      drawFooter(pageIdx);
+      pageIdx++;
+    });
+  });
+
   return pdf;
 }
 
