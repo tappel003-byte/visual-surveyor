@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { officeAuthStatus, officeLogin, officeLogout } from "@/server/office-auth";
+import { officeAuthStatus, officeLogin, officeLogout } from "@/lib/office-auth.functions";
 
 export const Route = createFileRoute("/office")({
   head: () => ({
