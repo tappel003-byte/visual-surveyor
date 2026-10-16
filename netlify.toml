@@ -1,0 +1,8 @@
+# Netlify site settings for TanStack Start + Nitro (netlify preset).
+# Publish is the Nitro public output root (`dist/`), not `dist/client`.
+# If Site settings → Build → Publish directory is still `dist/client` in the UI,
+# clear it or set it to `dist` so it matches this file (toml wins when UI is empty;
+# conflicting UI values can still override depending on Netlify site config).
+[build]
+  command = "bun run build"
+  publish = "dist"
