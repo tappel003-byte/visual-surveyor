@@ -32,3 +32,9 @@ Set variables in **Netlify → Site configuration → Environment variables** fo
    - Without a valid token: a short message explains `EXPORTS_LIST_TOKEN`.
 
 Field app (`/` → `survey.html`) stays passwordless. Export and `/get?job=` are unchanged.
+
+## Stage C — field Sync (same staging bucket)
+
+From a job’s **⋯** menu, **Sync to office** uploads the same package as cloud Export (picture map PDF, `misc/`, distress photos) into the shared `exports` storage bucket using the existing per-file upload path. No ZIP is built on the phone. Jobs appear in `/office` after refresh (same list as Export cloud uploads).
+
+No new Netlify env vars for Stage C — uploads use the publishable Supabase key already embedded in `survey.html` (same as Export cloud).

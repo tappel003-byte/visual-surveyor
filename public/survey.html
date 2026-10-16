@@ -750,6 +750,7 @@
     <button class="icon-btn" onclick="toggleMenu()" title="More">⋯</button>
   </div>
   <div class="menu" id="workMenu">
+    <button onclick="syncProjectToOffice()">☁️ Sync to office</button>
     <button onclick="openExport()">📤 Export</button>
     <button onclick="editSetup()">⚙️ Edit setup</button>
     <div class="sep"></div>
@@ -1432,12 +1433,14 @@ function renderHome() {
     list.innerHTML = projs.map(p => {
       const pinCount = (p.pins||[]).length;
       const status = exportStatus(p);
+      const sync = syncStatus(p);
       const badgeClass = status.state === 'ok' ? 'ri-badge ok' : 'ri-badge warn';
+      const syncHint = sync.state !== 'none' ? ' · ' + sync.label : '';
       return `
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
             <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="${badgeClass}">${status.label}</span></div>
-            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
+            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}${syncHint}</div>
           </div>
           <div class="ri-actions">
             <button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>
@@ -6493,20 +6496,22 @@ function _addMetaToZip(root, meta) {
 
 // Persistent progress panel used by the parts export.
 const exportPanel = {
-  el: null, msgEl: null, actEl: null,
-  open() {
+  el: null, msgEl: null, actEl: null, titleEl: null,
+  open(title) {
     if (this.el) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:24px';
     wrap.innerHTML = '<div style="background:var(--card,#fff);color:var(--ink,#222);border-radius:14px;max-width:340px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.35)">' +
-      '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Exporting</div>' +
+      '<div id="_expTitle" style="font-weight:700;font-size:16px;margin-bottom:6px">Exporting</div>' +
       '<div id="_expMsg" style="font-size:13px;line-height:1.5;color:var(--muted,#666)">Preparing…</div>' +
       '<div id="_expAct" style="margin-top:14px"></div>' +
       '</div>';
     document.body.appendChild(wrap);
     this.el = wrap;
+    this.titleEl = wrap.querySelector('#_expTitle');
     this.msgEl = wrap.querySelector('#_expMsg');
     this.actEl = wrap.querySelector('#_expAct');
+    if (title && this.titleEl) this.titleEl.textContent = title;
   },
   msg(t) { if (this.msgEl) this.msgEl.textContent = t; },
   // Renders buttons and resolves with the chosen value.
@@ -6526,8 +6531,11 @@ const exportPanel = {
     });
   },
   clearActions() { if (this.actEl) this.actEl.innerHTML = ''; },
-  close() { if (this.el) { this.el.remove(); this.el = null; this.msgEl = null; this.actEl = null; } }
+  close() { if (this.el) { this.el.remove(); this.el = null; this.titleEl = null; this.msgEl = null; this.actEl = null; } }
 };
+
+// Office staging budget (Supabase free tier discipline).
+const OFFICE_STAGING_LIMIT = 1024 * 1024 * 1024;
 
 const PARTS_README =
   'This export was split into numbered ZIP parts so a phone could build it safely.\n\n' +
@@ -6717,7 +6725,7 @@ async function _listUploadedPaths(jobId) {
 
 // Uploads every metadata file + photo individually. Resumable: completed paths
 // are remembered, so a retry picks up exactly where it stopped.
-async function _uploadRawAssets(items, onStatus) {
+async function _uploadRawAssets(items, onStatus, manifestExtra) {
   const signature = _partsExportSignature(items);
   const prior = _readRawProgress(signature);
   const jobId = (prior && prior.jobId) ||
@@ -6794,7 +6802,8 @@ async function _uploadRawAssets(items, onStatus) {
     version: 1,
     folderName: items.folderName,
     createdAt: new Date().toISOString(),
-    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath))
+    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath)),
+    ...(manifestExtra || {})
   };
   await _uploadRawObject(jobId, 'manifest.json', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'application/json');
   _clearRawProgress();
@@ -6929,6 +6938,109 @@ async function exportProjectCloud() {
     alert('Could not start the upload.\n\n' + (err && err.message ? err.message : String(err)));
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = orig || '☁️ Upload &amp; get one link'; }
+  }
+}
+
+// ---------- Office Sync (Stage C) ----------
+// Same raw-asset upload path as cloud Export, but aimed at /office staging — no ZIP on phone.
+function syncStatus(p) {
+  const updated = p.updatedAt || 0;
+  const synced = p.lastSyncedAt || 0;
+  if (!synced) return { state: 'none', label: 'Not synced' };
+  if (updated > synced + 1000) return { state: 'stale', label: 'Changes since sync' };
+  return { state: 'ok', label: 'Synced ' + relTime(synced) };
+}
+
+function _showSyncComplete(folderName, jobId) {
+  exportPanel.msg(
+    '"' + folderName + '" is in office staging.\n\n' +
+    'The office File Explorer (/office) lists this job after refresh. ' +
+    'Original photos and picture map — full size, same package as Export.'
+  );
+  return new Promise(resolve => {
+    const act = exportPanel.actEl;
+    if (!act) return resolve();
+    act.innerHTML = '';
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:11px;color:var(--muted,#666);margin-bottom:10px;word-break:break-all;line-height:1.4';
+    hint.textContent = 'Job id: ' + jobId;
+    act.appendChild(hint);
+    const done = document.createElement('button');
+    done.textContent = 'Done';
+    done.style.cssText = 'width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px';
+    done.onclick = () => { act.innerHTML = ''; resolve(); };
+    act.appendChild(done);
+  });
+}
+
+async function syncProjectToOffice() {
+  if (!project) return;
+  closeMenu();
+  closeSheets();
+  if (!project.pins || !project.pins.length) {
+    if (!confirm('No pins yet — sync anyway?')) return;
+  }
+  exportPanel.open('Sync to office');
+  exportPanel.msg('Preparing job package…');
+  try {
+    const items = await collectExportItems();
+    let totalBytes = await _totalPhotoBytes(items.photos);
+    for (const f of items.meta) {
+      const blob = typeof f.data === 'string' ? new Blob([f.data]) : f.data;
+      if (blob && blob.size) totalBytes += blob.size;
+    }
+    const totalMb = Math.round(totalBytes / 1024 / 1024);
+    if (totalBytes > OFFICE_STAGING_LIMIT) {
+      exportPanel.close();
+      alert(
+        'This job is about ' + totalMb + ' MB — over the 1 GB office staging limit.\n\n' +
+        'Finish a smaller job first, or ask the office to clear confirmed downloads from staging. ' +
+        'Export to this phone still works with no size cap.'
+      );
+      return;
+    }
+
+    for (;;) {
+      if (!navigator.onLine) {
+        exportPanel.msg('No internet — Sync needs a connection.');
+        const c = await exportPanel.ask([
+          { label: 'Try again', value: 'retry' },
+          { label: 'Cancel', value: 'cancel' }
+        ]);
+        if (c === 'retry') continue;
+        exportPanel.close();
+        return;
+      }
+      try {
+        exportPanel.msg('Uploading picture map + photos…');
+        const jobId = await _uploadRawAssets(items, (n, t) => {
+          exportPanel.msg('Uploading ' + n + ' of ' + t + ' files…');
+        }, { uploadKind: 'office-sync', syncedAt: new Date().toISOString() });
+        project.lastSyncedAt = Date.now();
+        project.syncJobId = jobId;
+        save();
+        await _showSyncComplete(items.folderName, jobId);
+        exportPanel.close();
+        return;
+      } catch (err) {
+        console.error(err);
+        exportPanel.msg(
+          'Sync paused: ' + (err && err.message ? err.message : String(err)) +
+          '\nFiles already uploaded are safe — tap Resume to continue.'
+        );
+        const c = await exportPanel.ask([
+          { label: 'Resume sync', value: 'retry' },
+          { label: 'Cancel', value: 'cancel' }
+        ]);
+        if (c === 'retry') continue;
+        exportPanel.close();
+        return;
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    exportPanel.close();
+    alert('Could not start sync.\n\n' + (err && err.message ? err.message : String(err)));
   }
 }
 
