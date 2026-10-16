@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GetRouteImport } from './routes/get'
 import { Route as OfficeRouteImport } from './routes/office'
+import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const OfficeRoute = OfficeRouteImport.update({
   path: '/office',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicExportsListRoute = ApiPublicExportsListRouteImport.update({
+  id: '/api/public/exports-list',
+  path: '/api/public/exports-list',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeRoute
+  '/api/public/exports-list': typeof ApiPublicExportsListRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeRoute
+  '/api/public/exports-list': typeof ApiPublicExportsListRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeRoute
+  '/api/public/exports-list': typeof ApiPublicExportsListRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/get' | '/office'
+  fullPaths: '/' | '/get' | '/office' | '/api/public/exports-list'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/get' | '/office'
-  id: '__root__' | '/' | '/get' | '/office'
+  to: '/' | '/get' | '/office' | '/api/public/exports-list'
+  id: '__root__' | '/' | '/get' | '/office' | '/api/public/exports-list'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GetRoute: typeof GetRoute
   OfficeRoute: typeof OfficeRoute
+  ApiPublicExportsListRoute: typeof ApiPublicExportsListRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OfficeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/exports-list': {
+      id: '/api/public/exports-list'
+      path: '/api/public/exports-list'
+      fullPath: '/api/public/exports-list'
+      preLoaderRoute: typeof ApiPublicExportsListRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GetRoute: GetRoute,
   OfficeRoute: OfficeRoute,
+  ApiPublicExportsListRoute: ApiPublicExportsListRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
