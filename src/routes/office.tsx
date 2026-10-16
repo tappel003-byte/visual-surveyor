@@ -223,7 +223,7 @@ function OfficeExplorer() {
           <h2 style={{ fontSize: 17, margin: "0 0 10px" }}>No jobs in staging yet</h2>
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.55, margin: 0, maxWidth: 480, marginInline: "auto" }}>
             When field <strong>Sync</strong> is enabled (Stage C), completed jobs will appear here.
-            Until then, uploads from Export still land in exports storage and show up here automatically.
+            Field **Sync to office** (⋯ menu) and Export cloud uploads land in the same staging bucket and show here after refresh.
           </p>
         </section>
       )}
