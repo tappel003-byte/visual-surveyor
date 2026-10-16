@@ -7134,12 +7134,13 @@ async function buildPinLogPdf() {
   });
 
   // Composed full-building plan with numbered pins — PDF uses larger markers
-  // than ZIP map.png so overview numbers stay readable on tabloid.
+  // than ZIP map.png / on-screen so house-plan numbers stay readable on tabloid.
+  // Explicit opts only on this path; ZIP map.png keeps exportPinRadius defaults.
   const pngBlob = await composeMapImage('png-blob', {
-    baseFrac: 0.012,
-    minFrac: 0.0055,
-    comfortN: 40,
-    densFloor: 0.55
+    baseFrac: 0.018,
+    minFrac: 0.0085,
+    comfortN: 80,
+    densFloor: 0.70
   });
   const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
