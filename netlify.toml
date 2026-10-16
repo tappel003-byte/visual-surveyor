@@ -6,3 +6,6 @@
 [build]
   command = "bun run build"
   publish = "dist"
+
+# Stage A NLF office shell: set NLF_OFFICE_PASSWORD + NLF_SESSION_SECRET in the Netlify UI.
+# See docs/nlf-office-env.md (no custom domain required for Stage A).
