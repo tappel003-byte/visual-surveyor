@@ -20,7 +20,7 @@ export const Route = createFileRoute("/office")({
       try {
         jobs = await officeListJobs();
       } catch {
-        jobs = { storageConfigured: false, jobs: [] };
+        jobs = { listAvailable: false, jobs: [] };
       }
     }
     return { auth, jobs };
@@ -28,11 +28,10 @@ export const Route = createFileRoute("/office")({
   component: OfficeExplorer,
 });
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+function formatSizeMb(totalBytes: number): string {
+  const mb = totalBytes / (1024 * 1024);
+  if (mb < 0.01 && totalBytes > 0) return "<0.01 MB";
+  return `${mb.toFixed(2)} MB`;
 }
 
 function OfficeExplorer() {
@@ -47,7 +46,11 @@ function OfficeExplorer() {
     const nextAuth = await officeAuthStatus();
     setAuth(nextAuth);
     if (nextAuth.authenticated) {
-      setJobs(await officeListJobs());
+      try {
+        setJobs(await officeListJobs());
+      } catch {
+        setJobs({ listAvailable: false, jobs: [] });
+      }
     } else {
       setJobs(null);
     }
@@ -158,7 +161,7 @@ function OfficeExplorer() {
   }
 
   const jobList = jobs?.jobs ?? [];
-  const storageReady = jobs?.storageConfigured ?? false;
+  const listReady = jobs?.listAvailable ?? false;
 
   return (
     <div style={shell}>
@@ -166,8 +169,8 @@ function OfficeExplorer() {
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: 22, marginBottom: 4 }}>PGG Office File Explorer</h1>
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Staging middleman — job folders in Supabase <code>exports</code>. Per-job downloads from
-            this page arrive in a later stage; legacy <code>/get?job=</code> links still work.
+            Staging middleman — job folders synced from Lovable exports. Per-job downloads from this
+            page arrive in a later stage; legacy <code>/get?job=</code> links still work.
           </p>
         </div>
         <button
@@ -189,7 +192,7 @@ function OfficeExplorer() {
         </button>
       </header>
 
-      {!storageReady && (
+      {!listReady && (
         <section
           style={{
             border: "1px solid #e8c9a8",
@@ -199,16 +202,15 @@ function OfficeExplorer() {
             marginBottom: 20,
           }}
         >
-          <h2 style={{ fontSize: 16, margin: "0 0 8px" }}>Supabase not configured on the server</h2>
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Add <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> in Netlify environment
-            variables (service role stays server-only — never expose it to the browser). See{" "}
-            <code>docs/nlf-office-env.md</code>. Redeploy after saving.
+            Job list is unavailable. Set <code>EXPORTS_LIST_TOKEN</code> in Netlify environment variables
+            (must match the token on the Lovable exports API), then redeploy. See{" "}
+            <code>docs/nlf-office-env.md</code>.
           </p>
         </section>
       )}
 
-      {storageReady && jobList.length === 0 && (
+      {listReady && jobList.length === 0 && (
         <section
           style={{
             border: "1px dashed #d4c8b8",
@@ -220,14 +222,13 @@ function OfficeExplorer() {
         >
           <h2 style={{ fontSize: 17, margin: "0 0 10px" }}>No jobs in staging yet</h2>
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.55, margin: 0, maxWidth: 480, marginInline: "auto" }}>
-            When field <strong>Sync</strong> is enabled (Stage C), completed jobs will appear here as
-            folders under the <code>exports</code> bucket. Until then, uploads from Export still land in
-            the same bucket and show up here automatically.
+            When field <strong>Sync</strong> is enabled (Stage C), completed jobs will appear here.
+            Until then, uploads from Export still land in exports storage and show up here automatically.
           </p>
         </section>
       )}
 
-      {storageReady && jobList.length > 0 && (
+      {listReady && jobList.length > 0 && (
         <section>
           <div
             style={{
@@ -268,31 +269,22 @@ function OfficeExplorer() {
                   borderTop: "1px solid #e5ddd2",
                 }}
               >
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {job.id}
-                  </span>
-                  {job.updatedAt && (
-                    <span style={{ fontSize: 12, color: "#8a7a68" }}>
-                      Last updated {formatWhen(job.updatedAt)}
-                    </span>
-                  )}
-                </span>
                 <span
                   style={{
-                    fontSize: 12,
-                    color: "#8a7a68",
-                    flexShrink: 0,
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    wordBreak: "break-all",
                   }}
                 >
-                  List only (Stage B)
+                  {job.id}
+                </span>
+                <span style={{ fontSize: 13, color: "#6b5d4f", flexShrink: 0 }}>
+                  {job.fileCount} file{job.fileCount === 1 ? "" : "s"}
+                </span>
+                <span style={{ fontSize: 13, color: "#8a7a68", flexShrink: 0, minWidth: 72, textAlign: "right" }}>
+                  {formatSizeMb(job.totalBytes)}
                 </span>
               </li>
             ))}

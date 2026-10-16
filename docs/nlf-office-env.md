@@ -9,16 +9,15 @@ Password-gated **office File Explorer** at `/office` on the same Netlify site as
 | `NLF_OFFICE_PASSWORD` | Single shared company password for the office File Explorer (not field users). |
 | `NLF_SESSION_SECRET` | Random secret (≥16 chars) used to sign the HttpOnly session cookie. |
 
-## Stage B — job folder list (server-only Supabase)
+## Stage B — job folder list (server-only Lovable API)
 
-The signed-in explorer lists top-level folders in the Supabase Storage bucket `exports` using the **service role** on the server only (never in client code or `VITE_*` variables).
+The signed-in explorer lists export job folders by calling the Lovable-hosted exports API on the **server only** (never from client code or `VITE_*` variables).
 
 | Name | Purpose |
 | --- | --- |
-| `SUPABASE_URL` | Project API URL (same as field app / Lovable Cloud). Often already set for `/get`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role secret — **server-only**; required for `/office` to list jobs. Do not prefix with `VITE_`. |
+| `EXPORTS_LIST_TOKEN` | Bearer token for `GET https://visual-surveyor.lovable.app/api/public/exports-list`. Must match the token configured on Lovable. |
 
-If these are missing, `/office` still signs in but shows instructions to add them. Field `/get?job=` continues to use the anon/publishable key in the browser.
+`SUPABASE_SERVICE_ROLE_KEY` is **not** required for `/office`. Field `/get?job=` continues to use the anon/publishable key in the browser.
 
 ## Deploy
 
@@ -29,7 +28,7 @@ Set variables in **Netlify → Site configuration → Environment variables** fo
 1. Open `https://<your-site>.netlify.app/office`
 2. If office variables are missing, the page explains what to set.
 3. After sign-in:
-   - With Supabase server vars set: job folders from `exports` appear, or an empty-state message if none.
-   - Without Supabase server vars: a banner explains `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+   - With `EXPORTS_LIST_TOKEN` set and valid: job folders appear with file count and size, or an empty-state message if none.
+   - Without a valid token: a short message explains `EXPORTS_LIST_TOKEN`.
 
 Field app (`/` → `survey.html`) stays passwordless. Export and `/get?job=` are unchanged.
