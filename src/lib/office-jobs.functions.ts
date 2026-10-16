@@ -1,13 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { hasValidOfficeSession } from "@/server/office-session";
 import {
-  listExportJobFolders,
-  supabaseAdminConfigured,
+  exportsListTokenConfigured,
+  fetchExportJobListFromLovable,
   type OfficeJobFolder,
 } from "@/server/office-jobs";
 
 export type OfficeJobListResult = {
-  storageConfigured: boolean;
+  listAvailable: boolean;
   jobs: OfficeJobFolder[];
 };
 
@@ -16,10 +16,14 @@ export const officeListJobs = createServerFn({ method: "GET" }).handler(async ()
     throw new Error("Sign in required.");
   }
 
-  if (!supabaseAdminConfigured()) {
-    return { storageConfigured: false, jobs: [] };
+  if (!exportsListTokenConfigured()) {
+    return { listAvailable: false, jobs: [] };
   }
 
-  const jobs = await listExportJobFolders();
-  return { storageConfigured: true, jobs };
+  const result = await fetchExportJobListFromLovable();
+  if (!result.ok) {
+    return { listAvailable: false, jobs: [] };
+  }
+
+  return { listAvailable: true, jobs: result.jobs };
 });
