@@ -5945,23 +5945,25 @@ async function _refreshExportSizeNote() {
 }
 
 
-// Pin radius for map.png / picture-map PDF. Base size matches the old
-// fixed fraction, then shrinks with pin count and nearest-neighbor density
-// so a ~100k sq ft overview stays readable when the walk has many findings.
-// opts.baseFrac / opts.minFrac override the fractions; opts.forceR pins a size.
+// Pin radius for map.png / picture-map PDF. Default fractions suit ZIP map.png;
+// picture-map PDF passes larger opts so overview numbers stay readable.
+// opts.baseFrac / opts.minFrac / opts.comfortN / opts.densFloor override;
+// opts.forceR pins a size.
 function exportPinRadius(W, H, pins, opts) {
   const o = opts || {};
   if (o.forceR != null && isFinite(o.forceR) && o.forceR > 0) return o.forceR;
   const baseFrac = o.baseFrac != null ? o.baseFrac : 0.00875;
   const minFrac = o.minFrac != null ? o.minFrac : 0.0032;
+  const comfortN = o.comfortN != null ? o.comfortN : 12;
+  const densFloor = o.densFloor != null ? o.densFloor : 0.38;
   const maxDim = Math.max(W, H) || 1;
   let R = maxDim * baseFrac;
   const list = pins || [];
   const n = list.length;
   if (n <= 1) return R;
 
-  // Comfortable at ~12 pins on a full-building overview; shrink with sqrt(n).
-  const countScale = Math.min(1, Math.sqrt(12 / n));
+  // Comfortable near comfortN pins on a full overview; shrink with sqrt(n).
+  const countScale = Math.min(1, Math.sqrt(comfortN / n));
 
   // Nearest-neighbor: ignore exact stacks (handled by ×N badge); if distinct
   // pins sit closer than ~3R, shrink so markers don't blot each other out.
@@ -5976,7 +5978,7 @@ function exportPinRadius(W, H, pins, opts) {
   }
   let densScale = 1;
   if (isFinite(minD) && minD < R * 3) {
-    densScale = Math.max(0.38, minD / (R * 3));
+    densScale = Math.max(densFloor, minD / (R * 3));
   }
 
   R = R * Math.min(countScale, densScale);
@@ -5985,8 +5987,8 @@ function exportPinRadius(W, H, pins, opts) {
   return Math.max(minR, Math.min(maxR, R));
 }
 
-// Split the plan into labeled zone crops that each contain pins. Used for
-// picture-map detail pages after the full-building overview.
+// Split the plan into labeled zone crops that each contain pins.
+// Kept for reference; picture-map PDF no longer emits NW/NE/SW/SE detail sheets.
 function exportPinZones(pins, W, H) {
   const list = (pins || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
   if (list.length < 16 || !W || !H) return [];
@@ -7120,8 +7122,7 @@ function sanitizeFilename(s) {
 
 // Shared PDF builder — single source of truth for the standalone PDF button
 // AND the picture map.pdf embedded in the ZIP export.
-// Overview uses density-aware pin sizing; jobs with many pins also get
-// zoomed zone sheets so markers stay readable on ~100k sq ft plans.
+// Single-style overview only: map-majority 11×17 + side pin log (no zone sheets).
 async function buildPinLogPdf() {
   if (!project) throw new Error('No project loaded');
 
@@ -7132,21 +7133,27 @@ async function buildPinLogPdf() {
     r.readAsDataURL(blob);
   });
 
-  // Composed full-building plan with numbered pins (density-aware radius)
-  const pngBlob = await composeMapImage('png-blob');
+  // Composed full-building plan with numbered pins — PDF uses larger markers
+  // than ZIP map.png so overview numbers stay readable on tabloid.
+  const pngBlob = await composeMapImage('png-blob', {
+    baseFrac: 0.012,
+    minFrac: 0.0055,
+    comfortN: 40,
+    densFloor: 0.55
+  });
   const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
 
-  // 11x17 tabloid, landscape: plan on left, pin log table on right
+  // 11x17 tabloid, landscape: large plan on left, thinner pin log on right
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: 'in', format: [11, 17], orientation: 'landscape' });
   const pageW = pdf.internal.pageSize.getWidth();   // 17
   const pageH = pdf.internal.pageSize.getHeight();  // 11
-  const margin = 0.35;
+  const margin = 0.3;
 
-  // Layout: plan takes ~60% width on the left, table takes rest on the right
-  const gutter = 0.25;
-  const planBoxW = 9.6;
+  // Map-majority layout: ~12.5" plan box, ~3.7" table (readable map first).
+  const gutter = 0.18;
+  const planBoxW = 12.5;
   const planBoxX = margin;
   const planBoxY = margin;
   const planBoxH = pageH - margin*2;
@@ -7155,10 +7162,10 @@ async function buildPinLogPdf() {
   const tableY = margin;
   const tableH = pageH - margin*2;
 
-  // Table column layout
-  const colPhoto = 0.75;
-  const colNum = 0.45;
-  const colLoc = 1.35;
+  // Thinner table columns to fund the wider plan
+  const colPhoto = 0.52;
+  const colNum = 0.36;
+  const colLoc = 0.95;
   const colNotes = tableW - (colPhoto + colNum + colLoc);
   const colX = [
     tableX,
@@ -7232,54 +7239,8 @@ async function buildPinLogPdf() {
     if (pageRows.length || !overviewPages.length) overviewPages.push(pageRows);
   }
 
-  // Zone detail sheets for dense full-building walks.
-  const zones = exportPinZones(pins, planW, planH);
-  const zoneSheets = [];
-  for (const z of zones) {
-    const zBlob = await composeMapImage('png-blob', {
-      crop: { x: z.x, y: z.y, w: z.w, h: z.h },
-      pins: z.pins,
-      baseFrac: 0.014,
-      minFrac: 0.006
-    });
-    const zRows = buildRows(z.pins.slice().sort((a,b) => a.num - b.num));
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(9);
-    zRows.forEach(row => {
-      const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
-      row._noteLines = noteLines;
-      const shown = Math.min(maxNoteLines, Math.max(1, noteLines.length || 1));
-      row._shown = shown;
-      row._rowH = Math.max(minRowH, 0.10 + shown * lineH);
-    });
-    const zPages = [];
-    let pageRows = [];
-    let used = 0;
-    const bodyH = tableH - headerH;
-    zRows.forEach(row => {
-      if (pageRows.length && used + row._rowH > bodyH) {
-        zPages.push(pageRows);
-        pageRows = [];
-        used = 0;
-      }
-      if (!pageRows.length && row._rowH > bodyH) {
-        zPages.push([row]);
-        return;
-      }
-      pageRows.push(row);
-      used += row._rowH;
-    });
-    if (pageRows.length || !zPages.length) zPages.push(pageRows);
-    zoneSheets.push({
-      label: z.label,
-      dataUrl: await blobToDataUrl(zBlob),
-      imgW: z.w,
-      imgH: z.h,
-      pages: zPages
-    });
-  }
-
-  const totalPages = overviewPages.length + zoneSheets.reduce((n, z) => n + z.pages.length, 0);
+  // No NW/NE/SW/SE zone detail sheets — overview-only picture map.
+  const totalPages = overviewPages.length;
 
   // North arrow anchored to a FIXED spot: right edge of plan box area,
   // vertically aligned with the top of the pin-log table (not tied to
@@ -7422,27 +7383,14 @@ async function buildPinLogPdf() {
 
   let pageIdx = 0;
   const overviewFit = fitPlan(planW, planH);
-  overviewPages.forEach((pageRows, i) => {
+  overviewPages.forEach((pageRows) => {
     if (pageIdx > 0) pdf.addPage([11, 17], 'landscape');
     pdf.addImage(planDataUrl, 'PNG', overviewFit.planDrawX, overviewFit.planDrawY, overviewFit.planDrawW, overviewFit.planDrawH, undefined, 'FAST');
     drawNorthArrow();
-    drawTableChrome(zones.length ? 'Overview · detail sheets follow' : null);
+    drawTableChrome(null);
     drawRows(pageRows);
     drawFooter(pageIdx);
     pageIdx++;
-  });
-
-  zoneSheets.forEach(sheet => {
-    const fit = fitPlan(sheet.imgW, sheet.imgH);
-    sheet.pages.forEach((pageRows) => {
-      pdf.addPage([11, 17], 'landscape');
-      pdf.addImage(sheet.dataUrl, 'PNG', fit.planDrawX, fit.planDrawY, fit.planDrawW, fit.planDrawH, undefined, 'FAST');
-      drawNorthArrow();
-      drawTableChrome('Detail · ' + sheet.label);
-      drawRows(pageRows);
-      drawFooter(pageIdx);
-      pageIdx++;
-    });
   });
 
   return pdf;
