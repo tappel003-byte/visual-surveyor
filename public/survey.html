@@ -147,7 +147,7 @@
   .screen.active{display:flex}
 
   /* ---------- HOME ---------- */
-  #screenHome{padding:32px 22px;overflow-y:auto;align-items:stretch}
+  #screenHome{padding:32px 22px 96px;overflow-y:auto;align-items:stretch}
   .home-head{margin-top:24px;margin-bottom:32px;text-align:center}
   .home-head .brand{font-size:11px;letter-spacing:.18em;color:var(--muted);font-weight:600;text-transform:uppercase}
   .home-head h1{font-size:28px;margin:6px 0 0;font-weight:700;letter-spacing:-.02em}
@@ -188,30 +188,28 @@
   .ri-badge.ok{background:#e4efe4;color:#2f7d4f}
   .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
-  /* PGG Means & Methods — quiet footer reminder on home */
-  .mm-footer{margin:32px 0 88px;border-top:1px solid var(--line);padding-top:18px}
-  .mm-footer details{background:transparent;border:none}
-  .mm-footer summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
-    gap:12px;padding:4px 2px;font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:600;
-    -webkit-user-select:none;user-select:none}
-  .mm-footer summary::-webkit-details-marker{display:none}
-  .mm-footer summary .mm-chevron{font-size:14px;color:var(--muted);transition:transform .15s ease;flex-shrink:0}
-  .mm-footer details[open] summary .mm-chevron{transform:rotate(90deg)}
-  .mm-footer .mm-title{font-size:13px;letter-spacing:.06em}
-  .mm-body{margin-top:12px;padding:0 2px 8px;font-size:13px;line-height:1.45;color:var(--ink);
-    -webkit-user-select:text;user-select:text}
-  .mm-body .mm-lead{color:var(--muted);font-size:12px;margin:0 0 14px;line-height:1.4}
-  .mm-body h3{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  /* Photo documentation reminder — persistent handle (all screens) + bottom sheet */
+  .mm-handle{position:fixed;left:50%;bottom:calc(10px + var(--app-bottom-offset,0px));
+    transform:translateX(-50%);z-index:35;display:flex;flex-direction:column;align-items:center;gap:5px;
+    background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:7px 14px 6px;
+    box-shadow:var(--shadow);color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.03em;
+    cursor:pointer;-webkit-user-select:none;user-select:none;font-family:inherit}
+  .mm-handle .mm-handle-grab{width:28px;height:3px;border-radius:2px;background:var(--line)}
+  .mm-handle:active{transform:translateX(-50%) scale(.97)}
+  body.reminder-open .mm-handle{visibility:hidden;pointer-events:none}
+  #reminderSheet .mm-body{font-size:13px;line-height:1.45;color:var(--ink);
+    -webkit-user-select:text;user-select:text;padding-bottom:8px}
+  #reminderSheet .mm-body h3{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
     color:var(--muted);margin:16px 0 6px}
-  .mm-body h3:first-of-type{margin-top:0}
-  .mm-body ul{margin:0;padding:0 0 0 1.15em}
-  .mm-body li{margin:0 0 6px}
-  .mm-body li:last-child{margin-bottom:0}
+  #reminderSheet .mm-body h3:first-of-type{margin-top:4px}
+  #reminderSheet .mm-body ul{margin:0;padding:0 0 0 1.15em}
+  #reminderSheet .mm-body li{margin:0 0 6px}
+  #reminderSheet .mm-body li:last-child{margin-bottom:0}
   /* Trash FAB (bottom-right of home) */
   .fab-trash{position:fixed;right:18px;bottom:calc(18px + var(--app-bottom-offset,0px));
     width:56px;height:56px;border-radius:50%;border:1px solid var(--line);
     background:var(--paper);color:var(--ink);font-size:24px;display:flex;align-items:center;
-    justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.15);cursor:pointer;z-index:50}
+    justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.15);cursor:pointer;z-index:30}
   .fab-trash.empty{opacity:.35;cursor:default}
   .fab-trash .fab-badge{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;
     padding:0 5px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;
@@ -645,58 +643,6 @@
   <div id="exportReminder"></div>
   <div id="recentList"></div>
 
-  <section class="mm-footer" aria-label="PGG Means and Methods">
-    <details>
-      <summary>
-        <span class="mm-title">PGG Means &amp; Methods</span>
-        <span class="mm-chevron" aria-hidden="true">›</span>
-      </summary>
-      <div class="mm-body">
-        <p class="mm-lead">Field reminder — scroll here when you need it. Not a capture checklist.</p>
-
-        <h3>Photo sequence</h3>
-        <ul>
-          <li>Room: overview first, then each wall (windows, doors, closets, ceiling lines) — even with no distress.</li>
-          <li>Crack: wall overview → area of the crack → closeup of the crack.</li>
-          <li>Outside: good overviews of roof lines and gutter downspouts.</li>
-        </ul>
-
-        <h3>Path through the home</h3>
-        <ul>
-          <li>Move clockwise room to room.</li>
-        </ul>
-
-        <h3>Drainage &amp; exterior</h3>
-        <ul>
-          <li>Draw drainage on every side. Dotted line where the drain pipe is believed to run; photo and note where it daylights.</li>
-          <li>On the drawing: pavers, walkways, landscape, pool equipment, A/C, sidewalks, decks, flower beds — and plants/trees within 5′ of the foundation.</li>
-          <li>Note and photograph ends of deco drains on pool decking.</li>
-          <li>Note wet soil near the foundation; photograph grading issues, plants too close, and settled utility trenches.</li>
-        </ul>
-
-        <h3>Measurements &amp; markup</h3>
-        <ul>
-          <li>Vertical differentials: always use a straight edge.</li>
-          <li>Ruler shots: overview with the ruler in place, then the closeup.</li>
-          <li>Crack gauge: set it on the line that matches the actual crack thickness.</li>
-          <li>Draw ceiling-crack and floor-crack locations on the plan.</li>
-        </ul>
-
-        <h3>Interviews</h3>
-        <ul>
-          <li>Ask for dates of recent drywall, landscaping, and drainage repairs — and where drywall work was done.</li>
-        </ul>
-
-        <h3>Craft tips</h3>
-        <ul>
-          <li>Flashlight can reveal prior repairs or bumps in the wall.</li>
-          <li>At windows, don’t let daylight drown out the rest of the wall.</li>
-          <li>After capture, glance at the photo a moment to confirm it’s clear.</li>
-        </ul>
-      </div>
-    </details>
-  </section>
-
   <button id="fabTrash" class="fab-trash empty" onclick="openTrash()" aria-label="Trash">🗑<span id="fabTrashBadge" class="fab-badge" style="display:none">0</span></button>
 </div>
 
@@ -880,6 +826,66 @@
       <button class="dt-btn dt-color" data-dcolor="#ea7317" style="background:#ea7317" title="Orange"></button>
       
     </div>
+  </div>
+</div>
+
+<!-- Persistent reminder handle — available on every main screen -->
+<button type="button" id="reminderHandle" class="mm-handle" onclick="openReminderSheet()"
+  aria-haspopup="dialog" aria-controls="reminderSheet" title="Photo documentation reminder">
+  <span class="mm-handle-grab" aria-hidden="true"></span>
+  <span>Reminder</span>
+</button>
+
+<!-- ============ PHOTO DOCUMENTATION REMINDER ============ -->
+<div class="sheet" id="reminderSheet" role="dialog" aria-labelledby="reminderTitle" aria-modal="true">
+  <div class="grab"></div>
+  <div class="sheet-head">
+    <div>
+      <div class="sheet-title" id="reminderTitle">PGG photo documentation reminder</div>
+      <div class="sheet-sub">Means &amp; methods · open when you need it</div>
+    </div>
+    <button class="ghost" type="button" onclick="closeSheets()">Done</button>
+  </div>
+  <div class="mm-body">
+    <h3>Photo sequence</h3>
+    <ul>
+      <li>Room: overview first, then each wall (windows, doors, closets, ceiling lines) — even with no distress.</li>
+      <li>Crack: wall overview → area of the crack → closeup of the crack.</li>
+      <li>Outside: good overviews of roof lines and gutter downspouts.</li>
+    </ul>
+
+    <h3>Path through the home</h3>
+    <ul>
+      <li>Move clockwise room to room.</li>
+    </ul>
+
+    <h3>Drainage &amp; exterior</h3>
+    <ul>
+      <li>Draw drainage on every side. Dotted line where the drain pipe is believed to run; photo and note where it daylights.</li>
+      <li>On the drawing: pavers, walkways, landscape, pool equipment, A/C, sidewalks, decks, flower beds — and plants/trees within 5′ of the foundation.</li>
+      <li>Note and photograph ends of deco drains on pool decking.</li>
+      <li>Note wet soil near the foundation; photograph grading issues, plants too close, and settled utility trenches.</li>
+    </ul>
+
+    <h3>Measurements &amp; markup</h3>
+    <ul>
+      <li>Vertical differentials: always use a straight edge.</li>
+      <li>Ruler shots: overview with the ruler in place, then the closeup.</li>
+      <li>Crack gauge: set it on the line that matches the actual crack thickness.</li>
+      <li>Draw ceiling-crack and floor-crack locations on the plan.</li>
+    </ul>
+
+    <h3>Interviews</h3>
+    <ul>
+      <li>Ask for dates of recent drywall, landscaping, and drainage repairs — and where drywall work was done.</li>
+    </ul>
+
+    <h3>Craft tips</h3>
+    <ul>
+      <li>Flashlight can reveal prior repairs or bumps in the wall.</li>
+      <li>At windows, don’t let daylight drown out the rest of the wall.</li>
+      <li>After capture, glance at the photo a moment to confirm it’s clear.</li>
+    </ul>
   </div>
 </div>
 
@@ -4781,9 +4787,19 @@ function closeSheets(ev) {
   document.getElementById('exportSheet').classList.remove('open');
   document.getElementById('pinPickerSheet').classList.remove('open');
   document.getElementById('locPickerSheet').classList.remove('open');
+  document.getElementById('reminderSheet')?.classList.remove('open');
   document.getElementById('scrim').classList.remove('active');
+  document.body.classList.remove('reminder-open');
   ui.selectedPinId = null;
   renderPins();
+}
+
+function openReminderSheet() {
+  closeSheets();
+  _sheetOpenedAt = performance.now();
+  document.body.classList.add('reminder-open');
+  document.getElementById('scrim').classList.add('active');
+  document.getElementById('reminderSheet').classList.add('open');
 }
 
 // ---------- Pin picker (slide-up list) ----------
