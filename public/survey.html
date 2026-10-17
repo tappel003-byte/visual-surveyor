@@ -6971,14 +6971,29 @@ function getOrAskDeviceNickname() {
   try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
   if (nick) return nick;
   const asked = window.prompt(
-    'Name this phone for the office File Explorer (e.g. "Tim phone" or "Carlos phone").\n\n' +
-    'Shown in the From column after Sync. Set once on this device.',
+    "Name this phone (e.g. Tim's phone, Brian's phone).\n\n" +
+    'Shown as From in the office File Explorer after Sync. Set once on this device.',
     ''
   );
   nick = (asked || '').trim();
   if (!nick) nick = 'Unknown phone';
   try { localStorage.setItem(DEVICE_NICKNAME_KEY, nick); } catch (e) {}
   return nick;
+}
+
+/** Ask on field home first use — don't wait for Sync. Home paints first, then prompt. */
+function ensureDeviceNicknameOnHome() {
+  let nick = '';
+  try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
+  if (nick) return;
+  // Defer so home cards paint before the blocking prompt
+  window.setTimeout(function () {
+    try {
+      if (document.getElementById('screenHome')?.classList.contains('active')) {
+        getOrAskDeviceNickname();
+      }
+    } catch (e) {}
+  }, 350);
 }
 
 function autoSyncPreference() {
@@ -8117,6 +8132,7 @@ document.addEventListener('click', (e) => {
 load();
 renderHome();
 showScreen('screenHome');
+ensureDeviceNicknameOnHome();
 _initRoomVerifyGestures();
 pvSetupGestures();
 </script>
