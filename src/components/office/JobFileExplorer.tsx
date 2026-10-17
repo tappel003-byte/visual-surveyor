@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import type { OfficeJobDownloadResult } from "@/lib/office-download.functions";
 import { officeSignFile } from "@/lib/office-download.functions";
@@ -9,6 +8,7 @@ import {
   toExplorerEntries,
   type ExplorerEntry,
 } from "@/lib/office-file-tree";
+import { fromLabel } from "@/components/office/OfficeChrome";
 
 function formatFileSize(bytes: number | null): string {
   if (bytes == null || bytes <= 0) return "—";
@@ -30,9 +30,7 @@ function formatSyncedAt(iso: string | null): string {
 }
 
 const shell = {
-  maxWidth: 1100,
-  margin: "0 auto",
-  padding: "20px 16px 40px",
+  padding: "12px 14px 28px",
   fontFamily: "Segoe UI, system-ui, sans-serif",
   color: "#1a1a1a",
 } as const;
@@ -55,9 +53,11 @@ type Props = {
   jobId: string;
   title: string;
   data: OfficeJobDownloadResult;
+  /** When true, Office chrome provides nav — keep header compact. */
+  embedded?: boolean;
 };
 
-export function JobFileExplorer({ jobId, title, data }: Props) {
+export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
   const [dirPath, setDirPath] = useState("");
   const [preview, setPreview] = useState<{ entry: ExplorerEntry; url: string } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
@@ -115,14 +115,9 @@ export function JobFileExplorer({ jobId, title, data }: Props) {
 
   return (
     <div style={shell}>
-      <header style={{ marginBottom: 16 }}>
-        <Link
-          to="/office"
-          style={{ fontSize: 13, color: "#0b57d0", textDecoration: "none", fontWeight: 600 }}
-        >
-          ← Back to job list
-        </Link>
-        <h1 style={{ fontSize: 22, margin: "10px 0 4px", fontWeight: 600 }}>{title}</h1>
+      <header style={{ marginBottom: 14 }}>
+        {!embedded && <h1 style={{ fontSize: 20, margin: "0 0 4px", fontWeight: 600 }}>{title}</h1>}
+        {embedded && <h1 style={{ fontSize: 18, margin: "0 0 4px", fontWeight: 600 }}>{title}</h1>}
         <p
           style={{
             fontSize: 12,
@@ -135,18 +130,8 @@ export function JobFileExplorer({ jobId, title, data }: Props) {
           {jobId}
         </p>
         <p style={{ fontSize: 13, color: "#5f5f5f", margin: "8px 0 0", lineHeight: 1.45 }}>
-          {data.syncedAt ? (
-            <>
-              Last synced: <strong>{formatSyncedAt(data.syncedAt)}</strong>
-            </>
-          ) : (
-            <>Last synced: —</>
-          )}
-          {data.syncedFrom ? (
-            <>
-              {" · "}From: <strong>{data.syncedFrom}</strong>
-            </>
-          ) : null}
+          Last synced: <strong>{formatSyncedAt(data.syncedAt)}</strong>
+          {" · "}From: <strong>{fromLabel(data.syncedFrom)}</strong>
           {data.uploadKind === "office-sync" ? " · Field sync" : null}
         </p>
       </header>

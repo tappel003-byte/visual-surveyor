@@ -45,7 +45,16 @@ Uses the same `EXPORTS_LIST_TOKEN` as Stage B.
 
 Job list Date / From come from the same `exports-list` response (`syncedAt`, `syncedFrom` from `manifest.json`). Field Sync writes those when uploading (device nickname stored once per phone).
 
-If `exports-job` / `exports-sign` are not published on Lovable yet — **Publish once in Lovable** after merge (see `docs/nlf-office-lovable-publish.md`). List **Download** still uses the legacy package page (`/get?job=…`).
+If `exports-job` / `exports-sign` / `exports-delete` / `exports-from` are not published on Lovable yet — **Publish once in Lovable** after merge (see `docs/nlf-office-lovable-publish.md`). List **Download** still uses the legacy package page (`/get?job=…`).
+
+### Delete + From write-back
+
+- **Delete:** Netlify `officeDeleteJob` → Lovable `POST /api/public/exports-delete?jobId=` (removes `exports/<jobId>/…`). Confirm in UI first.
+- **From:** Netlify `officeSetJobFrom` → Lovable `POST /api/public/exports-from` with `{ jobId, syncedFrom }` (upserts `manifest.json` fields). Lets staff label older jobs without a full phone re-sync.
+
+### Field Auto-sync
+
+Phone ⋯ menu: **Auto-sync On/Off** (asks once on first background/leave if unset). When On and online, syncs after leaving a job, app background, or connectivity return — only if the job has changes since last sync. Manual Sync + Export unchanged; uploads remain resumable.
 
 ## Deploy
 

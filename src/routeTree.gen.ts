@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GetRouteImport } from './routes/get'
 import { Route as OfficeRouteImport } from './routes/office'
 import { Route as OfficeIndexRouteImport } from './routes/office.index'
+import { Route as ApiPublicExportsDeleteRouteImport } from './routes/api/public/exports-delete'
+import { Route as ApiPublicExportsFromRouteImport } from './routes/api/public/exports-from'
 import { Route as ApiPublicExportsJobRouteImport } from './routes/api/public/exports-job'
 import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
 import { Route as ApiPublicExportsSignRouteImport } from './routes/api/public/exports-sign'
@@ -37,6 +39,16 @@ const OfficeIndexRoute = OfficeIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => OfficeRoute,
+} as any)
+const ApiPublicExportsDeleteRoute = ApiPublicExportsDeleteRouteImport.update({
+  id: '/api/public/exports-delete',
+  path: '/api/public/exports-delete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsFromRoute = ApiPublicExportsFromRouteImport.update({
+  id: '/api/public/exports-from',
+  path: '/api/public/exports-from',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicExportsJobRoute = ApiPublicExportsJobRouteImport.update({
   id: '/api/public/exports-job',
@@ -64,6 +76,8 @@ export interface FileRoutesByFullPath {
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
   '/office/': typeof OfficeIndexRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
   '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
@@ -73,6 +87,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeIndexRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
   '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
@@ -84,6 +100,8 @@ export interface FileRoutesById {
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
   '/office/': typeof OfficeIndexRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
   '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
@@ -96,6 +114,8 @@ export interface FileRouteTypes {
     | '/get'
     | '/office'
     | '/office/'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
     | '/api/public/exports-sign'
@@ -105,6 +125,8 @@ export interface FileRouteTypes {
     | '/'
     | '/get'
     | '/office'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
     | '/api/public/exports-sign'
@@ -115,6 +137,8 @@ export interface FileRouteTypes {
     | '/get'
     | '/office'
     | '/office/'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
     | '/api/public/exports-sign'
@@ -125,6 +149,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GetRoute: typeof GetRoute
   OfficeRoute: typeof OfficeRouteWithChildren
+  ApiPublicExportsDeleteRoute: typeof ApiPublicExportsDeleteRoute
+  ApiPublicExportsFromRoute: typeof ApiPublicExportsFromRoute
   ApiPublicExportsJobRoute: typeof ApiPublicExportsJobRoute
   ApiPublicExportsListRoute: typeof ApiPublicExportsListRoute
   ApiPublicExportsSignRoute: typeof ApiPublicExportsSignRoute
@@ -159,6 +185,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/office/'
       preLoaderRoute: typeof OfficeIndexRouteImport
       parentRoute: typeof OfficeRoute
+    }
+    '/api/public/exports-delete': {
+      id: '/api/public/exports-delete'
+      path: '/api/public/exports-delete'
+      fullPath: '/api/public/exports-delete'
+      preLoaderRoute: typeof ApiPublicExportsDeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-from': {
+      id: '/api/public/exports-from'
+      path: '/api/public/exports-from'
+      fullPath: '/api/public/exports-from'
+      preLoaderRoute: typeof ApiPublicExportsFromRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/exports-job': {
       id: '/api/public/exports-job'
@@ -208,6 +248,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GetRoute: GetRoute,
   OfficeRoute: OfficeRouteWithChildren,
+  ApiPublicExportsDeleteRoute: ApiPublicExportsDeleteRoute,
+  ApiPublicExportsFromRoute: ApiPublicExportsFromRoute,
   ApiPublicExportsJobRoute: ApiPublicExportsJobRoute,
   ApiPublicExportsListRoute: ApiPublicExportsListRoute,
   ApiPublicExportsSignRoute: ApiPublicExportsSignRoute,
