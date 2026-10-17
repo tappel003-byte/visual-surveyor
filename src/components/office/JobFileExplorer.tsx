@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { OfficeJobDownloadResult } from "@/lib/office-download.functions";
 import { officeSignFile } from "@/lib/office-download.functions";
 import {
@@ -82,6 +83,7 @@ export function JobFileExplorer({
   autoPackageDownload = false,
   registerPackageDownload,
 }: Props) {
+  const navigate = useNavigate();
   const [dirPath, setDirPath] = useState("");
   const [preview, setPreview] = useState<{ entry: ExplorerEntry; url: string } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>(() =>
@@ -109,6 +111,18 @@ export function JobFileExplorer({
   const otherFiles = useMemo(() => files.filter((f) => !isImageFileName(f.name)), [files]);
 
   const breadcrumbs = dirPath ? dirPath.split("/") : [];
+
+  /** Parent/up: one level out of a folder, or back to the office job list at job root. */
+  const goBackUp = () => {
+    if (dirPath) {
+      const parts = dirPath.split("/");
+      parts.pop();
+      setDirPath(parts.join("/"));
+      setSelectedPath(null);
+      return;
+    }
+    void navigate({ to: "/office" });
+  };
 
   const resolveUrl = async (
     entry: ExplorerEntry,
@@ -297,8 +311,47 @@ export function JobFileExplorer({
           borderBottom: `1px solid ${PGG.line}`,
         }}
       >
-        {!embedded && <h1 style={{ fontSize: 16, margin: "0 0 2px", fontWeight: 600 }}>{title}</h1>}
-        {embedded && <h1 style={{ fontSize: 15, margin: "0 0 2px", fontWeight: 600 }}>{title}</h1>}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <button
+            type="button"
+            className={OFFICE_BTN_CLASS}
+            onClick={goBackUp}
+            title={dirPath ? "Back to parent folder" : "Back to office job list"}
+            aria-label={dirPath ? "Back to parent folder" : "Back to office job list"}
+            style={{
+              ...btnSecondary,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "4px 10px",
+              fontWeight: 700,
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+              ←
+            </span>
+            Back
+          </button>
+          <h1
+            style={{
+              fontSize: embedded ? 15 : 16,
+              margin: 0,
+              fontWeight: 600,
+              flex: "1 1 auto",
+              minWidth: 0,
+            }}
+          >
+            {title}
+          </h1>
+        </div>
         <p style={{ fontSize: 12, color: PGG.muted, margin: 0, lineHeight: 1.4 }}>
           Last synced: <strong style={{ color: PGG.ink }}>{formatSyncedAt(data.syncedAt)}</strong>
           {" · "}From: <strong style={{ color: PGG.ink }}>{fromLabel(data.syncedFrom)}</strong>
@@ -394,7 +447,7 @@ export function JobFileExplorer({
                 display: "flex",
                 flexWrap: "wrap",
                 alignItems: "center",
-                gap: 4,
+                gap: 6,
                 marginBottom: 8,
                 fontSize: 12,
                 padding: "4px 8px",
