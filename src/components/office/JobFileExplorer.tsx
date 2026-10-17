@@ -84,8 +84,9 @@ export function JobFileExplorer({ jobId, title, data }: Props) {
           }}
         >
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Per-file signed links need <code>SUPABASE_URL</code> and{" "}
-            <code>SUPABASE_SERVICE_ROLE_KEY</code> on Netlify. You can still use the legacy{" "}
+            Per-file signed links need <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> in Netlify
+            environment variables — ask Claude to verify under <strong>Site configuration → Environment variables</strong>.
+            You can still use the legacy{" "}
             <a href={data.getPagePath} style={{ color: "#7a4b2a", fontWeight: 600 }}>
               download page
             </a>{" "}

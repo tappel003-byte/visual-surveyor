@@ -212,9 +212,10 @@ function OfficeExplorer() {
           }}
         >
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Job list is unavailable. Set <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> in
-            Netlify environment variables (server-only — same Supabase project as Export/Sync), then redeploy. See{" "}
-            <code>docs/nlf-office-env.md</code>.
+            Job list is unavailable — the Netlify site is missing server storage credentials. Ask Claude (or whoever
+            manages deploys) to check <strong>Netlify → Site configuration → Environment variables</strong> for{" "}
+            <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code>, then redeploy. You do not need
+            Lovable publish or a Supabase account. See <code>docs/nlf-office-env.md</code>.
           </p>
         </section>
       )}
