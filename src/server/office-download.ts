@@ -4,7 +4,7 @@ export type OfficeDownloadFile = {
   /** Human label (zip part name or zipPath from manifest). */
   label: string;
   sizeBytes: number | null;
-  /** Direct HTTPS URL to Lovable/Supabase storage (time-limited). */
+  /** Direct HTTPS URL to Supabase storage (time-limited). */
   signedUrl: string;
 };
 
@@ -63,7 +63,7 @@ async function loadManifest(jobId: string): Promise<ManifestJson | null> {
   }
 }
 
-/** Builds per-file signed download URLs from Lovable exports storage (server-only). */
+/** Builds per-file signed download URLs from exports storage (server-only). */
 export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDownloadPayload> {
   const base = {
     jobId,

@@ -178,7 +178,7 @@ function OfficeExplorer() {
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: 22, marginBottom: 4 }}>PGG Office File Explorer</h1>
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Staging middleman — job folders synced from Lovable exports. Use <strong>Open</strong> to browse
+            Staging middleman — synced field jobs in shared storage. Use <strong>Open</strong> to browse
             photos and download individual files (large jobs). Legacy <code>/get?job=</code> ZIP links still work.
           </p>
         </div>
@@ -212,9 +212,10 @@ function OfficeExplorer() {
           }}
         >
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Job list is unavailable. Set <code>SUPABASE_URL</code> + <code>SUPABASE_SERVICE_ROLE_KEY</code>, or{" "}
-            <code>EXPORTS_LIST_TOKEN</code> (must match the Lovable exports API), then redeploy. See{" "}
-            <code>docs/nlf-office-env.md</code>.
+            Job list is unavailable — the Netlify site is missing server storage credentials. Ask Claude (or whoever
+            manages deploys) to check <strong>Netlify → Site configuration → Environment variables</strong> for{" "}
+            <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code>, then redeploy. You do not need
+            Lovable publish or a Supabase account. See <code>docs/nlf-office-env.md</code>.
           </p>
         </section>
       )}
