@@ -72,18 +72,22 @@ export const Route = createFileRoute("/office/jobs/$jobId")({
 });
 
 function OfficeJobBrowserPage() {
-  const { jobId, title: loaderTitle, download } = Route.useLoaderData() as {
+  const {
+    jobId,
+    title: loaderTitle,
+    download,
+  } = Route.useLoaderData() as {
     jobId: string;
     title: string;
     download: Awaited<ReturnType<typeof officeGetJobDownload>>;
   };
   const cached = typeof window !== "undefined" ? readJobsCache() : null;
-  const cachedJob = cached?.jobs.find((j) => j.id === jobId);
   const [jobs, setJobs] = useState<OfficeJobFolder[]>(cached?.jobs ?? []);
   const [listAvailableState, setListAvailableState] = useState(cached?.listAvailable ?? true);
   const [refreshing, setRefreshing] = useState(false);
   const [listHydrating, setListHydrating] = useState(!cached);
   const [explorerStatus, setExplorerStatus] = useState<string | null>(null);
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const packageTriggerRef = useRef<(() => void) | null>(null);
   const [autoPackageDownload] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -99,7 +103,8 @@ function OfficeJobBrowserPage() {
     return false;
   });
 
-  const title = cachedJob?.displayName || loaderTitle;
+  const listTitle = jobs.find((j) => j.id === jobId)?.displayName || null;
+  const title = titleOverride || listTitle || loaderTitle;
 
   const softRefreshList = async (force = false) => {
     if (!force && jobsCacheIsFresh()) {
@@ -168,6 +173,14 @@ function OfficeJobBrowserPage() {
         data={download}
         embedded
         onStatusChange={setExplorerStatus}
+        onDisplayNameChange={(folderName) => {
+          setTitleOverride(folderName);
+          setJobs((prev) => {
+            const next = prev.map((j) => (j.id === jobId ? { ...j, displayName: folderName } : j));
+            patchJobsCache(next, listAvailableState);
+            return next;
+          });
+        }}
         autoPackageDownload={autoPackageDownload}
         registerPackageDownload={(fn) => {
           packageTriggerRef.current = fn;

@@ -6,6 +6,7 @@ import {
   fetchDeleteExportJobFromLovable,
   fetchExportPinsFromLovable,
   fetchSetExportFromFromLovable,
+  fetchSetExportNameFromLovable,
   fetchUpdateExportPinsFromLovable,
 } from "@/server/office-mutate";
 import { exportsListTokenConfigured } from "@/server/office-jobs";
@@ -54,6 +55,31 @@ export const officeSetJobFrom = createServerFn({ method: "POST" })
       throw new Error("Could not update From (unauthorized).");
     }
     return { syncedFrom: result.syncedFrom };
+  });
+
+export const officeSetJobName = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      jobId: z.string().min(1).max(200),
+      folderName: z.string().min(1).max(120),
+    }),
+  )
+  .handler(async ({ data }): Promise<{ folderName: string }> => {
+    if (!hasValidOfficeSession()) {
+      throw new Error("Sign in required.");
+    }
+    if (!isSafeExportJobId(data.jobId)) {
+      throw new Error("Invalid job id.");
+    }
+    if (!exportsListTokenConfigured()) {
+      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
+    }
+
+    const result = await fetchSetExportNameFromLovable(data.jobId.trim(), data.folderName.trim());
+    if (!result.ok) {
+      throw new Error("Could not update job name (unauthorized).");
+    }
+    return { folderName: result.folderName };
   });
 
 export const officeGetJobPins = createServerFn({ method: "POST" })

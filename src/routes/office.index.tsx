@@ -12,13 +12,13 @@ import {
   fromLabel,
 } from "@/components/office/OfficeChrome";
 import { officeAuthStatus, officeLogin, officeLogout } from "@/lib/office-auth.functions";
-import { officeListJobs, type OfficeJobFolder, type OfficeJobListResult } from "@/lib/office-jobs.functions";
-import { officeDeleteJob, officeSetJobFrom } from "@/lib/office-mutate.functions";
 import {
-  clearJobsCache,
-  patchJobsCache,
-  writeJobsCache,
-} from "@/lib/office-client-cache";
+  officeListJobs,
+  type OfficeJobFolder,
+  type OfficeJobListResult,
+} from "@/lib/office-jobs.functions";
+import { officeDeleteJob, officeSetJobFrom, officeSetJobName } from "@/lib/office-mutate.functions";
+import { clearJobsCache, patchJobsCache, writeJobsCache } from "@/lib/office-client-cache";
 
 type SortKey = "name" | "date" | "type" | "size" | "from";
 type SortDir = "asc" | "desc";
@@ -90,7 +90,9 @@ function OfficeExplorer() {
   const [busy, setBusy] = useState(false);
   const [listRefreshing, setListRefreshing] = useState(false);
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
-  const [rowBusyKind, setRowBusyKind] = useState<"delete" | "from" | "open" | "download" | null>(null);
+  const [rowBusyKind, setRowBusyKind] = useState<
+    "delete" | "from" | "name" | "open" | "download" | null
+  >(null);
   const [openingJobId, setOpeningJobId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -137,7 +139,9 @@ function OfficeExplorer() {
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : "";
       if (/wrong password/i.test(raw)) {
-        setError("That password didn’t work. Try again, or ask the office for the company password.");
+        setError(
+          "That password didn’t work. Try again, or ask the office for the company password.",
+        );
       } else if (/not configured|NLF_OFFICE|SESSION_SECRET/i.test(raw)) {
         setError(
           "Office sign-in isn’t set up on this site yet. Tell whoever runs Netlify to set the office password secrets, then try again.",
@@ -231,7 +235,11 @@ function OfficeExplorer() {
           <code>NLF_OFFICE_PASSWORD</code> and <code>NLF_SESSION_SECRET</code>, then redeploy. See{" "}
           <code>docs/nlf-office-env.md</code>.
         </p>
-        <a href="/" className={OFFICE_BTN_CLASS} style={{ ...actionBtn, marginTop: 16, display: "inline-flex" }}>
+        <a
+          href="/"
+          className={OFFICE_BTN_CLASS}
+          style={{ ...actionBtn, marginTop: 16, display: "inline-flex" }}
+        >
           ← Field home
         </a>
       </div>
@@ -268,7 +276,15 @@ function OfficeExplorer() {
             boxShadow: PGG.shadow,
           }}
         >
-          <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6, color: PGG.muted }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              fontWeight: 600,
+              marginBottom: 6,
+              color: PGG.muted,
+            }}
+          >
             Office password
           </label>
           <input
@@ -380,11 +396,42 @@ function OfficeExplorer() {
     setListError(null);
     try {
       const result = await officeSetJobFrom({ data: { jobId: job.id, syncedFrom: label } });
-      setJobList(jobList.map((j) => (j.id === job.id ? { ...j, syncedFrom: result.syncedFrom } : j)));
+      setJobList(
+        jobList.map((j) => (j.id === job.id ? { ...j, syncedFrom: result.syncedFrom } : j)),
+      );
       setStatusMessage("From saved.");
       window.setTimeout(() => setStatusMessage(null), 1800);
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Could not update From.");
+      setStatusMessage(null);
+    } finally {
+      setRowBusyId(null);
+      setRowBusyKind(null);
+    }
+  };
+
+  const editName = async (job: OfficeJobFolder) => {
+    setSelectedJobId(job.id);
+    const next = window.prompt(
+      "Customer / job name (address or site title). Shows in the job list and File Explorer header.",
+      job.displayName?.trim() || "",
+    );
+    if (next == null) return;
+    const label = next.trim();
+    if (!label) return;
+    setRowBusyId(job.id);
+    setRowBusyKind("name");
+    setStatusMessage(`Saving name for ${job.displayName || job.id}…`);
+    setListError(null);
+    try {
+      const result = await officeSetJobName({ data: { jobId: job.id, folderName: label } });
+      setJobList(
+        jobList.map((j) => (j.id === job.id ? { ...j, displayName: result.folderName } : j)),
+      );
+      setStatusMessage("Job name saved.");
+      window.setTimeout(() => setStatusMessage(null), 1800);
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Could not update job name.");
       setStatusMessage(null);
     } finally {
       setRowBusyId(null);
@@ -585,7 +632,28 @@ function OfficeExplorer() {
                           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                             <FolderIcon />
                             <div style={{ minWidth: 0 }}>
-                              <span style={{ fontWeight: 600, color: PGG.ink }}>{title}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void editName(job);
+                                }}
+                                disabled={rowBusyId === job.id}
+                                title="Edit customer / job name"
+                                className={`${OFFICE_BTN_CLASS} office-btn-linkish${rowBusyId === job.id && rowBusyKind === "name" ? " is-busy" : ""}`}
+                                style={{
+                                  border: 0,
+                                  background: "transparent",
+                                  padding: "1px 2px",
+                                  color: PGG.ink,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  textAlign: "left",
+                                  fontSize: 13,
+                                }}
+                              >
+                                {rowBusyId === job.id && rowBusyKind === "name" ? "Saving…" : title}
+                              </button>
                               {job.syncIncomplete && job.manifestFileCount != null ? (
                                 <span
                                   style={{
@@ -669,7 +737,12 @@ function OfficeExplorer() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <button
                           type="button"
-                          onClick={() => openJob(job.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void editName(job);
+                          }}
+                          disabled={rowBusy}
+                          title="Edit customer / job name — Open with the Open button"
                           style={{
                             all: "unset",
                             display: "block",
@@ -680,9 +753,11 @@ function OfficeExplorer() {
                             wordBreak: "break-word",
                           }}
                         >
-                          {title}
+                          {rowBusy && rowBusyKind === "name" ? "Saving…" : title}
                         </button>
-                        <div style={{ fontSize: 12, color: PGG.muted, marginTop: 3, lineHeight: 1.35 }}>
+                        <div
+                          style={{ fontSize: 12, color: PGG.muted, marginTop: 3, lineHeight: 1.35 }}
+                        >
                           {formatLastSynced(job.syncedAt)} · {formatSize(job.totalBytes)} ·{" "}
                           {job.fileCount} files ·{" "}
                           <button
@@ -735,7 +810,12 @@ function OfficeExplorer() {
                             }}
                             disabled={rowBusy}
                             className={`${OFFICE_BTN_CLASS} office-btn-danger${rowBusy && rowBusyKind === "delete" ? " is-busy" : ""}`}
-                            style={{ ...actionBtn, color: PGG.bad, flex: 1, justifyContent: "center" }}
+                            style={{
+                              ...actionBtn,
+                              color: PGG.bad,
+                              flex: 1,
+                              justifyContent: "center",
+                            }}
                           >
                             {rowBusy && rowBusyKind === "delete" ? "Deleting…" : "Delete"}
                           </button>

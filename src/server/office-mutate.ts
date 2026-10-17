@@ -3,6 +3,7 @@ import type { OfficePinsPayload, PinDescriptionUpdate } from "@/lib/office-pins"
 
 const EXPORTS_DELETE_URL = "https://visual-surveyor.lovable.app/api/public/exports-delete";
 const EXPORTS_FROM_URL = "https://visual-surveyor.lovable.app/api/public/exports-from";
+const EXPORTS_NAME_URL = "https://visual-surveyor.lovable.app/api/public/exports-name";
 const EXPORTS_PINS_URL = "https://visual-surveyor.lovable.app/api/public/exports-pins";
 
 type ManifestJson = {
@@ -14,7 +15,18 @@ type ManifestJson = {
   deviceName?: string;
   files?: Array<{ path: string; zipPath: string }>;
   createdAt?: string;
+  officeNameEditedAt?: string;
 };
+
+/** Human-facing job label for office list / header (keeps spaces; strips path-illegal chars). */
+export function sanitizeOfficeFolderName(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 120)
+    .trim();
+}
 
 /** Delete every object under exports/<jobId>/ (Lovable / service role). */
 export async function deleteExportJobFolder(jobId: string): Promise<{ deleted: number }> {
@@ -118,6 +130,63 @@ export async function updateExportJobFrom(
   return { syncedFrom: label };
 }
 
+/** Update manifest folderName — office list title / job header / Download ZIP root. */
+export async function updateExportJobFolderName(
+  jobId: string,
+  folderName: string,
+): Promise<{ folderName: string; officeNameEditedAt: string }> {
+  if (!officeDownloadStorageConfigured()) {
+    throw new Error("Storage not configured.");
+  }
+  if (!isSafeExportJobId(jobId)) {
+    throw new Error("Invalid job id.");
+  }
+  const label = sanitizeOfficeFolderName(folderName);
+  if (!label) {
+    throw new Error("Job name required.");
+  }
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const bucket = supabaseAdmin.storage.from("exports");
+  const manifestPath = `${jobId}/manifest.json`;
+
+  let manifest: ManifestJson = {
+    version: 1,
+    folderName: jobId,
+    files: [],
+    createdAt: new Date().toISOString(),
+  };
+
+  const { data, error } = await bucket.download(manifestPath);
+  if (!error && data) {
+    try {
+      const parsed = JSON.parse(await data.text()) as ManifestJson;
+      if (parsed && typeof parsed === "object") {
+        manifest = parsed;
+      }
+    } catch {
+      /* keep default shell */
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  manifest.folderName = label;
+  manifest.officeNameEditedAt = nowIso;
+  if (!manifest.version) manifest.version = 1;
+
+  const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+  const { error: upErr } = await bucket.upload(manifestPath, blob, {
+    contentType: "application/json",
+    upsert: true,
+  });
+  if (upErr) {
+    console.error("[office-mutate] folderName upload failed", jobId, upErr.message);
+    throw new Error(`Could not save job name: ${upErr.message}`);
+  }
+
+  return { folderName: label, officeNameEditedAt: nowIso };
+}
+
 /** Netlify → Lovable delete. */
 export async function fetchDeleteExportJobFromLovable(
   jobId: string,
@@ -168,6 +237,53 @@ export async function fetchSetExportFromFromLovable(
   }
   const body = (await res.json()) as { syncedFrom?: string };
   return { ok: true, syncedFrom: body.syncedFrom?.trim() || syncedFrom.trim() };
+}
+
+/** Netlify → Lovable job display-name write-back. */
+export async function fetchSetExportNameFromLovable(
+  jobId: string,
+  folderName: string,
+): Promise<
+  | { ok: true; folderName: string; officeNameEditedAt: string | null }
+  | { ok: false; unauthorized: boolean }
+> {
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const res = await fetch(EXPORTS_NAME_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jobId, folderName }),
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (res.status === 404) {
+    throw new Error(
+      "Job name API missing (404). Publish once in Lovable so /api/public/exports-name is live.",
+    );
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errBody = (await res.json()) as { error?: string };
+      detail = errBody.error ? `: ${errBody.error}` : "";
+    } catch {
+      /* ignore */
+    }
+    throw new Error(
+      `Exports name update failed (${res.status})${detail}. Publish once in Lovable so /api/public/exports-name is live.`,
+    );
+  }
+  const body = (await res.json()) as { folderName?: string; officeNameEditedAt?: string };
+  return {
+    ok: true,
+    folderName: body.folderName?.trim() || sanitizeOfficeFolderName(folderName),
+    officeNameEditedAt: body.officeNameEditedAt?.trim() || null,
+  };
 }
 
 /** Netlify → Lovable: load pin notes from pins.csv. */
