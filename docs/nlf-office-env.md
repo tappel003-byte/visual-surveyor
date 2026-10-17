@@ -17,7 +17,18 @@ The signed-in explorer lists export job folders by calling the Lovable-hosted ex
 | --- | --- |
 | `EXPORTS_LIST_TOKEN` | Bearer token for `GET https://visual-surveyor.lovable.app/api/public/exports-list`. Must match the token configured on Lovable. |
 
-`SUPABASE_SERVICE_ROLE_KEY` is **not** required for `/office`. Field `/get?job=` continues to use the anon/publishable key in the browser.
+Field `/get?job=` continues to use the anon/publishable key in the browser (no Netlify ZIP streaming).
+
+## Stage D — per-job downloads (signed storage links)
+
+Signed-in users click **Download** on a job row. The server mints time-limited HTTPS links straight to objects in the Lovable `exports` bucket (same storage as Export/Sync). Netlify never builds or streams ZIPs.
+
+| Name | Purpose |
+| --- | --- |
+| `SUPABASE_URL` | Lovable Cloud Supabase project URL (same as field app). |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key — server-only, for `createSignedUrl` on export objects. **Never** expose as `VITE_*`. |
+
+If these are missing, the panel still offers **Open download page** (`/get?job=…`), which pulls files from storage in the browser.
 
 ## Deploy
 
@@ -30,6 +41,7 @@ Set variables in **Netlify → Site configuration → Environment variables** fo
 3. After sign-in:
    - With `EXPORTS_LIST_TOKEN` set and valid: job folders appear with file count and size, or an empty-state message if none.
    - Without a valid token: a short message explains `EXPORTS_LIST_TOKEN`.
+4. Click **Download** on a job: per-file links (when service role is set) plus link to `/get?job=<id>`.
 
 Field app (`/` → `survey.html`) stays passwordless. Export and `/get?job=` are unchanged.
 
