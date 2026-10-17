@@ -11,7 +11,8 @@ export type OfficeJobListResult = {
   jobs: OfficeJobFolder[];
 };
 
-export const officeListJobs = createServerFn({ method: "GET" }).handler(async (): Promise<OfficeJobListResult> => {
+/** POST avoids browser/CDN caching so Refresh always re-fetches the Lovable list. */
+export const officeListJobs = createServerFn({ method: "POST" }).handler(async (): Promise<OfficeJobListResult> => {
   if (!hasValidOfficeSession()) {
     throw new Error("Sign in required.");
   }
