@@ -18,7 +18,9 @@ export type ExportManifestJson = {
   /** Device nickname from the phone that synced (`syncedFrom` preferred). */
   syncedFrom?: string;
   deviceName?: string;
-  files?: Array<{ path: string; zipPath: string }>;
+  /** Total payload bytes (written by field Sync) — used by light list / capacity meter. */
+  totalBytes?: number;
+  files?: Array<{ path: string; zipPath: string; sizeBytes?: number }>;
 };
 
 export type JobFolderStats = {
@@ -111,7 +113,75 @@ function syncedFromFromManifest(manifest: ExportManifestJson | null): string | n
   return from || null;
 }
 
-/** Stats for one top-level exports bucket folder (job id). */
+/**
+ * Fast list-row stats: read `manifest.json` only — no recursive storage walk.
+ * Exact byte totals / sync-incomplete come from Open (`exports-job`) which still walks.
+ */
+export async function lightStatsForExportJob(
+  bucket: ListBucket,
+  jobId: string,
+): Promise<JobFolderStats> {
+  const manifest = await loadExportManifest(bucket, jobId);
+  if (manifest) {
+    const manifestPaths = (manifest.files ?? [])
+      .map((f) => f.path?.trim())
+      .filter((p): p is string => Boolean(p));
+    const manifestFileCount = manifestPaths.length > 0 ? manifestPaths.length : null;
+    const fileCount = manifestFileCount ?? 0;
+    const declared =
+      typeof manifest.totalBytes === "number" && Number.isFinite(manifest.totalBytes)
+        ? Math.max(0, Math.round(manifest.totalBytes))
+        : 0;
+    const fromFileSizes = (manifest.files ?? []).reduce((sum, f) => {
+      const n = typeof f.sizeBytes === "number" && Number.isFinite(f.sizeBytes) ? f.sizeBytes : 0;
+      return sum + Math.max(0, n);
+    }, 0);
+    return {
+      id: jobId,
+      displayName: displayNameFromManifest(manifest),
+      fileCount,
+      /** Prefer manifest.totalBytes; else sum per-file sizeBytes — no storage walk. */
+      totalBytes: declared > 0 ? declared : fromFileSizes,
+      manifestFileCount,
+      /** Provisional; Open/deep refresh compares real storage. */
+      storageObjectCount: fileCount,
+      syncIncomplete: false,
+      syncedAt: syncedAtFromManifest(manifest),
+      syncedFrom: syncedFromFromManifest(manifest),
+    };
+  }
+
+  // Legacy / ZIP-only folders: one shallow list (no recursion).
+  let fileCount = 0;
+  let totalBytes = 0;
+  try {
+    const { data, error } = await bucket.list(jobId, { limit: 200 });
+    if (!error && data) {
+      for (const item of data) {
+        if (item.id === null) continue; // nested folder — skip deep walk
+        if (item.name === "manifest.json") continue;
+        fileCount += 1;
+        totalBytes += Number(item.metadata?.size ?? 0);
+      }
+    }
+  } catch {
+    /* empty */
+  }
+
+  return {
+    id: jobId,
+    displayName: null,
+    fileCount,
+    totalBytes,
+    manifestFileCount: null,
+    storageObjectCount: fileCount,
+    syncIncomplete: false,
+    syncedAt: null,
+    syncedFrom: null,
+  };
+}
+
+/** Full recursive stats (storage walk). Prefer lightStatsForExportJob for /exports-list. */
 export async function statsForExportJob(bucket: ListBucket, jobId: string): Promise<JobFolderStats> {
   const manifest = await loadExportManifest(bucket, jobId);
   const displayName = displayNameFromManifest(manifest);
@@ -132,7 +202,6 @@ export async function statsForExportJob(bucket: ListBucket, jobId: string): Prom
     .filter((p): p is string => Boolean(p));
   const manifestFileCount = manifestPaths.length > 0 ? manifestPaths.length : null;
 
-  const manifestPathSet = new Set(manifestPaths);
   const storedPathSet = new Set(contentObjects.map((o) => o.relativePath));
 
   let syncIncomplete = false;

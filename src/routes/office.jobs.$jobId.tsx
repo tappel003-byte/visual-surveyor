@@ -1,10 +1,16 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { JobFileExplorer } from "@/components/office/JobFileExplorer";
-import { OfficeChrome } from "@/components/office/OfficeChrome";
+import { OfficeChrome, PGG } from "@/components/office/OfficeChrome";
 import { officeAuthStatus, officeLogout } from "@/lib/office-auth.functions";
 import { officeGetJobDownload } from "@/lib/office-download.functions";
 import { officeListJobs, type OfficeJobFolder } from "@/lib/office-jobs.functions";
+import {
+  jobsCacheIsFresh,
+  patchJobsCache,
+  readJobsCache,
+  writeJobsCache,
+} from "@/lib/office-client-cache";
 import { isSafeExportJobId } from "@/lib/office-file-tree";
 
 export const Route = createFileRoute("/office/jobs/$jobId")({
@@ -23,52 +29,104 @@ export const Route = createFileRoute("/office/jobs/$jobId")({
       throw redirect({ to: "/office" });
     }
   },
+  /** Fast path: only fetch this job’s files. Sidebar list comes from session cache + soft refresh. */
   loader: async ({ params }) => {
     const jobId = params.jobId.trim();
     if (!isSafeExportJobId(jobId)) {
       throw new Error("Invalid job id.");
     }
     const download = await officeGetJobDownload({ data: { jobId } });
-    let jobs: OfficeJobFolder[] = [];
-    let listAvailable = false;
-    let displayName: string | null = null;
-    try {
-      const list = await officeListJobs();
-      jobs = list.jobs;
-      listAvailable = list.listAvailable;
-      displayName = list.jobs.find((j) => j.id === jobId)?.displayName ?? null;
-    } catch {
-      /* list optional for Open */
-    }
-    const title = displayName || download.folderName || "Field export";
-    return { jobId, title, download, jobs, listAvailable };
+    const title = download.folderName || "Field export";
+    return { jobId, title, download };
   },
+  pendingComponent: () => (
+    <div
+      style={{
+        minHeight: "40vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        color: PGG.muted,
+        background: PGG.bg,
+        padding: 24,
+      }}
+    >
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          border: `2px solid ${PGG.line}`,
+          borderTopColor: PGG.accent,
+          borderRadius: "50%",
+          animation: "office-spin .7s linear infinite",
+        }}
+      />
+      <span style={{ fontWeight: 600, color: PGG.ink }}>Opening job…</span>
+      <style>{`@keyframes office-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  ),
   component: OfficeJobBrowserPage,
 });
 
 function OfficeJobBrowserPage() {
-  const { jobId, title, download, jobs: initialJobs, listAvailable } = Route.useLoaderData();
-  const [jobs, setJobs] = useState(initialJobs);
+  const { jobId, title: loaderTitle, download } = Route.useLoaderData();
+  const cached = typeof window !== "undefined" ? readJobsCache() : null;
+  const cachedJob = cached?.jobs.find((j) => j.id === jobId);
+  const [jobs, setJobs] = useState<OfficeJobFolder[]>(cached?.jobs ?? []);
+  const [listAvailableState, setListAvailableState] = useState(cached?.listAvailable ?? true);
   const [refreshing, setRefreshing] = useState(false);
-  const [listAvailableState, setListAvailableState] = useState(listAvailable);
+  const [listHydrating, setListHydrating] = useState(!cached);
+  const [explorerStatus, setExplorerStatus] = useState<string | null>(null);
 
-  const onRefresh = async () => {
+  const title = cachedJob?.displayName || loaderTitle;
+
+  const softRefreshList = async (force = false) => {
+    if (!force && jobsCacheIsFresh()) {
+      const hit = readJobsCache();
+      if (hit) {
+        setJobs(hit.jobs);
+        setListAvailableState(hit.listAvailable);
+        setListHydrating(false);
+        return;
+      }
+    }
     setRefreshing(true);
+    if (!jobs.length) setListHydrating(true);
     try {
       const list = await officeListJobs();
+      writeJobsCache(list);
       setJobs(list.jobs);
       setListAvailableState(list.listAvailable);
     } catch {
-      /* keep current */
+      /* keep cache */
     } finally {
       setRefreshing(false);
+      setListHydrating(false);
     }
+  };
+
+  useEffect(() => {
+    void softRefreshList(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once per job open
+  }, [jobId]);
+
+  const onRefresh = async () => {
+    setExplorerStatus("Refreshing…");
+    await softRefreshList(true);
+    setExplorerStatus(null);
   };
 
   const onLogout = async () => {
     await officeLogout();
     window.location.href = "/office";
   };
+
+  const status =
+    explorerStatus ||
+    (listHydrating && !jobs.length ? "Loading jobs…" : null) ||
+    (refreshing && jobs.length ? "Refreshing job list…" : null);
 
   return (
     <OfficeChrome
@@ -77,10 +135,20 @@ function OfficeJobBrowserPage() {
       selectedJobId={jobId}
       onRefresh={() => onRefresh().catch(() => {})}
       refreshing={refreshing}
-      onJobsChanged={setJobs}
+      onJobsChanged={(next) => {
+        setJobs(next);
+        patchJobsCache(next, listAvailableState);
+      }}
       onLogout={() => onLogout().catch(() => {})}
+      statusMessage={status}
     >
-      <JobFileExplorer jobId={jobId} title={title} data={download} embedded />
+      <JobFileExplorer
+        jobId={jobId}
+        title={title}
+        data={download}
+        embedded
+        onStatusChange={setExplorerStatus}
+      />
     </OfficeChrome>
   );
 }

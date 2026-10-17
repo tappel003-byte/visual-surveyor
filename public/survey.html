@@ -91,20 +91,60 @@
 
   // No auto-activate / auto-reload. Updates happen only when the user taps
   // the "Update app" link (see #updateAppLink logic further down).
+  // When a new SW is waiting, make that link yellow/urgent (setUpdateAppUrgent).
 
+  /** Called from SW registration + Update app UI — keep in sync. */
+  window.__pggSetUpdateAppUrgent = function (urgent) {
+    const link = document.getElementById("updateAppLink");
+    if (!link) return;
+    if (urgent) {
+      link.classList.add("update-app-urgent");
+      if (!link.dataset.busy) {
+        link.textContent = "Update available — tap here";
+      }
+    } else {
+      link.classList.remove("update-app-urgent");
+      if (!link.dataset.busy) {
+        link.textContent = "Update app";
+      }
+    }
+  };
 
+  const syncUrgentFromReg = (registration) => {
+    const urgent = !!(registration && registration.waiting);
+    if (typeof window.__pggSetUpdateAppUrgent === "function") {
+      window.__pggSetUpdateAppUrgent(urgent);
+    }
+  };
 
+  const watchRegistration = (registration) => {
+    syncUrgentFromReg(registration);
+    registration.addEventListener("updatefound", () => {
+      const nw = registration.installing;
+      if (!nw) return;
+      nw.addEventListener("statechange", () => {
+        // Installed + existing controller ⇒ new version waiting (or about to wait)
+        if (nw.state === "installed") {
+          syncUrgentFromReg(registration);
+          if (navigator.serviceWorker.controller) {
+            window.__pggSetUpdateAppUrgent(true);
+          }
+        }
+      });
+    });
+  };
 
   let lastCheck = 0;
   const checkForUpdate = (registration) => {
     const now = Date.now();
     if (now - lastCheck < 10000) return;
     lastCheck = now;
-    registration.update().catch(() => {});
+    registration.update().then(() => syncUrgentFromReg(registration)).catch(() => {});
   };
 
   const register = () => {
     navigator.serviceWorker.register(SW_PATH, { scope: "/" }).then((registration) => {
+      watchRegistration(registration);
       checkForUpdate(registration);
       window.addEventListener("pageshow", () => checkForUpdate(registration));
       window.addEventListener("focus", () => checkForUpdate(registration));
@@ -154,6 +194,11 @@
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
   .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
   .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  /* Quiet by default; loud when a SW update is waiting */
+  .home-jumps a#updateAppLink.update-app-urgent{
+    color:#5c1a00;font-weight:800;font-size:14px;text-decoration:none;
+    background:#f5c518;border:2px solid #c44b1a;padding:10px 16px;border-radius:12px;
+    box-shadow:0 2px 8px rgba(196,75,26,.25);letter-spacing:.01em}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
@@ -188,6 +233,10 @@
   .ri-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
   .ri-badge.warn{background:#fdf4e0;color:#8a5a10}
   .ri-badge.ok{background:#e4efe4;color:#2f7d4f}
+  .ri-badge.sync-ok{background:#e2efe6;color:#2e7d4f;font-weight:700}
+  .ri-badge.sync-stale,.ri-badge.sync-none{background:#fdf4e0;color:#8a5a10;font-weight:700}
+  .ri-move-locked{font-size:11px;color:var(--muted);padding:6px 8px;white-space:nowrap}
+  .ri-title-pills{display:inline;white-space:normal}
   .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
   /* Trash FAB (bottom-right of home) */
@@ -772,7 +821,7 @@
 
     
     <div class="sep"></div>
-    <button class="danger" onclick="confirmDeleteProject()">🗑 Move to trash</button>
+    <button class="danger" id="menuTrashBtn" onclick="confirmDeleteProject()">🗑 Move to trash</button>
   </div>
 
   <div class="stage" id="stage">
@@ -1451,15 +1500,19 @@ function renderHome() {
       const status = exportStatus(p);
       const sync = syncStatus(p);
       const badgeClass = status.state === 'ok' ? 'ri-badge ok' : 'ri-badge warn';
-      const syncHint = sync.state !== 'none' ? ' · ' + sync.label : '';
+      const syncPillClass = sync.state === 'ok' ? 'ri-badge sync-ok' : (sync.state === 'stale' ? 'ri-badge sync-stale' : 'ri-badge sync-none');
+      const canTrash = isFullySyncedToOffice(p);
+      const trashAction = canTrash
+        ? `<button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>`
+        : `<span class="ri-move-locked" title="Sync this job to office before you can delete it">Sync to delete</span>`;
       return `
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
-            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="${badgeClass}">${status.label}</span></div>
-            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}${syncHint}</div>
+            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-title-pills"><span class="${syncPillClass}">${escapeHtml(sync.label)}</span><span class="${badgeClass}">${status.label}</span></span></div>
+            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
           </div>
           <div class="ri-actions">
-            <button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>
+            ${trashAction}
           </div>
         </div>`;
     }).join('');
@@ -1529,6 +1582,10 @@ function relTime(t) {
 function moveProjectToTrash(id) {
   const proj = (store.projects||[]).find(p => p.id === id);
   if (!proj) return;
+  if (!isFullySyncedToOffice(proj)) {
+    toast('Sync to office first — delete only when Fully synced');
+    return;
+  }
   if (!confirm('Move "' + (proj.address || 'this project') + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
   proj.deletedAt = Date.now();
   store.trash = store.trash || [];
@@ -1551,6 +1608,14 @@ function restoreProject(id) {
 function deleteProjectForever(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  // Never permanently delete work that was not fully synced to office staging.
+  if (!isFullySyncedToOffice(proj)) {
+    alert(
+      '"' + (proj.address || 'This project') + '" is not fully synced to office.\n\n' +
+      'Restore it, Sync to office, then delete. Unsynced work cannot be deleted.'
+    );
+    return;
+  }
   const status = exportStatus(proj);
   if (status.state !== 'ok') {
     const reason = status.state === 'none' ? 'has never been exported' : 'has changes since it was last exported';
@@ -1558,6 +1623,7 @@ function deleteProjectForever(id) {
       restoreProject(id);
       toast('Restored — export it, then trash it again when ready.');
     }, () => {
+      // Still blocked if somehow not synced — confirmPermanentDelete re-checks sync.
       confirmPermanentDelete(id);
     });
     return;
@@ -1567,6 +1633,10 @@ function deleteProjectForever(id) {
 function confirmPermanentDelete(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  if (!isFullySyncedToOffice(proj)) {
+    toast('Cannot delete — job is not Fully synced');
+    return;
+  }
   if (!confirm('Permanently delete "' + (proj.address || 'this project') + '"?\n\nThis cannot be undone.')) return;
   for (const pin of (proj.pins||[])) {
     for (const entry of (pin.photos||[])) {
@@ -1602,6 +1672,11 @@ function purgeOldTrash() {
   let purged = 0;
   for (const proj of trash) {
     if ((proj.deletedAt || 0) < cutoff) {
+      // Never auto-purge unsynced work — keep until Fully synced (or restored).
+      if (!isFullySyncedToOffice(proj)) {
+        keep.push(proj);
+        continue;
+      }
       for (const pin of (proj.pins||[])) {
         for (const entry of (pin.photos||[])) {
           if (isPhotoId(entry)) idbDel(entry).catch(()=>{});
@@ -1632,14 +1707,19 @@ function renderTrash() {
   body.innerHTML = items.map(p => {
     const daysLeft = Math.max(0, Math.ceil(30 - (Date.now() - (p.deletedAt||0))/DAY));
     const pinCount = (p.pins||[]).length;
+    const canDelete = isFullySyncedToOffice(p);
+    const sync = syncStatus(p);
+    const foreverBtn = canDelete
+      ? `<button class="ti-forever" onclick="deleteProjectForever('${p.id}')">Delete forever</button>`
+      : `<button class="ti-forever" disabled title="Not fully synced — restore and Sync to office first" style="opacity:.4;cursor:not-allowed">Delete locked</button>`;
     return `
       <div class="trash-item">
         <div class="ti-body">
-          <div class="ti-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}</div>
-          <div class="ti-sub">${pinCount} pin${pinCount===1?'':'s'} · deletes in ${daysLeft} day${daysLeft===1?'':'s'}</div>
+          <div class="ti-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-badge ${canDelete ? 'sync-ok' : 'sync-stale'}">${escapeHtml(sync.label)}</span></div>
+          <div class="ti-sub">${pinCount} pin${pinCount===1?'':'s'} · ${canDelete ? ('deletes in ' + daysLeft + ' day' + (daysLeft===1?'':'s')) : 'kept until Fully synced'}</div>
         </div>
         <button class="ti-restore" onclick="restoreProject('${p.id}')">Restore</button>
-        <button class="ti-forever" onclick="deleteProjectForever('${p.id}')">Delete forever</button>
+        ${foreverBtn}
       </div>`;
   }).join('');
 }
@@ -3446,7 +3526,20 @@ function setupDrawToolbar() {
 
 // ---------- Menu ----------
 function toggleMenu() {
-  document.getElementById('workMenu').classList.toggle('open');
+  const menu = document.getElementById('workMenu');
+  menu.classList.toggle('open');
+  if (menu.classList.contains('open')) refreshMenuTrashButton();
+}
+function refreshMenuTrashButton() {
+  const btn = document.getElementById('menuTrashBtn');
+  if (!btn) return;
+  const ok = project && isFullySyncedToOffice(project);
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '' : '0.45';
+  btn.title = ok
+    ? 'Move this job to trash'
+    : 'Sync to office first — delete is only allowed when Fully synced';
+  btn.textContent = ok ? '🗑 Move to trash' : '🗑 Sync before delete';
 }
 function closeMenu() { document.getElementById('workMenu').classList.remove('open'); }
 document.addEventListener('click', (e) => {
@@ -3478,6 +3571,10 @@ document.addEventListener('fullscreenchange', () => {
 function confirmDeleteProject() {
   closeMenu();
   if (!project) return;
+  if (!isFullySyncedToOffice(project)) {
+    toast('Sync to office first — delete only when Fully synced');
+    return;
+  }
   if (!confirm('Move "' + project.address + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
   project.deletedAt = Date.now();
   store.trash = store.trash || [];
@@ -6773,6 +6870,7 @@ async function _uploadRawAssets(items, onStatus, manifestExtra) {
 
   const total = tasks.length;
   let completed = 0, next = 0, failure = null;
+  let totalBytesAcc = 0;
   const manifestFiles = [];
   const tick = () => onStatus && onStatus(completed, total);
 
@@ -6792,7 +6890,9 @@ async function _uploadRawAssets(items, onStatus, manifestExtra) {
       if (!blob) { completed++; tick(); continue; }
       const path = t.path || ('files/' + t.photo.folder + '/' + t.photo.base + '.' + mimeExt(blob.type));
       const type = t.type || blob.type || 'image/jpeg';
-      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, '') });
+      const sizeBytes = Number(blob.size) || 0;
+      totalBytesAcc += sizeBytes;
+      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, ''), sizeBytes: sizeBytes });
       if (done.has(path)) { completed++; blob = null; tick(); continue; }
       try {
         await _uploadRawObject(jobId, path, blob, type);
@@ -6818,6 +6918,8 @@ async function _uploadRawAssets(items, onStatus, manifestExtra) {
     version: 1,
     folderName: items.folderName,
     createdAt: new Date().toISOString(),
+    /** Staging capacity meter — office list sums this without a storage walk. */
+    totalBytes: totalBytesAcc,
     files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath)),
     ...(manifestExtra || {})
   };
@@ -6971,14 +7073,29 @@ function getOrAskDeviceNickname() {
   try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
   if (nick) return nick;
   const asked = window.prompt(
-    'Name this phone for the office File Explorer (e.g. "Tim phone" or "Carlos phone").\n\n' +
-    'Shown in the From column after Sync. Set once on this device.',
+    "Name this phone (e.g. Tim's phone, Brian's phone).\n\n" +
+    'Shown as From in the office File Explorer after Sync. Set once on this device.',
     ''
   );
   nick = (asked || '').trim();
   if (!nick) nick = 'Unknown phone';
   try { localStorage.setItem(DEVICE_NICKNAME_KEY, nick); } catch (e) {}
   return nick;
+}
+
+/** Ask on field home first use — don't wait for Sync. Home paints first, then prompt. */
+function ensureDeviceNicknameOnHome() {
+  let nick = '';
+  try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
+  if (nick) return;
+  // Defer so home cards paint before the blocking prompt
+  window.setTimeout(function () {
+    try {
+      if (document.getElementById('screenHome')?.classList.contains('active')) {
+        getOrAskDeviceNickname();
+      }
+    } catch (e) {}
+  }, 350);
 }
 
 function autoSyncPreference() {
@@ -7031,12 +7148,18 @@ function refreshAutoSyncMenuLabel() {
   btn.textContent = cur === 'on' ? '⟳ Auto-sync: On' : (cur === 'off' ? '⟳ Auto-sync: Off' : '⟳ Auto-sync: Ask…');
 }
 
+/** Offline-safe office sync status from local lastSyncedAt vs updatedAt. */
 function syncStatus(p) {
   const updated = p.updatedAt || 0;
   const synced = p.lastSyncedAt || 0;
   if (!synced) return { state: 'none', label: 'Not synced' };
   if (updated > synced + 1000) return { state: 'stale', label: 'Changes since sync' };
-  return { state: 'ok', label: 'Synced ' + relTime(synced) };
+  return { state: 'ok', label: 'Fully synced' };
+}
+
+/** Delete (trash / forever) only when Fully synced to office staging. */
+function isFullySyncedToOffice(p) {
+  return !!(p && syncStatus(p).state === 'ok');
 }
 
 function projectNeedsOfficeSync(p) {
@@ -7138,7 +7261,8 @@ async function runOfficeSyncUpload(opts) {
           uploadKind: 'office-sync',
           syncedAt: new Date().toISOString(),
           syncedFrom: deviceName,
-          deviceName: deviceName
+          deviceName: deviceName,
+          totalBytes: totalBytes
         });
         target.lastSyncedAt = Date.now();
         target.syncJobId = jobId;
@@ -8117,6 +8241,7 @@ document.addEventListener('click', (e) => {
 load();
 renderHome();
 showScreen('screenHome');
+ensureDeviceNicknameOnHome();
 _initRoomVerifyGestures();
 pvSetupGestures();
 </script>
@@ -8145,14 +8270,29 @@ pvSetupGestures();
 </div>
 
 <script>
-// Update app link — shown by default; hidden only when we confirm we're offline.
+// Update app link — quiet when current; yellow/urgent when a new SW is waiting.
 (function(){
   var link = document.getElementById("updateAppLink");
   if (!link) return;
   var STATE_IDLE = "Update app";
+  var STATE_READY = "Update available — tap here";
   var STATE_BUSY = "Fetching latest…";
   var STATE_ERR  = "Couldn't update — tap to retry";
   var busy = false;
+
+  function setUrgent(urgent){
+    if (typeof window.__pggSetUpdateAppUrgent === "function") {
+      window.__pggSetUpdateAppUrgent(urgent);
+      return;
+    }
+    if (urgent) {
+      link.classList.add("update-app-urgent");
+      if (!busy) link.textContent = STATE_READY;
+    } else {
+      link.classList.remove("update-app-urgent");
+      if (!busy) link.textContent = STATE_IDLE;
+    }
+  }
 
   function probe(){
     return new Promise(function(resolve){
@@ -8171,19 +8311,42 @@ pvSetupGestures();
     link.style.display = v ? "inline-block" : "none";
   }
 
+  async function refreshWaitingState(){
+    if (!("serviceWorker" in navigator)) { setUrgent(false); return; }
+    try {
+      var regs = await navigator.serviceWorker.getRegistrations();
+      var waiting = regs.some(function(reg){
+        var url = (reg.active && reg.active.scriptURL) || (reg.waiting && reg.waiting.scriptURL) || (reg.installing && reg.installing.scriptURL) || "";
+        return url.indexOf("/sw.js") !== -1 && !!reg.waiting;
+      });
+      setUrgent(waiting);
+    } catch(_){ /* keep current */ }
+  }
+
   function refreshVisibility(){
     if (!navigator.onLine) { setVisibility(false); return; }
-    probe().then(setVisibility);
+    probe().then(function(ok){
+      setVisibility(ok);
+      if (ok) refreshWaitingState();
+    });
   }
 
   window.addEventListener("online", refreshVisibility);
   window.addEventListener("offline", function(){ if(!busy) setVisibility(false); });
   refreshVisibility();
 
+  // Re-check when a SW claims or a waiting worker appears
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("controllerchange", function(){
+      setUrgent(false);
+    });
+  }
+
   link.addEventListener("click", function(e){
     e.preventDefault();
     if (busy) return;
     busy = true;
+    link.dataset.busy = "1";
     link.textContent = STATE_BUSY;
     link.style.display = "inline-block";
 
@@ -8196,7 +8359,9 @@ pvSetupGestures();
     var errTimer = setTimeout(function(){
       if (reloaded) return;
       busy = false;
+      delete link.dataset.busy;
       link.textContent = STATE_ERR;
+      link.classList.add("update-app-urgent");
       link.style.display = "inline-block";
     }, 10000);
 
@@ -8205,7 +8370,9 @@ pvSetupGestures();
         clearTimeout(reloadTimer);
         clearTimeout(errTimer);
         busy = false;
+        delete link.dataset.busy;
         link.textContent = STATE_ERR;
+        link.classList.add("update-app-urgent");
         link.style.display = "inline-block";
         return;
       }
