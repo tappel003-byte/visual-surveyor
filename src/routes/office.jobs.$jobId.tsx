@@ -72,7 +72,11 @@ export const Route = createFileRoute("/office/jobs/$jobId")({
 });
 
 function OfficeJobBrowserPage() {
-  const { jobId, title: loaderTitle, download } = Route.useLoaderData();
+  const { jobId, title: loaderTitle, download } = Route.useLoaderData() as {
+    jobId: string;
+    title: string;
+    download: Awaited<ReturnType<typeof officeGetJobDownload>>;
+  };
   const cached = typeof window !== "undefined" ? readJobsCache() : null;
   const cachedJob = cached?.jobs.find((j) => j.id === jobId);
   const [jobs, setJobs] = useState<OfficeJobFolder[]>(cached?.jobs ?? []);
