@@ -239,15 +239,11 @@
   .ri-title-pills{display:inline;white-space:normal}
   .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
-  /* Trash FAB (bottom-right of home) */
-  .fab-trash{position:fixed;right:18px;bottom:calc(18px + var(--app-bottom-offset,0px));
-    width:56px;height:56px;border-radius:50%;border:1px solid var(--line);
-    background:var(--paper);color:var(--ink);font-size:24px;display:flex;align-items:center;
-    justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.15);cursor:pointer;z-index:50}
-  .fab-trash.empty{opacity:.35;cursor:default}
-  .fab-trash .fab-badge{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;
-    padding:0 5px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;
-    font-weight:700;display:flex;align-items:center;justify-content:center}
+  /* Quiet Trash link in Recent header (only when soft-trash has items) */
+  .trash-link{background:transparent;border:none;color:var(--muted);font-size:12px;
+    padding:4px 6px;border-radius:6px;cursor:pointer;text-decoration:underline;
+    letter-spacing:normal;text-transform:none;font-weight:600}
+  .trash-link:active{background:var(--line);color:var(--ink)}
   /* Trash screen */
   #screenTrash{padding:0;overflow-y:auto;align-items:stretch}
   #screenTrash.active{display:flex;flex-direction:column}
@@ -672,12 +668,11 @@
 
 
   <div class="recent-head">
-    <span>Recent</span>
-    <span id="recentCount"></span>
+    <span><span>Recent</span> <span id="recentCount"></span></span>
+    <button type="button" id="trashLink" class="trash-link" onclick="openTrash()" style="display:none" aria-label="Open trash">Trash</button>
   </div>
   <div id="exportReminder"></div>
   <div id="recentList"></div>
-  <button id="fabTrash" class="fab-trash empty" onclick="openTrash()" aria-label="Trash">🗑<span id="fabTrashBadge" class="fab-badge" style="display:none">0</span></button>
 </div>
 
 <!-- ============ TRASH ============ -->
@@ -1169,8 +1164,8 @@ function showSaveFailureBanner(err) {
           <br><br>
           <b>Things to try before continuing to edit:</b>
           <ul style="margin:8px 0 0 18px;padding:0;">
-            <li>Empty Trash on the Home screen</li>
-            <li>Delete old projects you've already exported</li>
+            <li>Open Trash under Recent and permanently delete old jobs</li>
+            <li>Delete old projects you've already synced to office</li>
           </ul>
         </div>
         <div id="saveFailErr" style="font-size:12px;color:#666;margin-top:10px;word-break:break-word;"></div>
@@ -1546,7 +1541,7 @@ function renderHome() {
       <button onclick="restoreFromBackup()" style="background:#8b5e34;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600">Restore backup</button>
     </div>`;
   }
-  renderTrashFab();
+  renderTrashLink();
 }
 
 function dismissExportReminder(e) {
@@ -1555,18 +1550,17 @@ function dismissExportReminder(e) {
   const reminder = document.getElementById('exportReminder');
   if (reminder) reminder.innerHTML = '';
 }
-function renderTrashFab() {
-  const fab = document.getElementById('fabTrash');
-  const badge = document.getElementById('fabTrashBadge');
-  if (!fab) return;
+/** Show a quiet "Trash (N)" in the Recent header only when soft-trash has items. */
+function renderTrashLink() {
+  const link = document.getElementById('trashLink');
+  if (!link) return;
   const n = (store.trash || []).length;
   if (n > 0) {
-    fab.classList.remove('empty');
-    badge.style.display = 'flex';
-    badge.textContent = String(n);
+    link.style.display = '';
+    link.textContent = 'Trash (' + n + ')';
   } else {
-    fab.classList.add('empty');
-    badge.style.display = 'none';
+    link.style.display = 'none';
+    link.textContent = 'Trash';
   }
 }
 function relTime(t) {
@@ -1693,6 +1687,7 @@ function purgeOldTrash() {
 function openTrash() {
   if (!(store.trash||[]).length) { toast('Trash is empty'); return; }
   renderTrash();
+  renderTrashLink();
   showScreen('screenTrash');
 }
 function closeTrash() { showScreen('screenHome'); }
