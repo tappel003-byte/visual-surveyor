@@ -231,7 +231,7 @@
     padding:2px 7px;border-radius:999px;letter-spacing:.05em;margin-right:6px;vertical-align:1px}
   .ri-tag.internal{background:#e2efe6;color:#2e7d4f}
   .ri-tag.external{background:#f3d8ce;color:var(--accent)}
-  .ri-actions{display:flex;gap:4px}
+  .ri-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
   .ri-btn{background:transparent;border:none;color:var(--muted);font-size:18px;
     width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center}
   .ri-btn:active{background:var(--line)}
@@ -243,7 +243,8 @@
   .ri-badge.ok{background:#e4efe4;color:#2f7d4f}
   .ri-badge.sync-ok{background:#e2efe6;color:#2e7d4f;font-weight:700}
   .ri-badge.sync-stale,.ri-badge.sync-none{background:#fdf4e0;color:#8a5a10;font-weight:700}
-  .ri-move-locked{font-size:11px;color:var(--muted);padding:6px 8px;white-space:nowrap}
+  .ri-synced{display:inline-flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:700;color:#2e7d4f;padding:4px 6px;line-height:1}
   .ri-title-pills{display:inline;white-space:normal}
   .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
@@ -1508,9 +1509,10 @@ function renderHome() {
       const badgeClass = status.state === 'ok' ? 'ri-badge ok' : 'ri-badge warn';
       const syncPillClass = sync.state === 'ok' ? 'ri-badge sync-ok' : (sync.state === 'stale' ? 'ri-badge sync-stale' : 'ri-badge sync-none');
       const canTrash = isFullySyncedToOffice(p);
-      const trashAction = canTrash
-        ? `<button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>`
-        : `<span class="ri-move-locked" title="Sync this job to office before you can delete it">Sync to delete</span>`;
+      // Sync → ✓ when synced → Delete (never "Sync to delete"; delete only after sync).
+      const rowActions = canTrash
+        ? `<span class="ri-synced" title="Synced to office" aria-label="Synced">✓</span><button type="button" class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Delete</button>`
+        : `<button type="button" class="ri-move" onclick="event.stopPropagation();syncProjectFromHome('${p.id}')" title="Sync this job to office before you can delete it">Sync</button>`;
       return `
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
@@ -1518,7 +1520,7 @@ function renderHome() {
             <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
           </div>
           <div class="ri-actions">
-            ${trashAction}
+            ${rowActions}
           </div>
         </div>`;
     }).join('');
@@ -1583,6 +1585,18 @@ function relTime(t) {
   const d = Math.floor(s/86400);
   if (d<7) return d+' day'+(d===1?'':'s')+' ago';
   return new Date(t).toLocaleDateString();
+}
+/** Home Recent: Sync this job (opens sync UI). Delete stays locked until Fully synced. */
+async function syncProjectFromHome(id) {
+  const proj = (store.projects || []).find(p => p.id === id);
+  if (!proj) return;
+  if (isFullySyncedToOffice(proj)) {
+    renderHome();
+    return;
+  }
+  ensureAutoSyncPreferenceAsked();
+  await runOfficeSyncUpload({ silent: false, projectRef: proj });
+  renderHome();
 }
 function moveProjectToTrash(id) {
   const proj = (store.projects||[]).find(p => p.id === id);
