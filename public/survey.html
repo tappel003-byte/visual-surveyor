@@ -960,6 +960,9 @@
     <div>
       <div class="sheet-title">Export</div>
       <div class="sheet-sub" id="exportSub">Picture map + descriptions</div>
+      <div class="sheet-sub" id="exportLastResortNote" style="margin-top:6px;line-height:1.4">
+        Last resort if Sync or Download isn’t working.
+      </div>
     </div>
     <button class="ghost" onclick="closeSheets()">Cancel</button>
   </div>
@@ -971,12 +974,13 @@
     </button>
     <div class="sheet-sub" id="exportSizeNote" style="margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
     <button class="ghost" id="exportShrinkBtn" onclick="exportShrinkFromSheet()" style="display:none;margin-top:6px">🗜 Shrink photos to fit one ZIP</button>
-    <button class="ghost" id="cloudUploadBtn" onclick="exportProjectCloud()" style="margin-top:8px">
+    <!-- Hidden: competed with Sync / office Download. Keep markup so exportProjectCloud() still works if reached from ZIP-too-big fallback. -->
+    <button class="ghost" id="cloudUploadBtn" onclick="exportProjectCloud()" style="display:none;margin-top:8px">
       ☁️ Upload &amp; get one link
     </button>
     <div class="sheet-sub" id="exportResumeNote" style="display:none;margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
     <div class="sheet-sub" id="exportCloudNote" style="margin-top:8px;line-height:1.4;font-size:12px">
-      The ZIP saves straight to this device and works with no signal — from there it moves to a computer by cable, AirDrop, or a synced folder. Cloud upload is for jobs too big to fit in one ZIP, or for sending a job to someone else remotely.
+      Day-to-day path is Sync on the phone, then Download on the desk. This ZIP is for when those aren’t available.
     </div>
 
 
@@ -988,10 +992,11 @@
       Opens the picture map in a new tab so you can review before saving. The same file is inside the ZIP.
     </div>
 
-    <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
+    <!-- Hidden: desk path is office Download, not .pgg project file. -->
+    <button class="ghost" id="exportProjectFileBtn" style="display:none;margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
       💾 Move to Desktop (project file)
     </button>
-    <div class="sheet-sub" style="margin-top:6px">
+    <div class="sheet-sub" id="exportProjectFileNote" style="display:none;margin-top:6px">
       Saves a file you can open on your desktop to keep working on this job there.
     </div>
   </div>
@@ -6093,8 +6098,8 @@ function openExport() {
   _refreshExportSizeNote();
 }
 
-// Shows how big this job is before you tap, and only frames cloud upload as
-// relevant once the job is actually near or over the one-ZIP limit.
+// Shows how big this job is before you tap. Cloud “one link” stays hidden —
+// Sync → desk Download is the normal path; ZIP is last resort.
 async function _refreshExportSizeNote() {
   const sizeNote = document.getElementById('exportSizeNote');
   const cloudBtn = document.getElementById('cloudUploadBtn');
@@ -6116,7 +6121,7 @@ async function _refreshExportSizeNote() {
   } catch (e) {
     console.warn('size readout failed', e);
     sizeNote.textContent = '';
-    if (cloudBtn) cloudBtn.style.display = '';
+    if (cloudBtn) cloudBtn.style.display = 'none';
     return;
   }
 
@@ -6125,7 +6130,7 @@ async function _refreshExportSizeNote() {
   const near = bytes > SINGLE_ZIP_LIMIT * 0.8;
   const over = bytes > SINGLE_ZIP_LIMIT;
   let txt = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
-    (over ? ' — too big for one ZIP, so it will be split or uploaded.'
+    (over ? ' — too big for one ZIP, so it will be split.'
           : near ? ' — close to the one-ZIP limit.'
                  : ' — fits in one ZIP.');
   try {
@@ -6134,12 +6139,12 @@ async function _refreshExportSizeNote() {
   } catch (e) {}
   sizeNote.style.whiteSpace = 'pre-line';
   sizeNote.textContent = txt;
-  if (cloudBtn) cloudBtn.style.display = '';
+  if (cloudBtn) cloudBtn.style.display = 'none';
   if (shrinkBtn) shrinkBtn.style.display = (near || over) ? '' : 'none';
   if (cloudNote) {
     cloudNote.textContent = (near || over)
-      ? 'This job is at the edge of what one ZIP can hold on the phone. Cloud upload is the reliable path here — it needs signal, but it resumes if it drops.'
-      : 'The ZIP saves straight to this device and works with no signal — from there it moves to a computer by cable, AirDrop, or a synced folder. Cloud upload is for jobs too big to fit in one ZIP, or for sending a job to someone else remotely.';
+      ? 'This job is at the edge of what one ZIP can hold on the phone. Prefer Sync → Download on the desk when you can; Shrink photos may still fit one ZIP here.'
+      : 'Day-to-day path is Sync on the phone, then Download on the desk. This ZIP is for when those aren’t available.';
   }
 }
 
