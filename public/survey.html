@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build marker: home-open-all-jobs-1 -->
+<!-- build marker: lovable-sunset-notice-2026-11-16 -->
 
 <html lang="en">
 <head>
@@ -199,6 +199,21 @@
     color:#5c1a00;font-weight:800;font-size:14px;text-decoration:none;
     background:#f5c518;border:2px solid #c44b1a;padding:10px 16px;border-radius:12px;
     box-shadow:0 2px 8px rgba(196,75,26,.25);letter-spacing:.01em}
+
+  /* Lovable-host sunset — clear but not the yellow Update slab */
+  .lovable-sunset-banner{
+    display:none;margin:0 0 16px;padding:14px 16px;border-radius:12px;
+    background:#eef4f8;border:1px solid #8aa4b8;color:#1a2a36;font-size:14px;line-height:1.45;
+    text-align:left}
+  .lovable-sunset-banner.visible{display:block}
+  .lovable-sunset-banner strong{font-weight:700}
+  .lovable-sunset-banner a{color:#0b4f6c;font-weight:700;text-decoration:underline}
+  .lovable-sunset-local{
+    display:none;margin:0 0 14px;padding:12px 14px;border-radius:12px;
+    background:#f7efe6;border:1px solid #c4a574;color:#3d2e18;font-size:13px;line-height:1.45;
+    text-align:left}
+  .lovable-sunset-local.visible{display:block}
+  .lovable-sunset-local strong{font-weight:700}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
@@ -640,6 +655,7 @@
 
 <!-- ============ HOME ============ -->
 <div id="screenHome" class="screen active">
+  <div id="lovableSunsetBanner" class="lovable-sunset-banner" role="status" aria-live="polite"></div>
   <div class="home-head">
     <h1>PGG Photo Documentation</h1>
     <div class="home-jumps">
@@ -675,6 +691,7 @@
     <span>Recent</span>
     <span id="recentCount"></span>
   </div>
+  <div id="lovableSunsetLocal" class="lovable-sunset-local" role="status"></div>
   <div id="exportReminder"></div>
   <div id="recentList"></div>
   <button id="fabTrash" class="fab-trash empty" onclick="openTrash()" aria-label="Trash">🗑<span id="fabTrashBadge" class="fab-badge" style="display:none">0</span></button>
@@ -1058,6 +1075,10 @@ const STORAGE_KEY = 'pgg_survey_v1';
 const MAX_IMG_DIM = 2400;        // floor plan downscale cap
 const MAX_PHOTO_DIM = 3000;       // photo downscale cap
 const UNDO_LIMIT = 30;
+/** Fixed end of Lovable hosting for the field app (≈30 days from 2026-10-17 notice). */
+const LOVABLE_SUNSET_END_ISO = '2026-11-16';
+const LOVABLE_SUNSET_END_LABEL = '16 November 2026';
+const WWW_FIELD_APP_URL = 'https://www.pggphotodocumentation.com';
 
 // ---- State ----
 let store = { projects: [] };     // persisted
@@ -1485,12 +1506,75 @@ function exportStatus(p) {
   if (updated > exported + 1000) return { state: 'stale', label: 'Changes since export' };
   return { state: 'ok', label: 'Exported ' + relTime(exported) };
 }
+/**
+ * Sunset UI only on the Lovable-hosted field app — never on www Netlify.
+ * Localhost: ?sunsetPreview=1 for screenshots / QA only.
+ */
+function isLovableHostedFieldApp() {
+  const host = (location.hostname || '').toLowerCase();
+  if (!host) return false;
+  if (host === 'pggphotodocumentation.com' || host.endsWith('.pggphotodocumentation.com')) return false;
+  if (host === 'netlify.app' || host.endsWith('.netlify.app')) return false;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    try { return new URLSearchParams(location.search).get('sunsetPreview') === '1'; } catch { return false; }
+  }
+  const zones = [
+    'lovable.app',
+    'lovableproject.com',
+    'lovableproject-dev.com',
+    'lovable.dev',
+    'gpt-eng.com',
+    'gptengineer.run',
+  ];
+  return zones.some((z) => host === z || host.endsWith('.' + z));
+}
+
+function hasLocalOnPhoneData() {
+  const nProj = (store.projects || []).length;
+  const nTrash = (store.trash || []).length;
+  return nProj + nTrash > 0;
+}
+
+function renderLovableSunsetNotices() {
+  const banner = document.getElementById('lovableSunsetBanner');
+  const localEl = document.getElementById('lovableSunsetLocal');
+  const onLovable = isLovableHostedFieldApp();
+  if (banner) {
+    if (onLovable) {
+      banner.classList.add('visible');
+      banner.innerHTML =
+        'This app will no longer be hosted on this platform after <strong>' +
+        LOVABLE_SUNSET_END_LABEL +
+        '</strong> (30 days from this notice). Please use <a href="' +
+        WWW_FIELD_APP_URL +
+        '" target="_top" rel="noopener">' +
+        'www.pggphotodocumentation.com</a> — create a home screen icon and start using that app.';
+    } else {
+      banner.classList.remove('visible');
+      banner.innerHTML = '';
+    }
+  }
+  if (localEl) {
+    if (onLovable && hasLocalOnPhoneData()) {
+      localEl.classList.add('visible');
+      localEl.innerHTML =
+        'Jobs on this phone: support for this app ends <strong>' +
+        LOVABLE_SUNSET_END_LABEL +
+        '</strong>. Move them with <strong>Sync</strong> to office or <strong>Download</strong> on a desk — do not leave jobs only on the phone.';
+    } else {
+      localEl.classList.remove('visible');
+      localEl.innerHTML = '';
+    }
+  }
+}
+
 function renderHome() {
   const list = document.getElementById('recentList');
   const count = document.getElementById('recentCount');
   const reminder = document.getElementById('exportReminder');
   const projs = (store.projects || []).slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   count.textContent = projs.length ? projs.length + ' project' + (projs.length===1?'':'s') : '';
+  renderLovableSunsetNotices();
   if (!projs.length) {
     list.innerHTML = '<div class="recent-empty">No surveys yet. Start one above.</div>';
     if (reminder) reminder.innerHTML = '';
