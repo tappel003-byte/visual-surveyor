@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build marker: exports-lockdown-2026-10-17-sec -->
+<!-- build marker: office-back-nan-date-2026-10-17 -->
 
 <html lang="en">
 <head>
@@ -6482,8 +6482,13 @@ function _downloadBlob(blob, filename) {
   return ok;
 }
 
-// Local YYYY-MM-DD so folders sort correctly.
+// Local YYYY-MM-DD so folders sort correctly. Never emit NaN-NaN-NaN when the
+// Date is missing/invalid (bad photo-id timestamps, corrupt createdAt, etc.).
+function _isValidDate(d) {
+  return d instanceof Date && !isNaN(d.getTime());
+}
 function _ymd(d) {
+  if (!_isValidDate(d)) return 'unknown-date';
   const p = (n) => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
@@ -6491,9 +6496,14 @@ function _ymd(d) {
 // Day the survey was walked: earliest photo capture time. Photo ids are
 // 'ph_' + base36(Date.now()), so the timestamp is recoverable. Falls back to
 // quick-capture timestamps, then the day the job was created.
+// Rejects timestamps outside a sane Date range (Invalid Date → NaN folder names).
 function _surveyDate(proj) {
+  const MAX_MS = 8.64e15; // JS Date limit
   let best = Infinity;
-  const consider = (t) => { if (typeof t === 'number' && isFinite(t) && t > 0 && t < best) best = t; };
+  const consider = (t) => {
+    if (typeof t !== 'number' || !isFinite(t) || t <= 0 || t > MAX_MS) return;
+    if (t < best) best = t;
+  };
   for (const p of (proj.pins || [])) {
     for (const entry of (p.photos || [])) {
       if (!isPhotoId(entry)) continue;
@@ -6502,8 +6512,16 @@ function _surveyDate(proj) {
     }
   }
   for (const e of (proj.quickCapture || [])) consider(e && e.ts);
-  if (best === Infinity) consider(proj.createdAt);
-  return new Date(best === Infinity ? Date.now() : best);
+  if (best === Infinity) {
+    const created = proj.createdAt;
+    if (typeof created === 'number') consider(created);
+    else if (typeof created === 'string' && created.trim()) {
+      const parsed = Date.parse(created);
+      if (!isNaN(parsed)) consider(parsed);
+    }
+  }
+  const d = new Date(best === Infinity ? Date.now() : best);
+  return _isValidDate(d) ? d : new Date();
 }
 
 // Capture time of a single photo entry, decoded from its 'ph_<base36>' id.
@@ -6511,9 +6529,12 @@ function _surveyDate(proj) {
 function _entryDate(entry, fallback) {
   if (isPhotoId(entry)) {
     const t = parseInt(String(entry).slice(3), 36);
-    if (!isNaN(t) && t > 0) return new Date(t);
+    if (!isNaN(t) && t > 0 && t <= 8.64e15) {
+      const d = new Date(t);
+      if (_isValidDate(d)) return d;
+    }
   }
-  return fallback;
+  return _isValidDate(fallback) ? fallback : new Date();
 }
 
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
@@ -6529,6 +6550,7 @@ async function collectExportItems() {
   // falling back to quick-capture timestamps, then the day the job was created.
   const surveyDate = _surveyDate(project);
   const jobNum = (project.jobNumber || '').trim();
+  // jobNumber_YYYY-MM-DD (or jobNumber_unknown-date) — never …_NaN-NaN-NaN
   const photoDir = (jobNum ? sanitizeFilename(jobNum) + '_' : '') + _ymd(surveyDate);
 
   // misc/map.png
@@ -6743,7 +6765,7 @@ const PARTS_README =
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
 const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 /** Bump when shipping a field shell Tim must verify on every phone before lockdown SQL. */
-const PGG_APP_VERSION = '2026.10.17-sec';
+const PGG_APP_VERSION = '2026.10.17-office';
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
 function _isAlreadyExistsUploadDetail(status, detail) {
