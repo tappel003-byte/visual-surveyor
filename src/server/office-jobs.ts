@@ -3,6 +3,8 @@ const EXPORTS_LIST_URL = "https://visual-surveyor.lovable.app/api/public/exports
 export type OfficeJobFolder = {
   /** Top-level folder name (same id used by `/get?job=`). */
   id: string;
+  /** Human-readable site / project name from export manifest (`folderName`). */
+  displayName: string | null;
   fileCount: number;
   totalBytes: number;
 };
@@ -12,7 +14,7 @@ export function exportsListTokenConfigured(): boolean {
 }
 
 type ExportsListResponse = {
-  jobs?: Array<{ id: string; fileCount: number; totalBytes: number }>;
+  jobs?: Array<{ id: string; displayName?: string | null; fileCount: number; totalBytes: number }>;
 };
 
 /** Fetches job folders from the Lovable public exports-list API (server-only). */
@@ -43,8 +45,11 @@ export async function fetchExportJobListFromLovable(): Promise<
   for (const item of body.jobs ?? []) {
     const id = item.id?.trim();
     if (!id) continue;
+    const displayName =
+      typeof item.displayName === "string" && item.displayName.trim() ? item.displayName.trim() : null;
     jobs.push({
       id,
+      displayName,
       fileCount: Number(item.fileCount) || 0,
       totalBytes: Number(item.totalBytes) || 0,
     });

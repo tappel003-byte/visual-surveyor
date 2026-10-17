@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { officeAuthStatus, officeLogin, officeLogout } from "@/lib/office-auth.functions";
 import { officeListJobs, type OfficeJobListResult } from "@/lib/office-jobs.functions";
@@ -40,17 +40,27 @@ function OfficeExplorer() {
   const [jobs, setJobs] = useState<OfficeJobListResult | null>(initialJobs);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [listRefreshing, setListRefreshing] = useState(false);
+
+  const reloadJobs = async () => {
+    setListError(null);
+    setListRefreshing(true);
+    try {
+      setJobs(await officeListJobs());
+    } catch {
+      setListError("Could not refresh the job list. Try again in a moment.");
+    } finally {
+      setListRefreshing(false);
+    }
+  };
 
   const refresh = async () => {
     const nextAuth = await officeAuthStatus();
     setAuth(nextAuth);
     if (nextAuth.authenticated) {
-      try {
-        setJobs(await officeListJobs());
-      } catch {
-        setJobs({ listAvailable: false, jobs: [] });
-      }
+      await reloadJobs();
     } else {
       setJobs(null);
     }
@@ -242,52 +252,102 @@ function OfficeExplorer() {
             <h2 style={{ fontSize: 16, margin: 0 }}>Job folders ({jobList.length})</h2>
             <button
               type="button"
-              onClick={() => refresh().catch(() => {})}
-              disabled={busy}
+              onClick={() => reloadJobs().catch(() => {})}
+              disabled={busy || listRefreshing}
               style={{
                 padding: "6px 10px",
                 border: "1px solid #d4c8b8",
                 borderRadius: 8,
                 background: "#fff",
                 fontSize: 12,
-                cursor: "pointer",
+                cursor: listRefreshing ? "wait" : "pointer",
                 color: "#6b5d4f",
               }}
             >
-              Refresh
+              {listRefreshing ? "Refreshing…" : "Refresh"}
             </button>
           </div>
+          {listError && (
+            <p style={{ color: "#a33", fontSize: 13, margin: "0 0 12px" }} role="alert">
+              {listError}
+            </p>
+          )}
           <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {jobList.map((job) => (
-              <li
-                key={job.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 0",
-                  borderTop: "1px solid #e5ddd2",
-                }}
-              >
-                <span
+            {jobList.map((job) => {
+              const title = job.displayName || "Field export";
+              return (
+                <li
+                  key={job.id}
                   style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    wordBreak: "break-all",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 0",
+                    borderTop: "1px solid #e5ddd2",
                   }}
                 >
-                  {job.id}
-                </span>
-                <span style={{ fontSize: 13, color: "#6b5d4f", flexShrink: 0 }}>
-                  {job.fileCount} file{job.fileCount === 1 ? "" : "s"}
-                </span>
-                <span style={{ fontSize: 13, color: "#8a7a68", flexShrink: 0, minWidth: 72, textAlign: "right" }}>
-                  {formatSizeMb(job.totalBytes)}
-                </span>
-              </li>
-            ))}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Link
+                      to="/get"
+                      search={{ job: job.id }}
+                      style={{
+                        display: "block",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "#7a4b2a",
+                        textDecoration: "none",
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {title}
+                    </Link>
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: 2,
+                        fontSize: 11,
+                        color: "#8a7a68",
+                        wordBreak: "break-all",
+                        fontFamily: "ui-monospace, monospace",
+                      }}
+                    >
+                      {job.id}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 13, color: "#6b5d4f", flexShrink: 0 }}>
+                    {job.fileCount} file{job.fileCount === 1 ? "" : "s"}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "#8a7a68",
+                      flexShrink: 0,
+                      minWidth: 72,
+                      textAlign: "right",
+                    }}
+                  >
+                    {formatSizeMb(job.totalBytes)}
+                  </span>
+                  <Link
+                    to="/get"
+                    search={{ job: job.id }}
+                    style={{
+                      padding: "8px 14px",
+                      border: "1px solid #7a4b2a",
+                      borderRadius: 8,
+                      background: "#fff",
+                      color: "#7a4b2a",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      textDecoration: "none",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Open
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
