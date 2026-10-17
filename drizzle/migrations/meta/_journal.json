@@ -15,6 +15,13 @@
       "when": 1788265374843,
       "tag": "0001_exports_bucket_allow_overwrite",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792248900877,
+      "tag": "0002_drop_anon_exports_policies",
+      "breakpoints": true
     }
   ]
 }
