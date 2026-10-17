@@ -8329,7 +8329,8 @@ pvSetupGestures();
 
   function setVisibility(v){
     if (busy) return;
-    link.style.display = v ? "inline-block" : "none";
+    if (wrap) wrap.style.display = v ? "" : "none";
+    else link.style.display = v ? "inline-block" : "none";
   }
 
   async function refreshWaitingState(){
@@ -8369,32 +8370,35 @@ pvSetupGestures();
     busy = true;
     link.dataset.busy = "1";
     link.textContent = STATE_BUSY;
-    link.style.display = "inline-block";
+    if (wrap) wrap.style.display = "";
+    else link.style.display = "inline-block";
 
     var reloaded = false;
     function doReload(){ if (reloaded) return; reloaded = true; window.location.reload(true); }
+
+    function showError(){
+      busy = false;
+      delete link.dataset.busy;
+      link.textContent = STATE_ERR;
+      link.classList.add("update-app-urgent");
+      if (wrap) { wrap.classList.add("urgent"); wrap.style.display = ""; }
+      else link.style.display = "inline-block";
+      if (hint) hint.hidden = false;
+    }
 
     // 6s failsafe reload
     var reloadTimer = setTimeout(doReload, 6000);
     // 10s failsafe error
     var errTimer = setTimeout(function(){
       if (reloaded) return;
-      busy = false;
-      delete link.dataset.busy;
-      link.textContent = STATE_ERR;
-      link.classList.add("update-app-urgent");
-      link.style.display = "inline-block";
+      showError();
     }, 10000);
 
     probe().then(function(ok){
       if (!ok) {
         clearTimeout(reloadTimer);
         clearTimeout(errTimer);
-        busy = false;
-        delete link.dataset.busy;
-        link.textContent = STATE_ERR;
-        link.classList.add("update-app-urgent");
-        link.style.display = "inline-block";
+        showError();
         return;
       }
 
