@@ -233,6 +233,10 @@
   .ri-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
   .ri-badge.warn{background:#fdf4e0;color:#8a5a10}
   .ri-badge.ok{background:#e4efe4;color:#2f7d4f}
+  .ri-badge.sync-ok{background:#e2efe6;color:#2e7d4f;font-weight:700}
+  .ri-badge.sync-stale,.ri-badge.sync-none{background:#fdf4e0;color:#8a5a10;font-weight:700}
+  .ri-move-locked{font-size:11px;color:var(--muted);padding:6px 8px;white-space:nowrap}
+  .ri-title-pills{display:inline;white-space:normal}
   .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
   /* Trash FAB (bottom-right of home) */
@@ -817,7 +821,7 @@
 
     
     <div class="sep"></div>
-    <button class="danger" onclick="confirmDeleteProject()">🗑 Move to trash</button>
+    <button class="danger" id="menuTrashBtn" onclick="confirmDeleteProject()">🗑 Move to trash</button>
   </div>
 
   <div class="stage" id="stage">
@@ -1496,15 +1500,19 @@ function renderHome() {
       const status = exportStatus(p);
       const sync = syncStatus(p);
       const badgeClass = status.state === 'ok' ? 'ri-badge ok' : 'ri-badge warn';
-      const syncHint = sync.state !== 'none' ? ' · ' + sync.label : '';
+      const syncPillClass = sync.state === 'ok' ? 'ri-badge sync-ok' : (sync.state === 'stale' ? 'ri-badge sync-stale' : 'ri-badge sync-none');
+      const canTrash = isFullySyncedToOffice(p);
+      const trashAction = canTrash
+        ? `<button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>`
+        : `<span class="ri-move-locked" title="Sync this job to office before you can delete it">Sync to delete</span>`;
       return `
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
-            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="${badgeClass}">${status.label}</span></div>
-            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}${syncHint}</div>
+            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-title-pills"><span class="${syncPillClass}">${escapeHtml(sync.label)}</span><span class="${badgeClass}">${status.label}</span></span></div>
+            <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
           </div>
           <div class="ri-actions">
-            <button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>
+            ${trashAction}
           </div>
         </div>`;
     }).join('');
@@ -1574,6 +1582,10 @@ function relTime(t) {
 function moveProjectToTrash(id) {
   const proj = (store.projects||[]).find(p => p.id === id);
   if (!proj) return;
+  if (!isFullySyncedToOffice(proj)) {
+    toast('Sync to office first — delete only when Fully synced');
+    return;
+  }
   if (!confirm('Move "' + (proj.address || 'this project') + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
   proj.deletedAt = Date.now();
   store.trash = store.trash || [];
@@ -1596,6 +1608,14 @@ function restoreProject(id) {
 function deleteProjectForever(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  // Never permanently delete work that was not fully synced to office staging.
+  if (!isFullySyncedToOffice(proj)) {
+    alert(
+      '"' + (proj.address || 'This project') + '" is not fully synced to office.\n\n' +
+      'Restore it, Sync to office, then delete. Unsynced work cannot be deleted.'
+    );
+    return;
+  }
   const status = exportStatus(proj);
   if (status.state !== 'ok') {
     const reason = status.state === 'none' ? 'has never been exported' : 'has changes since it was last exported';
@@ -1603,6 +1623,7 @@ function deleteProjectForever(id) {
       restoreProject(id);
       toast('Restored — export it, then trash it again when ready.');
     }, () => {
+      // Still blocked if somehow not synced — confirmPermanentDelete re-checks sync.
       confirmPermanentDelete(id);
     });
     return;
@@ -1612,6 +1633,10 @@ function deleteProjectForever(id) {
 function confirmPermanentDelete(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  if (!isFullySyncedToOffice(proj)) {
+    toast('Cannot delete — job is not Fully synced');
+    return;
+  }
   if (!confirm('Permanently delete "' + (proj.address || 'this project') + '"?\n\nThis cannot be undone.')) return;
   for (const pin of (proj.pins||[])) {
     for (const entry of (pin.photos||[])) {
@@ -1647,6 +1672,11 @@ function purgeOldTrash() {
   let purged = 0;
   for (const proj of trash) {
     if ((proj.deletedAt || 0) < cutoff) {
+      // Never auto-purge unsynced work — keep until Fully synced (or restored).
+      if (!isFullySyncedToOffice(proj)) {
+        keep.push(proj);
+        continue;
+      }
       for (const pin of (proj.pins||[])) {
         for (const entry of (pin.photos||[])) {
           if (isPhotoId(entry)) idbDel(entry).catch(()=>{});
@@ -1677,14 +1707,19 @@ function renderTrash() {
   body.innerHTML = items.map(p => {
     const daysLeft = Math.max(0, Math.ceil(30 - (Date.now() - (p.deletedAt||0))/DAY));
     const pinCount = (p.pins||[]).length;
+    const canDelete = isFullySyncedToOffice(p);
+    const sync = syncStatus(p);
+    const foreverBtn = canDelete
+      ? `<button class="ti-forever" onclick="deleteProjectForever('${p.id}')">Delete forever</button>`
+      : `<button class="ti-forever" disabled title="Not fully synced — restore and Sync to office first" style="opacity:.4;cursor:not-allowed">Delete locked</button>`;
     return `
       <div class="trash-item">
         <div class="ti-body">
-          <div class="ti-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}</div>
-          <div class="ti-sub">${pinCount} pin${pinCount===1?'':'s'} · deletes in ${daysLeft} day${daysLeft===1?'':'s'}</div>
+          <div class="ti-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-badge ${canDelete ? 'sync-ok' : 'sync-stale'}">${escapeHtml(sync.label)}</span></div>
+          <div class="ti-sub">${pinCount} pin${pinCount===1?'':'s'} · ${canDelete ? ('deletes in ' + daysLeft + ' day' + (daysLeft===1?'':'s')) : 'kept until Fully synced'}</div>
         </div>
         <button class="ti-restore" onclick="restoreProject('${p.id}')">Restore</button>
-        <button class="ti-forever" onclick="deleteProjectForever('${p.id}')">Delete forever</button>
+        ${foreverBtn}
       </div>`;
   }).join('');
 }
@@ -3491,7 +3526,20 @@ function setupDrawToolbar() {
 
 // ---------- Menu ----------
 function toggleMenu() {
-  document.getElementById('workMenu').classList.toggle('open');
+  const menu = document.getElementById('workMenu');
+  menu.classList.toggle('open');
+  if (menu.classList.contains('open')) refreshMenuTrashButton();
+}
+function refreshMenuTrashButton() {
+  const btn = document.getElementById('menuTrashBtn');
+  if (!btn) return;
+  const ok = project && isFullySyncedToOffice(project);
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '' : '0.45';
+  btn.title = ok
+    ? 'Move this job to trash'
+    : 'Sync to office first — delete is only allowed when Fully synced';
+  btn.textContent = ok ? '🗑 Move to trash' : '🗑 Sync before delete';
 }
 function closeMenu() { document.getElementById('workMenu').classList.remove('open'); }
 document.addEventListener('click', (e) => {
@@ -3523,6 +3571,10 @@ document.addEventListener('fullscreenchange', () => {
 function confirmDeleteProject() {
   closeMenu();
   if (!project) return;
+  if (!isFullySyncedToOffice(project)) {
+    toast('Sync to office first — delete only when Fully synced');
+    return;
+  }
   if (!confirm('Move "' + project.address + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
   project.deletedAt = Date.now();
   store.trash = store.trash || [];
@@ -7096,12 +7148,18 @@ function refreshAutoSyncMenuLabel() {
   btn.textContent = cur === 'on' ? '⟳ Auto-sync: On' : (cur === 'off' ? '⟳ Auto-sync: Off' : '⟳ Auto-sync: Ask…');
 }
 
+/** Offline-safe office sync status from local lastSyncedAt vs updatedAt. */
 function syncStatus(p) {
   const updated = p.updatedAt || 0;
   const synced = p.lastSyncedAt || 0;
   if (!synced) return { state: 'none', label: 'Not synced' };
   if (updated > synced + 1000) return { state: 'stale', label: 'Changes since sync' };
-  return { state: 'ok', label: 'Synced ' + relTime(synced) };
+  return { state: 'ok', label: 'Fully synced' };
+}
+
+/** Delete (trash / forever) only when Fully synced to office staging. */
+function isFullySyncedToOffice(p) {
+  return !!(p && syncStatus(p).state === 'ok');
 }
 
 function projectNeedsOfficeSync(p) {
