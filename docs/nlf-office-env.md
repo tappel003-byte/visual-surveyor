@@ -2,7 +2,9 @@
 
 Password-gated **office File Explorer** at `/office` on the same Netlify site as the field app. No custom domain required.
 
-**For Tim:** everything is configured in **Netlify → Site configuration → Environment variables** only. You never need to open supabase.com, find keys in a Supabase dashboard, or Lovable-publish for `/office`. If the job list or signed links are missing, ask Claude to check those Netlify variables and redeploy.
+**Architecture (locked):** Netlify `/office` never holds a Supabase service role. Job list and per-file signed Open links are fetched **server-side** from Lovable Cloud APIs (`visual-surveyor.lovable.app`) using `EXPORTS_LIST_TOKEN`. Lovable has the service role; Netlify does not.
+
+**For Tim:** set only the three Netlify variables below. Do **not** add `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` on Netlify (secret scan can fail the build; the key is not obtainable from Lovable Cloud for Netlify). After code that adds a new Lovable API lands on `main`, **Publish once in Lovable** so that endpoint is live — see `docs/nlf-office-lovable-publish.md`.
 
 ## Stage A — office login
 
@@ -11,55 +13,61 @@ Password-gated **office File Explorer** at `/office` on the same Netlify site as
 | `NLF_OFFICE_PASSWORD` | Single shared company password for the office File Explorer (not field users). |
 | `NLF_SESSION_SECRET` | Random secret (≥16 chars) used to sign the HttpOnly session cookie. |
 
-## Stage B — job folder list (server-only storage)
+## Stage B — job folder list (via Lovable)
 
-The signed-in explorer lists synced job folders by reading the shared `exports` storage bucket on **Netlify only** (never from client code or `VITE_*` variables). Recursive file counts use manifest data when present.
+The signed-in explorer lists synced job folders by calling:
+
+`GET https://visual-surveyor.lovable.app/api/public/exports-list`
+
+with `Authorization: Bearer <EXPORTS_LIST_TOKEN>` from the Netlify server (never from client code or `VITE_*`).
 
 | Name | Purpose |
 | --- | --- |
-| `SUPABASE_URL` | Project URL for Export/Sync storage (same value as already used for the field app). |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only secret for storage list + stats on Netlify. **Never** expose as `VITE_*`. |
+| `EXPORTS_LIST_TOKEN` | Shared Bearer token. Must match the token configured on Lovable Cloud for the public exports APIs. |
 
-If these are missing, `/office` shows a short message to have Claude check Netlify env vars and redeploy. **No Lovable publish** is required for the job list.
+If the token is missing or wrong, `/office` shows a short message. Recursive file counts and sync-incomplete flags come from the Lovable list response (manifest-aware).
 
 Field `/get?job=` continues to use the publishable key in the browser (no Netlify ZIP streaming).
 
-## Stage D — per-job downloads (signed storage links)
+## Stage D — Open / per-job file explorer (via Lovable)
 
-Signed-in users click **Download** on a job row (or browse via **Open**). The server mints time-limited HTTPS links straight to objects in the `exports` bucket (same storage as Export/Sync). Netlify never builds or streams ZIPs.
+Signed-in users click **Open** on a job. Netlify calls:
 
-Uses the same `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` as Stage B.
+`GET https://visual-surveyor.lovable.app/api/public/exports-job?jobId=<id>`
 
-If those Netlify variables are missing, the panel still offers **Open download page** (`/get?job=…`), which pulls files from storage in the browser.
+with the same Bearer token. Lovable walks `exports/<jobId>/`, mints time-limited signed HTTPS URLs, and returns JSON for the in-office File Explorer. Netlify never builds or streams ZIPs and never needs a service role.
+
+Uses the same `EXPORTS_LIST_TOKEN` as Stage B.
+
+If the new `exports-job` route is not published on Lovable yet, Open cannot mint links — **Publish once in Lovable** after merge (see `docs/nlf-office-lovable-publish.md`). The panel still offers the legacy **download page** (`/get?job=…`).
 
 ## Deploy
 
 Set variables in **Netlify → Site configuration → Environment variables** for Production (and Deploy Previews if you test there). Redeploy after adding or changing them.
 
-Required for a working office explorer:
+Required for a working office explorer on Netlify:
 
 - `NLF_OFFICE_PASSWORD`
 - `NLF_SESSION_SECRET`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `EXPORTS_LIST_TOKEN`
 
-`EXPORTS_LIST_TOKEN` is **not** used by Netlify `/office`.
+**Do not set on Netlify:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (or any service-role secret).
 
-**Operators (Claude / deploy):** the repo `.env` may only have URL + publishable key; the service role is added on Netlify only — not copied into the field app or `VITE_*`.
+**Also required once after APIs change:** Lovable **Publish** so `exports-list` / `exports-job` are live on `visual-surveyor.lovable.app`.
 
 ## Verify
 
-1. Open `https://<your-site>.netlify.app/office`
+1. Open `https://www.pggphotodocumentation.com/office` (or your Netlify production URL `/office`)
 2. If office login variables are missing, the page explains what to set on Netlify.
 3. After sign-in:
-   - With storage env vars set on Netlify: job folders appear with file count and size, or an empty-state message if none.
-   - Without them: message points to Netlify env check (not Supabase dashboard).
-4. Click **Open** on a job: in-office file browser (large jobs). **Download** / `/get?job=<id>` still work.
+   - With `EXPORTS_LIST_TOKEN` valid and Lovable APIs published: job folders appear with file count and size.
+   - Without a valid token: a short message explains `EXPORTS_LIST_TOKEN`.
+4. Click **Open** on a job: in-office file browser (thumbnails, per-file Download). Legacy `/get?job=<id>` still works.
 
 Field app (`/` → `survey.html`) stays passwordless. Export and `/get?job=` are unchanged.
 
 ## Stage C — field Sync (same staging bucket)
 
-From a job’s **⋯** menu, **Sync to office** uploads the same package as cloud Export (picture map PDF, `misc/`, distress photos) into the shared `exports` storage bucket using the existing per-file upload path. No ZIP is built on the phone. Jobs appear in `/office` after refresh (same list as Export cloud uploads).
+From a job’s **⋯** menu, **Sync to office** uploads the same package as cloud Export into the shared `exports` storage bucket. No ZIP is built on the phone. Jobs appear in `/office` after refresh.
 
 No new Netlify env vars for Stage C — uploads use the publishable key already embedded in `survey.html` (same as Export cloud).

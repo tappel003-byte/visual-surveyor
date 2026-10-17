@@ -84,13 +84,14 @@ export function JobFileExplorer({ jobId, title, data }: Props) {
           }}
         >
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Per-file signed links need <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> in Netlify
-            environment variables — ask Claude to verify under <strong>Site configuration → Environment variables</strong>.
-            You can still use the legacy{" "}
+            Per-file signed links come from Lovable via <code>EXPORTS_LIST_TOKEN</code> (already on Netlify). If this
+            stays empty after deploy, <strong>Publish once in Lovable</strong> so{" "}
+            <code>/api/public/exports-job</code> is live — see <code>docs/nlf-office-lovable-publish.md</code>. You can
+            still use the legacy{" "}
             <a href={data.getPagePath} style={{ color: "#7a4b2a", fontWeight: 600 }}>
               download page
             </a>{" "}
-            (browser ZIP for smaller jobs).
+            (browser ZIP for smaller jobs). Do not add Supabase service-role keys on Netlify.
           </p>
         </section>
       )}

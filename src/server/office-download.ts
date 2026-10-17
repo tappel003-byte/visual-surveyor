@@ -1,4 +1,5 @@
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
+const EXPORTS_JOB_URL = "https://visual-surveyor.lovable.app/api/public/exports-job";
 
 export type OfficeDownloadFile = {
   /** Human label (zip part name or zipPath from manifest). */
@@ -29,8 +30,43 @@ type ManifestJson = {
   files?: Array<{ path: string; zipPath: string }>;
 };
 
+/** True when Lovable can mint signed URLs (service role present on that host). */
 export function officeDownloadStorageConfigured(): boolean {
   return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+}
+
+/**
+ * Netlify office Open: fetch signed file list from Lovable (Bearer EXPORTS_LIST_TOKEN).
+ * Never requires SUPABASE_SERVICE_ROLE_KEY on Netlify.
+ */
+export async function fetchOfficeJobDownloadFromLovable(jobId: string): Promise<
+  | { ok: true; payload: OfficeJobDownloadPayload }
+  | { ok: false; unauthorized: boolean }
+> {
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) {
+    return { ok: false, unauthorized: true };
+  }
+
+  const url = `${EXPORTS_JOB_URL}?jobId=${encodeURIComponent(jobId)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (res.status === 401) {
+    return { ok: false, unauthorized: true };
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      `Exports job failed (${res.status}). If this is 404, publish the app once in Lovable so /api/public/exports-job is live.`,
+    );
+  }
+
+  const payload = (await res.json()) as OfficeJobDownloadPayload;
+  return { ok: true, payload };
 }
 
 /** Reject path segments and odd characters — job ids are UUIDs or similar single folder names. */
