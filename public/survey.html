@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.17-jobinfo" />
+<meta name="pgg-app-version" content="2026.10.17-download" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -673,7 +673,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.17-jobinfo</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.17-download</p>
   </div>
 
 
@@ -682,8 +682,8 @@
   <a href="/office" class="mode-btn" target="_top" rel="noopener" style="text-decoration:none;color:inherit;margin-bottom:16px">
     <div class="icon">🗂️</div>
     <div class="meta">
-      <span>Open all jobs</span>
-      <small>Office file explorer · browse photos &amp; download synced jobs</small>
+      <span>Download</span>
+      <small>Synced jobs · fix names in explorer if needed · get them on this computer</small>
     </div>
   </a>
 
@@ -6765,7 +6765,7 @@ const PARTS_README =
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
 const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 /** Bump when shipping a field shell Tim must verify on every phone before lockdown SQL. */
-const PGG_APP_VERSION = '2026.10.17-jobinfo';
+const PGG_APP_VERSION = '2026.10.17-download';
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
 function _isAlreadyExistsUploadDetail(status, detail) {
