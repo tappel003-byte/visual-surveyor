@@ -6,7 +6,7 @@ import { officeDeleteJob, officeSetJobFrom } from "@/lib/office-mutate.functions
 /** Shared class for office toolbar/row buttons — :active depress + busy/disabled. */
 export const OFFICE_BTN_CLASS = "office-btn";
 
-/** PGG tokens — match public/survey.html home. */
+/** PGG tokens — match public/survey.html home (warm paper, not Windows gray / purple). */
 export const PGG = {
   bg: "#f7f5f2",
   paper: "#ffffff",
@@ -16,7 +16,9 @@ export const PGG = {
   accent: "#8b5e34",
   accentSoft: "#efe5d6",
   bad: "#a33",
-  shadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05)",
+  select: "#e8d9c4",
+  selectBorder: "#8b5e34",
+  shadow: "0 1px 2px rgba(0,0,0,.04)",
 } as const;
 
 /** Inject once under OfficeChrome; covers toolbar + job list + JobFileExplorer. */
@@ -26,7 +28,6 @@ export const OFFICE_BTN_CSS = `
     touch-action: manipulation;
     user-select: none;
     transition: background-color .08s ease, border-color .08s ease, transform .08s ease, box-shadow .08s ease, opacity .08s ease;
-    box-shadow: 0 1px 0 rgba(0,0,0,.04);
   }
   .office-btn:hover:not(:disabled):not(.is-busy):not(.is-disabled) {
     background: ${PGG.accentSoft} !important;
@@ -36,13 +37,13 @@ export const OFFICE_BTN_CSS = `
   .office-btn.is-pressed:not(:disabled):not(.is-busy):not(.is-disabled) {
     background: #e2d4bf !important;
     border-color: ${PGG.accent} !important;
-    transform: translateY(1px) scale(0.97);
-    box-shadow: inset 0 1px 3px rgba(0,0,0,.16);
+    transform: translateY(1px);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.14);
   }
   .office-btn:disabled,
   .office-btn.is-busy,
   .office-btn.is-disabled {
-    opacity: 0.55 !important;
+    opacity: 0.45 !important;
     cursor: wait !important;
     pointer-events: none;
     transform: none !important;
@@ -83,17 +84,17 @@ export const OFFICE_BTN_CSS = `
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 14px;
+    padding: 6px 12px;
     background: ${PGG.accentSoft};
     border-bottom: 1px solid ${PGG.line};
     color: ${PGG.ink};
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
-    min-height: 36px;
+    min-height: 28px;
   }
   .office-status-spin {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border: 2px solid ${PGG.line};
     border-top-color: ${PGG.accent};
     border-radius: 50%;
@@ -101,6 +102,87 @@ export const OFFICE_BTN_CSS = `
     flex-shrink: 0;
   }
   @keyframes office-spin { to { transform: rotate(360deg); } }
+
+  /* File-manager row chrome */
+  .office-list-row {
+    cursor: default;
+    outline: none;
+  }
+  .office-list-row:hover td,
+  .office-list-row:hover {
+    background: ${PGG.accentSoft};
+  }
+  .office-list-row.is-selected td,
+  .office-list-row.is-selected {
+    background: ${PGG.select} !important;
+  }
+  .office-list-row:focus-visible td,
+  .office-list-row:focus-visible {
+    outline: 1px solid ${PGG.selectBorder};
+    outline-offset: -1px;
+  }
+  .office-col-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: ${PGG.bg};
+    border-bottom: 1px solid ${PGG.line};
+    font-size: 12px;
+    font-weight: 600;
+    color: ${PGG.ink};
+    padding: 6px 10px;
+    white-space: nowrap;
+    user-select: none;
+    text-align: left;
+  }
+  .office-col-header button {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+  .office-col-header button:hover { color: ${PGG.accent}; }
+  .office-col-header button:focus-visible {
+    outline: 1px solid ${PGG.accent};
+    outline-offset: 2px;
+  }
+  .office-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 12px;
+    margin: 0;
+    border-left: 3px solid transparent;
+    text-decoration: none;
+    color: ${PGG.ink};
+    font-size: 13px;
+    line-height: 1.25;
+    border-radius: 0;
+  }
+  .office-nav-item:hover {
+    background: ${PGG.accentSoft};
+  }
+  .office-nav-item.is-active {
+    background: ${PGG.select};
+    border-left-color: ${PGG.selectBorder};
+    font-weight: 600;
+  }
+  .office-cmd-sep {
+    width: 1px;
+    align-self: stretch;
+    background: ${PGG.line};
+    margin: 2px 4px;
+    flex-shrink: 0;
+  }
+  .office-cmd-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
 `;
 
 export function formatLastSynced(iso: string | null): string {
@@ -133,7 +215,7 @@ export function fromLabel(syncedFrom: string | null | undefined): string {
 /** NLF www office staging working set (~1 GB). */
 export const OFFICE_STAGING_BUDGET_BYTES = 1024 * 1024 * 1024;
 
-/** Staging used vs 1 GB budget — sum of job totalBytes (from manifests). */
+/** Compact staging used vs 1 GB — status-strip style, not marketing card. */
 export function OfficeStagingCapacity({
   usedBytes,
   jobCount,
@@ -163,36 +245,25 @@ export function OfficeStagingCapacity({
       role="status"
       aria-label={`Staging capacity: ${usedLabel} of 1 GB used`}
       style={{
-        padding: "12px 14px",
-        marginBottom: 14,
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "8px 14px",
+        padding: "6px 10px",
+        marginBottom: 8,
         background: PGG.paper,
         border: `1px solid ${critical || warn ? "#e8c9a8" : PGG.line}`,
-        borderRadius: 12,
-        boxShadow: PGG.shadow,
+        fontSize: 12,
+        color: PGG.muted,
       }}
     >
+      <strong style={{ fontSize: 12, color: PGG.ink, fontWeight: 600 }}>Staging</strong>
       <div
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          gap: 8,
-          alignItems: "baseline",
-          marginBottom: 8,
-        }}
-      >
-        <strong style={{ fontSize: 14, color: PGG.ink, fontWeight: 700 }}>
-          Staging capacity
-        </strong>
-        <span style={{ fontSize: 13, fontWeight: 700, color: critical ? "#8a4500" : PGG.ink }}>
-          Used: {usedLabel} of 1 GB
-          {used > 0 ? ` (${pct}%)` : ""}
-        </span>
-      </div>
-      <div
-        style={{
-          height: 10,
-          borderRadius: 999,
+          flex: "1 1 120px",
+          maxWidth: 220,
+          height: 6,
+          borderRadius: 2,
           background: PGG.accentSoft,
           overflow: "hidden",
           border: `1px solid ${PGG.line}`,
@@ -203,51 +274,43 @@ export function OfficeStagingCapacity({
             width: `${used <= 0 && jobCount > 0 ? 0 : Math.max(used > 0 ? 2 : 0, pct)}%`,
             height: "100%",
             background: barColor,
-            borderRadius: 999,
             transition: "width .2s ease",
           }}
         />
       </div>
-      <p style={{ margin: "8px 0 0", fontSize: 12, color: PGG.muted, lineHeight: 1.4 }}>
-        www office staging working set (~1 GB). Download jobs to this computer, then Delete to free
-        space.
-        {used <= 0 && jobCount > 0
-          ? " Re-sync a job from the phone to report its size."
-          : ""}
-      </p>
+      <span style={{ fontWeight: 600, color: critical ? "#8a4500" : PGG.ink, whiteSpace: "nowrap" }}>
+        {usedLabel} / 1 GB
+        {used > 0 ? ` (${pct}%)` : ""}
+      </span>
+      <span style={{ flex: "1 1 160px", minWidth: 0 }}>
+        Download then Delete to free space.
+        {used <= 0 && jobCount > 0 ? " Re-sync to report size." : ""}
+      </span>
     </div>
   );
 }
 
-/** One calm reminder: staging is temporary — get files onto the desktop. */
+/** One-line reminder — staging is temporary. */
 export function OfficeDesktopReminder({ compact }: { compact?: boolean }) {
   return (
     <div
       role="note"
       style={{
         display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        padding: compact ? "10px 12px" : "12px 14px",
-        marginBottom: compact ? 12 : 14,
+        alignItems: "center",
+        gap: 8,
+        padding: compact ? "5px 10px" : "6px 10px",
+        marginBottom: compact ? 8 : 8,
         background: PGG.accentSoft,
         border: `1px solid ${PGG.line}`,
-        borderRadius: 12,
-        boxShadow: PGG.shadow,
         color: PGG.ink,
-        fontSize: compact ? 13 : 14,
-        lineHeight: 1.45,
+        fontSize: 12,
+        lineHeight: 1.35,
       }}
     >
-      <span aria-hidden style={{ fontSize: 16, lineHeight: 1.2, flexShrink: 0 }}>
-        💾
-      </span>
       <p style={{ margin: 0 }}>
-        <strong style={{ fontWeight: 700 }}>Download jobs to this computer.</strong>{" "}
-        Office staging is a temporary holding area — use{" "}
-        <strong style={{ fontWeight: 700 }}>Download</strong> /{" "}
-        <strong style={{ fontWeight: 700 }}>Download package</strong> so the files live on your
-        desktop (or Documents), not only online.
+        <strong style={{ fontWeight: 600 }}>Download to this computer</strong>
+        {" — "}staging is temporary. Use Download / Download package, then Delete to free space.
       </p>
     </div>
   );
@@ -290,6 +353,7 @@ export function OfficeChrome({
   const busy = busyAction != null || !!refreshing;
   const selected = selectedJobId ? jobs.find((j) => j.id === selectedJobId) : null;
   const selectedTitle = selected?.displayName || selected?.id || "Jobs";
+  const onJobsRoot = !selectedJobId;
 
   const getHref = selectedJobId ? `/get?job=${encodeURIComponent(selectedJobId)}` : null;
 
@@ -426,26 +490,27 @@ export function OfficeChrome({
         >
           ☰
         </button>
+        <FolderIcon small />
         <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: PGG.ink, letterSpacing: "-0.01em" }}>
+            File Explorer — PGG Office
+          </div>
           <div
             style={{
               fontSize: 11,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
               color: PGG.muted,
-              fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
-            PGG Photo Documentation
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: PGG.ink, letterSpacing: "-0.02em" }}>
-            Office staging
+            PGG Photo Documentation · staging
           </div>
         </div>
         <a
           href="/"
-          className={`${OFFICE_BTN_CLASS} office-btn-primary office-field-home`}
-          style={fieldHomeBtn}
+          className={`${OFFICE_BTN_CLASS} office-field-home`}
+          style={quietBtn}
           title="Back to field home — Open all jobs & capture"
         >
           <span className="office-field-home-short">Home</span>
@@ -454,7 +519,7 @@ export function OfficeChrome({
         <button
           type="button"
           onClick={onLogoutClick}
-          style={toolBtn}
+          style={quietBtn}
           className={`${OFFICE_BTN_CLASS}${busyAction === "logout" ? " is-busy" : ""}`}
           disabled={busy}
         >
@@ -462,69 +527,74 @@ export function OfficeChrome({
         </button>
       </header>
 
-      {/* Toolbar */}
-      <div style={toolbar}>
-        <Link to="/office" style={toolBtn} className={OFFICE_BTN_CLASS}>
-          Jobs
-        </Link>
-        {selectedJobId ? (
-          <Link
-            to="/office/jobs/$jobId"
-            params={{ jobId: selectedJobId }}
-            style={toolBtn}
-            className={`${OFFICE_BTN_CLASS}${busyAction === "open" ? " is-busy" : ""}`}
-            onClick={markOpenBusy}
-            aria-disabled={busyAction === "open"}
+      {/* Command bar — grouped like Explorer */}
+      <div style={toolbar} role="toolbar" aria-label="File commands">
+        <div className="office-cmd-group">
+          {selectedJobId ? (
+            <Link
+              to="/office/jobs/$jobId"
+              params={{ jobId: selectedJobId }}
+              style={toolBtn}
+              className={`${OFFICE_BTN_CLASS} office-btn-primary${busyAction === "open" ? " is-busy" : ""}`}
+              onClick={markOpenBusy}
+              aria-disabled={busyAction === "open"}
+            >
+              {busyAction === "open" ? "Opening…" : "Open"}
+            </Link>
+          ) : (
+            <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
+              Open
+            </span>
+          )}
+          {getHref ? (
+            <a
+              href={getHref}
+              style={toolBtn}
+              className={`${OFFICE_BTN_CLASS}${busyAction === "download" ? " is-busy" : ""}`}
+              onClick={onPackageDownload}
+            >
+              {busyAction === "download" ? "Downloading…" : "Download"}
+            </a>
+          ) : (
+            <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
+              Download
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={!selectedJobId || busy}
+            className={`${OFFICE_BTN_CLASS} office-btn-danger${!selectedJobId ? " is-disabled" : ""}${busyAction === "delete" ? " is-busy" : ""}`}
+            style={{ ...toolBtn, color: selectedJobId ? PGG.bad : undefined }}
           >
-            {busyAction === "open" ? "Opening…" : "Open"}
-          </Link>
-        ) : (
-          <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
-            Open
-          </span>
-        )}
-        {getHref ? (
-          <a
-            href={getHref}
+            {busyAction === "delete" ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+        <span className="office-cmd-sep" aria-hidden />
+        <div className="office-cmd-group">
+          <button
+            type="button"
+            onClick={onEditFrom}
+            disabled={!selectedJobId || busy}
+            className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "from" ? " is-busy" : ""}`}
             style={toolBtn}
-            className={`${OFFICE_BTN_CLASS}${busyAction === "download" ? " is-busy" : ""}`}
-            onClick={onPackageDownload}
+            title="Edit From label on this job"
           >
-            {busyAction === "download" ? "Downloading…" : "Download"}
-          </a>
-        ) : (
-          <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
-            Download
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={!selectedJobId || busy}
-          className={`${OFFICE_BTN_CLASS} office-btn-danger${!selectedJobId ? " is-disabled" : ""}${busyAction === "delete" ? " is-busy" : ""}`}
-          style={{ ...toolBtn, color: selectedJobId ? PGG.bad : undefined }}
-        >
-          {busyAction === "delete" ? "Deleting…" : "Delete"}
-        </button>
-        <button
-          type="button"
-          onClick={onEditFrom}
-          disabled={!selectedJobId || busy}
-          className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "from" ? " is-busy" : ""}`}
-          style={toolBtn}
-          title="Edit From label on this job"
-        >
-          {busyAction === "from" ? "Saving…" : "From…"}
-        </button>
-        <button
-          type="button"
-          onClick={onRefreshClick}
-          disabled={busy}
-          className={`${OFFICE_BTN_CLASS}${refreshing ? " is-busy" : ""}`}
-          style={toolBtn}
-        >
-          {refreshing ? "Refreshing…" : "Refresh"}
-        </button>
+            {busyAction === "from" ? "Saving…" : "From…"}
+          </button>
+        </div>
+        <span className="office-cmd-sep" aria-hidden />
+        <div className="office-cmd-group">
+          <button
+            type="button"
+            onClick={onRefreshClick}
+            disabled={busy}
+            className={`${OFFICE_BTN_CLASS}${refreshing ? " is-busy" : ""}`}
+            style={toolBtn}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {/* Status / progress */}
@@ -535,8 +605,9 @@ export function OfficeChrome({
         </div>
       )}
 
-      {/* Breadcrumb */}
+      {/* Address / breadcrumb bar */}
       <nav aria-label="Breadcrumb" style={breadcrumbBar}>
+        <span style={{ color: PGG.muted, fontWeight: 600, marginRight: 4 }}>›</span>
         <a href="/" style={crumbLink} className={`${OFFICE_BTN_CLASS} office-btn-linkish`}>
           Field home
         </a>
@@ -569,10 +640,10 @@ export function OfficeChrome({
         <p
           style={{
             margin: 0,
-            padding: "10px 14px",
+            padding: "8px 12px",
             background: "#fdf4e0",
             color: "#5c4210",
-            fontSize: 13,
+            fontSize: 12,
             borderBottom: `1px solid ${PGG.line}`,
           }}
           role="alert"
@@ -593,16 +664,27 @@ export function OfficeChrome({
         )}
 
         <aside className={`office-sidebar${sidebarOpen ? " open" : ""}`} style={sidebar}>
-          <div style={sidebarHead}>Jobs</div>
+          <div style={sidebarHead}>Navigation</div>
+          <div style={sidebarSection}>Quick access</div>
+          <Link
+            to="/office"
+            onClick={() => setSidebarOpen(false)}
+            className={`office-nav-item${onJobsRoot ? " is-active" : ""}`}
+          >
+            <FolderIcon small />
+            <span>All jobs</span>
+          </Link>
+
+          <div style={sidebarSection}>Jobs ({jobs.length})</div>
           {!listAvailable && (
-            <p style={{ padding: 12, fontSize: 12, color: PGG.bad, margin: 0 }}>
+            <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.bad, margin: 0 }}>
               List unavailable — check EXPORTS_LIST_TOKEN.
             </p>
           )}
           {listAvailable && jobs.length === 0 && (
-            <p style={{ padding: 12, fontSize: 12, color: PGG.muted, margin: 0 }}>No jobs yet</p>
+            <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.muted, margin: 0 }}>No jobs yet</p>
           )}
-          <ul style={{ listStyle: "none", margin: 0, padding: "4px 0", overflow: "auto", flex: 1 }}>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, overflow: "auto", flex: 1 }}>
             {jobs.map((job) => {
               const active = job.id === selectedJobId;
               const title = job.displayName || "Field export";
@@ -615,15 +697,11 @@ export function OfficeChrome({
                       setSidebarOpen(false);
                       markOpenBusy();
                     }}
-                    className={`${OFFICE_BTN_CLASS} office-btn-linkish`}
-                    style={{
-                      ...sidebarItem,
-                      background: active ? PGG.accentSoft : "transparent",
-                      fontWeight: active ? 700 : 500,
-                    }}
+                    className={`office-nav-item${active ? " is-active" : ""}`}
+                    title={`${title} · ${fromLabel(job.syncedFrom)}`}
                   >
                     <FolderIcon small />
-                    <span style={{ minWidth: 0 }}>
+                    <span style={{ minWidth: 0, overflow: "hidden" }}>
                       <span
                         style={{
                           display: "block",
@@ -634,7 +712,17 @@ export function OfficeChrome({
                       >
                         {title}
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: PGG.muted }}>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 11,
+                          color: PGG.muted,
+                          fontWeight: 400,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {fromLabel(job.syncedFrom)}
                       </span>
                     </span>
@@ -643,19 +731,19 @@ export function OfficeChrome({
               );
             })}
           </ul>
-          <div style={{ padding: 12, borderTop: `1px solid ${PGG.line}` }}>
-            <a
-              href="/"
-              className={`${OFFICE_BTN_CLASS} office-btn-primary`}
-              style={{ ...toolBtn, width: "100%", justifyContent: "center" }}
-            >
-              ← Field home
-            </a>
-          </div>
         </aside>
 
         <main style={mainPane}>{children}</main>
       </div>
+
+      {/* Details / status strip */}
+      <footer style={detailsBar}>
+        <span>
+          {jobs.length} item{jobs.length === 1 ? "" : "s"}
+          {selected ? ` · Selected: ${selectedTitle}` : ""}
+        </span>
+        <span style={{ color: PGG.muted }}>PGG Office staging</span>
+      </footer>
 
       <style>{`
         ${OFFICE_BTN_CSS}
@@ -686,7 +774,7 @@ export function OfficeChrome({
 }
 
 export function FolderIcon({ small }: { small?: boolean }) {
-  const s = small ? 16 : 20;
+  const s = small ? 16 : 18;
   return (
     <svg width={s} height={s} viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>
       <path
@@ -701,7 +789,7 @@ const root: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   minHeight: "100vh",
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  fontFamily: '"Segoe UI", "Segoe UI Variable", system-ui, sans-serif',
   color: PGG.ink,
   background: PGG.bg,
 };
@@ -709,19 +797,19 @@ const root: CSSProperties = {
 const titleBar: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "10px 12px",
+  gap: 8,
+  padding: "6px 10px",
   background: PGG.paper,
   borderBottom: `1px solid ${PGG.line}`,
-  boxShadow: PGG.shadow,
 };
 
 const toolbar: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
-  gap: 8,
-  padding: "8px 12px",
-  background: PGG.bg,
+  alignItems: "center",
+  gap: 4,
+  padding: "5px 8px",
+  background: PGG.paper,
   borderBottom: `1px solid ${PGG.line}`,
 };
 
@@ -729,11 +817,11 @@ const breadcrumbBar: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
   alignItems: "center",
-  gap: 6,
-  padding: "8px 14px",
+  gap: 4,
+  padding: "5px 10px",
   background: PGG.paper,
   borderBottom: `1px solid ${PGG.line}`,
-  fontSize: 13,
+  fontSize: 12,
 };
 
 const bodyRow: CSSProperties = {
@@ -744,69 +832,73 @@ const bodyRow: CSSProperties = {
 };
 
 const sidebar: CSSProperties = {
-  width: 240,
+  width: 220,
   flexShrink: 0,
-  background: PGG.paper,
+  background: PGG.bg,
   borderRight: `1px solid ${PGG.line}`,
   display: "flex",
   flexDirection: "column",
 };
 
 const sidebarHead: CSSProperties = {
-  padding: "10px 14px",
+  padding: "8px 12px 4px",
   fontSize: 11,
   fontWeight: 700,
   textTransform: "uppercase",
-  letterSpacing: "0.08em",
+  letterSpacing: "0.06em",
   color: PGG.muted,
-  borderBottom: `1px solid ${PGG.line}`,
 };
 
-const sidebarItem: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "10px 14px",
-  textDecoration: "none",
-  color: PGG.ink,
-  fontSize: 13,
-  borderRadius: 10,
-  margin: "2px 6px",
+const sidebarSection: CSSProperties = {
+  padding: "10px 12px 4px",
+  fontSize: 11,
+  fontWeight: 600,
+  color: PGG.muted,
 };
 
 const mainPane: CSSProperties = {
   flex: 1,
   minWidth: 0,
-  background: PGG.bg,
+  background: PGG.paper,
   overflow: "auto",
 };
 
+const detailsBar: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "4px 10px",
+  fontSize: 11,
+  color: PGG.ink,
+  background: PGG.bg,
+  borderTop: `1px solid ${PGG.line}`,
+};
+
 const toolBtn: CSSProperties = {
-  padding: "8px 12px",
+  padding: "4px 10px",
   border: `1px solid ${PGG.line}`,
-  borderRadius: 10,
+  borderRadius: 2,
   background: PGG.paper,
   color: PGG.ink,
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 600,
   textDecoration: "none",
   cursor: "pointer",
   display: "inline-flex",
   alignItems: "center",
-  boxShadow: PGG.shadow,
+  minHeight: 28,
 };
 
-const fieldHomeBtn: CSSProperties = {
+const quietBtn: CSSProperties = {
   ...toolBtn,
-  padding: "8px 14px",
-  fontWeight: 700,
+  boxShadow: "none",
   whiteSpace: "nowrap",
 };
 
 const iconBtn: CSSProperties = {
   ...toolBtn,
-  padding: "6px 10px",
-  fontSize: 16,
+  padding: "4px 8px",
+  fontSize: 15,
   lineHeight: 1,
 };
 
@@ -814,8 +906,8 @@ const crumbLink: CSSProperties = {
   color: PGG.accent,
   textDecoration: "none",
   fontWeight: 600,
-  padding: "2px 4px",
-  borderRadius: 6,
+  padding: "1px 3px",
+  borderRadius: 2,
 };
 
 const crumbSep: CSSProperties = { color: PGG.muted };

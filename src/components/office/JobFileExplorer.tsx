@@ -40,24 +40,23 @@ function formatSyncedAt(iso: string | null): string {
 }
 
 const shell = {
-  padding: "14px 14px 28px",
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  padding: "8px 10px 20px",
+  fontFamily: '"Segoe UI", "Segoe UI Variable", system-ui, sans-serif',
   color: PGG.ink,
 } as const;
 
 const btnSecondary = {
-  padding: "8px 12px",
+  padding: "4px 10px",
   border: `1px solid ${PGG.line}`,
-  borderRadius: 10,
+  borderRadius: 2,
   background: PGG.paper,
   color: PGG.ink,
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 600,
   textDecoration: "none",
   cursor: "pointer",
   flexShrink: 0,
   whiteSpace: "nowrap" as const,
-  boxShadow: PGG.shadow,
 };
 
 type Props = {
@@ -80,6 +79,7 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
   const [signingPath, setSigningPath] = useState<string | null>(null);
   const [signError, setSignError] = useState<string | null>(null);
   const [packageBusy, setPackageBusy] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const inFlightRef = useRef<Record<string, Promise<string | null>>>({});
   const statusRef = useRef(onStatusChange);
   statusRef.current = onStatusChange;
@@ -227,43 +227,41 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
   useEffect(() => () => setStatus(null), []);
 
   const hasListRows = folders.length > 0 || otherFiles.length > 0;
-  const card: CSSProperties = {
-    background: PGG.paper,
-    border: `1px solid ${PGG.line}`,
-    borderRadius: 14,
-    boxShadow: PGG.shadow,
-    padding: 14,
-    marginBottom: 12,
+  const alertBox: CSSProperties = {
+    background: "#fdf4e0",
+    border: "1px solid #f0dfae",
+    padding: "8px 10px",
+    marginBottom: 8,
+    fontSize: 13,
+    color: "#5c4210",
+    lineHeight: 1.45,
   };
 
   return (
     <div style={shell}>
-      <header style={{ ...card, marginBottom: 14 }}>
-        {!embedded && <h1 style={{ fontSize: 22, margin: "0 0 4px", fontWeight: 700 }}>{title}</h1>}
-        {embedded && <h1 style={{ fontSize: 20, margin: "0 0 4px", fontWeight: 700 }}>{title}</h1>}
-        <p
-          style={{
-            fontSize: 12,
-            color: PGG.muted,
-            margin: 0,
-            wordBreak: "break-all",
-            fontFamily: "ui-monospace, monospace",
-          }}
-        >
-          {jobId}
-        </p>
-        <p style={{ fontSize: 13, color: PGG.muted, margin: "8px 0 0", lineHeight: 1.45 }}>
+      <header
+        style={{
+          marginBottom: 8,
+          paddingBottom: 8,
+          borderBottom: `1px solid ${PGG.line}`,
+        }}
+      >
+        {!embedded && <h1 style={{ fontSize: 16, margin: "0 0 2px", fontWeight: 600 }}>{title}</h1>}
+        {embedded && <h1 style={{ fontSize: 15, margin: "0 0 2px", fontWeight: 600 }}>{title}</h1>}
+        <p style={{ fontSize: 12, color: PGG.muted, margin: 0, lineHeight: 1.4 }}>
           Last synced: <strong style={{ color: PGG.ink }}>{formatSyncedAt(data.syncedAt)}</strong>
           {" · "}From: <strong style={{ color: PGG.ink }}>{fromLabel(data.syncedFrom)}</strong>
           {data.uploadKind === "office-sync" ? " · Field sync" : null}
+          {" · "}
+          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{jobId}</span>
         </p>
       </header>
 
       <OfficeDesktopReminder compact />
 
       {!data.storageLinksAvailable && (
-        <section style={{ ...card, background: "#fdf4e0", borderColor: "#f0dfae" }}>
-          <p style={{ fontSize: 14, color: "#5c4210", lineHeight: 1.5, margin: 0 }}>
+        <section style={alertBox}>
+          <p style={{ margin: 0 }}>
             File list needs <code>EXPORTS_LIST_TOKEN</code> on Netlify and a Lovable Publish of{" "}
             <code>/api/public/exports-job</code> (and <code>exports-sign</code> for Open). You can still
             use the{" "}
@@ -281,8 +279,8 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
       )}
 
       {data.storageLinksAvailable && data.syncIncomplete && (
-        <section style={{ ...card, background: "#fdf4e0", borderColor: "#f0dfae" }}>
-          <p style={{ fontSize: 14, color: "#5c4210", lineHeight: 1.5, margin: 0 }}>
+        <section style={alertBox}>
+          <p style={{ margin: 0 }}>
             <strong>Sync looks incomplete.</strong>{" "}
             {data.manifestExpectedFiles != null
               ? `Manifest lists ${data.manifestExpectedFiles} files; ${data.storageObjectCount} are in storage`
@@ -296,11 +294,11 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
       )}
 
       {data.storageLinksAvailable && data.kind === "empty" && !data.syncIncomplete && (
-        <p style={{ fontSize: 14, color: PGG.bad }}>No files found for this job yet.</p>
+        <p style={{ fontSize: 13, color: PGG.bad }}>No files found for this job yet.</p>
       )}
 
       {signError && (
-        <p style={{ color: PGG.bad, fontSize: 13, margin: "0 0 10px" }} role="alert">
+        <p style={{ color: PGG.bad, fontSize: 12, margin: "0 0 8px" }} role="alert">
           {signError}
         </p>
       )}
@@ -312,9 +310,9 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
               display: "flex",
               flexWrap: "wrap",
               alignItems: "center",
-              gap: 10,
-              marginBottom: 12,
-              fontSize: 13,
+              gap: 8,
+              marginBottom: 8,
+              fontSize: 12,
               color: PGG.muted,
             }}
           >
@@ -324,8 +322,6 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                 ? ` · ${imageFiles.length} photo${imageFiles.length === 1 ? "" : "s"}`
                 : ""}
               {data.kind === "zip-parts" ? " (ZIP parts)" : ""}
-              {" · "}
-              Thumbnails / opens signed on demand (~{Math.round(data.signedUrlTtlSeconds / 60)} min)
             </span>
             <a
               href={data.getPagePath}
@@ -344,14 +340,12 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                 display: "flex",
                 flexWrap: "wrap",
                 alignItems: "center",
-                gap: 6,
-                marginBottom: 12,
-                fontSize: 13,
-                padding: "10px 12px",
-                background: PGG.paper,
+                gap: 4,
+                marginBottom: 8,
+                fontSize: 12,
+                padding: "4px 8px",
+                background: PGG.bg,
                 border: `1px solid ${PGG.line}`,
-                borderRadius: 12,
-                boxShadow: PGG.shadow,
               }}
             >
               <button
@@ -364,8 +358,7 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                   color: dirPath ? PGG.accent : PGG.ink,
                   fontWeight: dirPath ? 600 : 700,
                   cursor: "pointer",
-                  padding: "2px 4px",
-                  borderRadius: 6,
+                  padding: "1px 3px",
                 }}
               >
                 {data.folderName || "Job root"}
@@ -373,7 +366,7 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
               {breadcrumbs.map((segment, i) => {
                 const path = breadcrumbs.slice(0, i + 1).join("/");
                 return (
-                  <span key={path} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span key={path} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <span style={{ color: PGG.muted }}>›</span>
                     <button
                       type="button"
@@ -385,8 +378,7 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                         color: i === breadcrumbs.length - 1 ? PGG.ink : PGG.accent,
                         fontWeight: i === breadcrumbs.length - 1 ? 700 : 600,
                         cursor: "pointer",
-                        padding: "2px 4px",
-                        borderRadius: 6,
+                        padding: "1px 3px",
                       }}
                     >
                       {segment}
@@ -397,192 +389,123 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
             </nav>
           )}
 
-          {imageFiles.length > 0 && (
-            <section
-              aria-label="Photo gallery"
-              style={{ ...card, marginBottom: hasListRows ? 14 : 0 }}
-            >
-              <h2
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  margin: "0 0 12px",
-                  color: PGG.muted,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Photos
-              </h2>
-              <div
-                className="office-photo-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))",
-                  gap: 10,
-                }}
-              >
-                {imageFiles.map((file) => (
-                  <PhotoThumb
-                    key={file.storagePath}
-                    entry={file}
-                    busy={signingPath === file.storagePath}
-                    cachedUrl={urlCache[file.storagePath] ?? file.signedUrl}
-                    onNeedUrl={() => resolveUrl(file, "thumb")}
-                    onOpen={() => onOpenFile(file)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
+          {/* Explorer-native folders + non-image files first */}
           {hasListRows && (
-            <div className="office-explorer-table" style={{ ...card, overflowX: "auto" }}>
-              {imageFiles.length > 0 && (
-                <h2
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    margin: "0 0 12px",
-                    color: PGG.muted,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Folders & other files
-                </h2>
-              )}
+            <div className="office-explorer-table" style={{ overflowX: "auto", marginBottom: imageFiles.length > 0 ? 12 : 0 }}>
               <table
                 style={{
                   width: "100%",
                   borderCollapse: "collapse",
                   fontSize: 13,
                   background: PGG.paper,
+                  border: `1px solid ${PGG.line}`,
                 }}
+                aria-label="Folders and files"
               >
                 <thead>
-                  <tr style={{ textAlign: "left" }}>
-                    <th
-                      style={{
-                        padding: "8px 10px",
-                        borderBottom: `1px solid ${PGG.line}`,
-                        fontWeight: 600,
-                        color: PGG.muted,
-                      }}
-                    >
-                      Name
-                    </th>
-                    <th
-                      style={{
-                        padding: "8px 10px",
-                        borderBottom: `1px solid ${PGG.line}`,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        color: PGG.muted,
-                      }}
-                      className="office-col-hide-sm"
-                    >
-                      Type
-                    </th>
-                    <th
-                      style={{
-                        padding: "8px 10px",
-                        borderBottom: `1px solid ${PGG.line}`,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        color: PGG.muted,
-                      }}
-                    >
-                      Size
-                    </th>
-                    <th
-                      style={{
-                        padding: "8px 10px",
-                        borderBottom: `1px solid ${PGG.line}`,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        color: PGG.muted,
-                      }}
-                    >
-                      Actions
-                    </th>
+                  <tr>
+                    <th className="office-col-header">Name</th>
+                    <th className="office-col-header office-col-hide-sm">Type</th>
+                    <th className="office-col-header">Size</th>
+                    <th className="office-col-header">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.kind === "manifest" &&
-                    folders.map((folder) => (
-                      <tr key={`dir-${folder}`} style={{ borderTop: `1px solid ${PGG.line}` }}>
-                        <td style={{ padding: "10px" }} colSpan={4}>
-                          <button
-                            type="button"
-                            className={`${OFFICE_BTN_CLASS} office-btn-linkish`}
-                            onClick={() => setDirPath(dirPath ? `${dirPath}/${folder}` : folder)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              border: 0,
-                              background: "transparent",
-                              cursor: "pointer",
-                              padding: "4px 6px",
-                              borderRadius: 8,
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: PGG.accent,
-                              textAlign: "left",
-                            }}
+                    folders.map((folder) => {
+                      const folderKey = `dir:${dirPath ? `${dirPath}/` : ""}${folder}`;
+                      const selected = selectedPath === folderKey;
+                      return (
+                        <tr
+                          key={folderKey}
+                          className={`office-list-row${selected ? " is-selected" : ""}`}
+                          aria-selected={selected}
+                          onClick={() => setSelectedPath(folderKey)}
+                          onDoubleClick={() => setDirPath(dirPath ? `${dirPath}/${folder}` : folder)}
+                          style={{ borderTop: `1px solid ${PGG.line}` }}
+                        >
+                          <td style={{ padding: "4px 10px" }} colSpan={1}>
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontWeight: 600,
+                                color: PGG.ink,
+                              }}
+                            >
+                              <FolderIcon />
+                              {folder}
+                            </span>
+                          </td>
+                          <td
+                            style={{ padding: "4px 10px", color: PGG.muted, whiteSpace: "nowrap" }}
+                            className="office-col-hide-sm"
                           >
-                            <FolderIcon />
-                            {folder}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            File folder
+                          </td>
+                          <td style={{ padding: "4px 10px", color: PGG.muted }}>—</td>
+                          <td style={{ padding: "4px 10px" }}>
+                            <button
+                              type="button"
+                              className={OFFICE_BTN_CLASS}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDirPath(dirPath ? `${dirPath}/${folder}` : folder);
+                              }}
+                              style={btnSecondary}
+                            >
+                              Open
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   {otherFiles.map((file) => {
                     const busy = signingPath === file.storagePath;
+                    const selected = selectedPath === file.storagePath;
                     return (
-                      <tr key={file.storagePath} style={{ borderTop: `1px solid ${PGG.line}` }}>
-                        <td style={{ padding: "10px", maxWidth: 360 }}>
-                          <button
-                            type="button"
-                            className={`${OFFICE_BTN_CLASS} office-btn-linkish`}
-                            onClick={() => onOpenFile(file)}
-                            disabled={busy}
+                      <tr
+                        key={file.storagePath}
+                        className={`office-list-row${selected ? " is-selected" : ""}`}
+                        aria-selected={selected}
+                        onClick={() => setSelectedPath(file.storagePath)}
+                        onDoubleClick={() => void onOpenFile(file)}
+                        style={{ borderTop: `1px solid ${PGG.line}` }}
+                      >
+                        <td style={{ padding: "4px 10px", maxWidth: 360 }}>
+                          <span
                             style={{
-                              display: "flex",
+                              display: "inline-flex",
                               alignItems: "center",
                               gap: 8,
-                              border: 0,
-                              background: "transparent",
-                              cursor: busy ? "wait" : "pointer",
-                              padding: "4px 6px",
-                              borderRadius: 8,
-                              fontSize: 13,
                               fontWeight: 600,
-                              color: PGG.accent,
-                              textAlign: "left",
+                              color: PGG.ink,
                               wordBreak: "break-word",
                             }}
                           >
                             <FileIcon image={false} />
                             {file.name}
-                          </button>
+                          </span>
                         </td>
                         <td
-                          style={{ padding: "10px", color: PGG.muted, whiteSpace: "nowrap" }}
+                          style={{ padding: "4px 10px", color: PGG.muted, whiteSpace: "nowrap" }}
                           className="office-col-hide-sm"
                         >
                           {fileTypeLabel(file.name)}
                         </td>
-                        <td style={{ padding: "10px", color: PGG.muted, whiteSpace: "nowrap" }}>
+                        <td style={{ padding: "4px 10px", color: PGG.muted, whiteSpace: "nowrap" }}>
                           {formatFileSize(file.sizeBytes)}
                         </td>
-                        <td style={{ padding: "10px" }}>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        <td style={{ padding: "4px 10px" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                             <button
                               type="button"
                               className={`${OFFICE_BTN_CLASS}${busy ? " is-busy" : ""}`}
-                              onClick={() => onOpenFile(file)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void onOpenFile(file);
+                              }}
                               disabled={busy}
                               style={btnSecondary}
                             >
@@ -591,7 +514,10 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                             <button
                               type="button"
                               className={`${OFFICE_BTN_CLASS}${busy ? " is-busy" : ""}`}
-                              onClick={() => onDownloadFile(file)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void onDownloadFile(file);
+                              }}
                               disabled={busy}
                               style={btnSecondary}
                             >
@@ -605,6 +531,53 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                 </tbody>
               </table>
             </div>
+          )}
+
+          {imageFiles.length > 0 && (
+            <section
+              aria-label="Photo gallery"
+              style={{
+                border: `1px solid ${PGG.line}`,
+                padding: 10,
+                marginBottom: 0,
+                background: PGG.paper,
+              }}
+            >
+              <h2
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  margin: "0 0 8px",
+                  color: PGG.muted,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Photos
+              </h2>
+              <div
+                className="office-photo-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {imageFiles.map((file) => (
+                  <PhotoThumb
+                    key={file.storagePath}
+                    entry={file}
+                    busy={signingPath === file.storagePath}
+                    cachedUrl={urlCache[file.storagePath] ?? file.signedUrl}
+                    onNeedUrl={() => resolveUrl(file, "thumb")}
+                    onOpen={() => {
+                      setSelectedPath(file.storagePath);
+                      void onOpenFile(file);
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
           )}
         </>
       )}
@@ -839,14 +812,13 @@ function PhotoThumb({ entry, busy, cachedUrl, onNeedUrl, onOpen }: PhotoThumbPro
         flexDirection: "column",
         alignItems: "stretch",
         border: `1px solid ${PGG.line}`,
-        borderRadius: 12,
+        borderRadius: 4,
         background: PGG.paper,
         padding: 0,
         cursor: busy && !src ? "wait" : "pointer",
         overflow: "hidden",
         textAlign: "left",
         minHeight: 0,
-        boxShadow: PGG.shadow,
       }}
     >
       <div
