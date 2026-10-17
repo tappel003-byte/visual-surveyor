@@ -35,6 +35,8 @@ export const Route = createFileRoute("/api/public/exports-list")({
                 manifestFileCount: stats.manifestFileCount,
                 storageObjectCount: stats.storageObjectCount,
                 syncIncomplete: stats.syncIncomplete,
+                syncedAt: stats.syncedAt,
+                syncedFrom: stats.syncedFrom,
               };
             }),
         );

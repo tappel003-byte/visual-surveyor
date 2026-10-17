@@ -1,12 +1,18 @@
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const EXPORTS_JOB_URL = "https://visual-surveyor.lovable.app/api/public/exports-job";
+const EXPORTS_SIGN_URL = "https://visual-surveyor.lovable.app/api/public/exports-sign";
 
 export type OfficeDownloadFile = {
+  /** Storage path relative to the job folder (used for lazy sign). */
+  path: string;
   /** Human label (zip part name or zipPath from manifest). */
   label: string;
   sizeBytes: number | null;
-  /** Direct HTTPS URL to Supabase storage (time-limited). */
-  signedUrl: string;
+  /**
+   * Direct HTTPS URL — only present when a single file was signed on demand.
+   * Open list responses leave this null so large jobs load quickly.
+   */
+  signedUrl: string | null;
 };
 
 export type OfficeJobDownloadPayload = {
@@ -14,6 +20,8 @@ export type OfficeJobDownloadPayload = {
   kind: "manifest" | "zip-parts" | "empty";
   folderName: string | null;
   uploadKind: string | null;
+  syncedAt: string | null;
+  syncedFrom: string | null;
   /** Same path as legacy Export link — browser downloads from storage, not Netlify. */
   getPagePath: string;
   signedUrlTtlSeconds: number;
@@ -27,6 +35,9 @@ export type OfficeJobDownloadPayload = {
 type ManifestJson = {
   folderName?: string;
   uploadKind?: string;
+  syncedAt?: string;
+  syncedFrom?: string;
+  deviceName?: string;
   files?: Array<{ path: string; zipPath: string }>;
 };
 
@@ -36,7 +47,7 @@ export function officeDownloadStorageConfigured(): boolean {
 }
 
 /**
- * Netlify office Open: fetch signed file list from Lovable (Bearer EXPORTS_LIST_TOKEN).
+ * Netlify office Open: fetch unsigned file list from Lovable (Bearer EXPORTS_LIST_TOKEN).
  * Never requires SUPABASE_SERVICE_ROLE_KEY on Netlify.
  */
 export async function fetchOfficeJobDownloadFromLovable(jobId: string): Promise<
@@ -69,12 +80,63 @@ export async function fetchOfficeJobDownloadFromLovable(jobId: string): Promise<
   return { ok: true, payload };
 }
 
+/**
+ * Netlify: mint one signed URL via Lovable when the user clicks a file.
+ */
+export async function fetchOfficeSignedUrlFromLovable(
+  jobId: string,
+  relativePath: string,
+): Promise<{ ok: true; signedUrl: string; expiresIn: number } | { ok: false; unauthorized: boolean }> {
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) {
+    return { ok: false, unauthorized: true };
+  }
+
+  const url =
+    `${EXPORTS_SIGN_URL}?jobId=${encodeURIComponent(jobId)}` +
+    `&path=${encodeURIComponent(relativePath)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (res.status === 401) {
+    return { ok: false, unauthorized: true };
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      `Exports sign failed (${res.status}). If this is 404, publish once in Lovable so /api/public/exports-sign is live.`,
+    );
+  }
+
+  const body = (await res.json()) as { signedUrl?: string; expiresIn?: number };
+  if (!body.signedUrl) {
+    throw new Error("Exports sign returned no URL.");
+  }
+  return {
+    ok: true,
+    signedUrl: body.signedUrl,
+    expiresIn: Number(body.expiresIn) || SIGNED_URL_TTL_SECONDS,
+  };
+}
+
 /** Reject path segments and odd characters — job ids are UUIDs or similar single folder names. */
 export function isSafeExportJobId(jobId: string): boolean {
   const id = jobId.trim();
   if (!id || id.length > 200) return false;
   if (id.includes("/") || id.includes("\\") || id.includes("..")) return false;
   return /^[a-zA-Z0-9._-]+$/.test(id);
+}
+
+/** Safe relative storage path under a job (no traversal). */
+export function isSafeExportRelativePath(relativePath: string): boolean {
+  const p = relativePath.trim();
+  if (!p || p.length > 500) return false;
+  if (p.startsWith("/") || p.includes("\\") || p.includes("..")) return false;
+  if (p.includes("//")) return false;
+  return /^[a-zA-Z0-9._/-]+$/.test(p);
 }
 
 async function signObject(storagePath: string): Promise<string | null> {
@@ -99,7 +161,21 @@ async function loadManifest(jobId: string): Promise<ManifestJson | null> {
   }
 }
 
-/** Builds per-file signed download URLs from exports storage (server-only). */
+function manifestSyncedAt(manifest: ManifestJson | null): string | null {
+  const raw = manifest?.syncedAt?.trim();
+  if (!raw) return null;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? new Date(t).toISOString() : raw;
+}
+
+function manifestSyncedFrom(manifest: ManifestJson | null): string | null {
+  return manifest?.syncedFrom?.trim() || manifest?.deviceName?.trim() || null;
+}
+
+/**
+ * Lists files for Open — does NOT mint signed URLs (lazy sign on click via signOfficeExportFile).
+ * Runs on Lovable with service role for storage listing only.
+ */
 export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDownloadPayload> {
   const base = {
     jobId,
@@ -110,6 +186,8 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
     storageObjectCount: 0,
     syncIncomplete: false,
     missingManifestPaths: 0,
+    syncedAt: null as string | null,
+    syncedFrom: null as string | null,
   };
 
   if (!officeDownloadStorageConfigured()) {
@@ -131,6 +209,9 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
   base.storageObjectCount = contentObjects.length;
 
   const manifest = await loadManifest(jobId);
+  base.syncedAt = manifestSyncedAt(manifest);
+  base.syncedFrom = manifestSyncedFrom(manifest);
+
   if (manifest?.files?.length) {
     const folderName = manifest.folderName?.trim() || null;
     const uploadKind = manifest.uploadKind?.trim() || null;
@@ -144,10 +225,12 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
         missingManifestPaths++;
         continue;
       }
-      const storagePath = `${jobId}/${path}`;
-      const signedUrl = await signObject(storagePath);
-      if (!signedUrl) continue;
-      files.push({ label, sizeBytes: sizeByPath.get(path) ?? null, signedUrl });
+      files.push({
+        path,
+        label,
+        sizeBytes: sizeByPath.get(path) ?? null,
+        signedUrl: null,
+      });
     }
     files.sort((a, b) => a.label.localeCompare(b.label));
     const manifestExpectedFiles = manifest.files.length;
@@ -176,11 +259,12 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
 
   const files: OfficeDownloadFile[] = [];
   for (const part of zips) {
-    const storagePath = `${jobId}/${part.name}`;
-    const signedUrl = await signObject(storagePath);
-    if (!signedUrl) continue;
-    const sizeBytes = Number(part.metadata?.size) || null;
-    files.push({ label: part.name, sizeBytes, signedUrl });
+    files.push({
+      path: part.name,
+      label: part.name,
+      sizeBytes: Number(part.metadata?.size) || null,
+      signedUrl: null,
+    });
   }
 
   return {
@@ -193,4 +277,19 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
     syncIncomplete: false,
     missingManifestPaths: 0,
   };
+}
+
+/** Mint one time-limited signed URL for a file under the job (Lovable / service role). */
+export async function signOfficeExportFile(
+  jobId: string,
+  relativePath: string,
+): Promise<{ signedUrl: string; expiresIn: number } | null> {
+  if (!officeDownloadStorageConfigured()) return null;
+  if (!isSafeExportJobId(jobId) || !isSafeExportRelativePath(relativePath)) return null;
+  if (relativePath === "manifest.json") return null;
+
+  const storagePath = `${jobId}/${relativePath}`;
+  const signedUrl = await signObject(storagePath);
+  if (!signedUrl) return null;
+  return { signedUrl, expiresIn: SIGNED_URL_TTL_SECONDS };
 }

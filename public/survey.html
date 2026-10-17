@@ -6951,6 +6951,24 @@ async function exportProjectCloud() {
 
 // ---------- Office Sync (Stage C) ----------
 // Same raw-asset upload path as cloud Export, but aimed at /office staging — no ZIP on phone.
+const DEVICE_NICKNAME_KEY = 'pgg_device_nickname';
+
+/** One-time phone nickname → written to manifest as syncedFrom / deviceName for /office From column. */
+function getOrAskDeviceNickname() {
+  let nick = '';
+  try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
+  if (nick) return nick;
+  const asked = window.prompt(
+    'Name this phone for the office File Explorer (e.g. "Tim phone" or "Carlos phone").\n\n' +
+    'Shown in the From column after Sync. Set once on this device.',
+    ''
+  );
+  nick = (asked || '').trim();
+  if (!nick) nick = 'Unknown phone';
+  try { localStorage.setItem(DEVICE_NICKNAME_KEY, nick); } catch (e) {}
+  return nick;
+}
+
 function syncStatus(p) {
   const updated = p.updatedAt || 0;
   const synced = p.lastSyncedAt || 0;
@@ -7020,10 +7038,16 @@ async function syncProjectToOffice() {
         return;
       }
       try {
+        const deviceName = getOrAskDeviceNickname();
         exportPanel.msg('Uploading picture map + photos…');
         const jobId = await _uploadRawAssets(items, (n, t) => {
           exportPanel.msg('Uploading ' + n + ' of ' + t + ' files…');
-        }, { uploadKind: 'office-sync', syncedAt: new Date().toISOString() });
+        }, {
+          uploadKind: 'office-sync',
+          syncedAt: new Date().toISOString(),
+          syncedFrom: deviceName,
+          deviceName: deviceName
+        });
         project.lastSyncedAt = Date.now();
         project.syncJobId = jobId;
         save();

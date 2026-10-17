@@ -35,11 +35,17 @@ Signed-in users click **Open** on a job. Netlify calls:
 
 `GET https://visual-surveyor.lovable.app/api/public/exports-job?jobId=<id>`
 
-with the same Bearer token. Lovable walks `exports/<jobId>/`, mints time-limited signed HTTPS URLs, and returns JSON for the in-office File Explorer. Netlify never builds or streams ZIPs and never needs a service role.
+with the same Bearer token. Lovable walks `exports/<jobId>/` and returns the **file list without signed URLs** so large jobs open quickly. When the user clicks Open/Download on a file, Netlify calls:
+
+`GET https://visual-surveyor.lovable.app/api/public/exports-sign?jobId=<id>&path=<relativePath>`
+
+to mint one time-limited signed HTTPS URL. Netlify never builds or streams ZIPs and never needs a service role.
 
 Uses the same `EXPORTS_LIST_TOKEN` as Stage B.
 
-If the new `exports-job` route is not published on Lovable yet, Open cannot mint links — **Publish once in Lovable** after merge (see `docs/nlf-office-lovable-publish.md`). The panel still offers the legacy **download page** (`/get?job=…`).
+Job list Date / From come from the same `exports-list` response (`syncedAt`, `syncedFrom` from `manifest.json`). Field Sync writes those when uploading (device nickname stored once per phone).
+
+If `exports-job` / `exports-sign` are not published on Lovable yet — **Publish once in Lovable** after merge (see `docs/nlf-office-lovable-publish.md`). List **Download** still uses the legacy package page (`/get?job=…`).
 
 ## Deploy
 

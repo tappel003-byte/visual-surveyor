@@ -15,6 +15,7 @@ import { Route as OfficeRouteImport } from './routes/office'
 import { Route as OfficeIndexRouteImport } from './routes/office.index'
 import { Route as ApiPublicExportsJobRouteImport } from './routes/api/public/exports-job'
 import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
+import { Route as ApiPublicExportsSignRouteImport } from './routes/api/public/exports-sign'
 import { Route as OfficeJobsJobIdRouteImport } from './routes/office.jobs.$jobId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,6 +48,11 @@ const ApiPublicExportsListRoute = ApiPublicExportsListRouteImport.update({
   path: '/api/public/exports-list',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicExportsSignRoute = ApiPublicExportsSignRouteImport.update({
+  id: '/api/public/exports-sign',
+  path: '/api/public/exports-sign',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OfficeJobsJobIdRoute = OfficeJobsJobIdRouteImport.update({
   id: '/jobs/$jobId',
   path: '/jobs/$jobId',
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/office/': typeof OfficeIndexRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesByTo {
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/office': typeof OfficeIndexRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesById {
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/office/': typeof OfficeIndexRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRouteTypes {
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/office/'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/office'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   id:
     | '__root__'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/office/'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   fileRoutesById: FileRoutesById
 }
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   OfficeRoute: typeof OfficeRouteWithChildren
   ApiPublicExportsJobRoute: typeof ApiPublicExportsJobRoute
   ApiPublicExportsListRoute: typeof ApiPublicExportsListRoute
+  ApiPublicExportsSignRoute: typeof ApiPublicExportsSignRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -161,6 +174,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicExportsListRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/exports-sign': {
+      id: '/api/public/exports-sign'
+      path: '/api/public/exports-sign'
+      fullPath: '/api/public/exports-sign'
+      preLoaderRoute: typeof ApiPublicExportsSignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/office/jobs/$jobId': {
       id: '/office/jobs/$jobId'
       path: '/jobs/$jobId'
@@ -190,6 +210,7 @@ const rootRouteChildren: RootRouteChildren = {
   OfficeRoute: OfficeRouteWithChildren,
   ApiPublicExportsJobRoute: ApiPublicExportsJobRoute,
   ApiPublicExportsListRoute: ApiPublicExportsListRoute,
+  ApiPublicExportsSignRoute: ApiPublicExportsSignRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
