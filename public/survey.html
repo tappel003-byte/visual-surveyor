@@ -1559,9 +1559,10 @@ function renderLovableSunsetNotices() {
     if (onLovable && hasLocalOnPhoneData()) {
       localEl.classList.add('visible');
       localEl.innerHTML =
-        'Jobs on this phone: support for this app ends <strong>' +
+        'Please save all data from this app to your working computer. ' +
+        'Support for this app ends <strong>' +
         LOVABLE_SUNSET_END_LABEL +
-        '</strong>. Move them with <strong>Sync</strong> to office or <strong>Download</strong> on a desk — do not leave jobs only on the phone.';
+        '</strong>. On a desk computer use <strong>Download</strong>, or <strong>Sync</strong> to office — do not leave jobs only on the phone.';
     } else {
       localEl.classList.remove('visible');
       localEl.innerHTML = '';
