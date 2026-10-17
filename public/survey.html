@@ -691,7 +691,7 @@
     <div class="icon">📷</div>
     <div class="meta">
       <span>PGG Photo Documentation</span>
-      <small>Interior survey · exports map + photos</small>
+      <small>Interior survey · floor plan pins + photos</small>
     </div>
   </button>
 
@@ -838,19 +838,8 @@
   <div class="menu" id="workMenu">
     <button onclick="syncProjectToOffice()">☁️ Sync to office</button>
     <button id="autoSyncMenuBtn" onclick="toggleAutoSyncPreference()">⟳ Auto-sync: …</button>
-    <button onclick="openExport()">📤 Export</button>
     <button onclick="editSetup()">⚙️ Edit setup</button>
-    <div class="sep"></div>
-    <button onclick="confirmQuickCapture()">📸 Quick Capture</button>
-    <div class="sep"></div>
-    <button onclick="clearDrawings()">✎ Clear all drawings</button>
-    <button onclick="shrinkPhotos()">🗜 Shrink photos</button>
-    
-    
-
-    
-    <div class="sep"></div>
-    <button class="danger" id="menuTrashBtn" onclick="confirmDeleteProject()">🗑 Move to trash</button>
+    <button onclick="openExport()">📤 Export</button>
   </div>
 
   <div class="stage" id="stage">
@@ -1593,9 +1582,7 @@ function renderHome() {
   } else {
     list.innerHTML = projs.map(p => {
       const pinCount = (p.pins||[]).length;
-      const status = exportStatus(p);
       const sync = syncStatus(p);
-      const badgeClass = status.state === 'ok' ? 'ri-badge ok' : 'ri-badge warn';
       const syncPillClass = sync.state === 'ok' ? 'ri-badge sync-ok' : (sync.state === 'stale' ? 'ri-badge sync-stale' : 'ri-badge sync-none');
       const canTrash = isFullySyncedToOffice(p);
       // Sync → ✓ when synced → Delete (never "Sync to delete"; delete only after sync).
@@ -1605,7 +1592,7 @@ function renderHome() {
       return `
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
-            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-title-pills"><span class="${syncPillClass}">${escapeHtml(sync.label)}</span><span class="${badgeClass}">${status.label}</span></span></div>
+            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-title-pills"><span class="${syncPillClass}">${escapeHtml(sync.label)}</span></span></div>
             <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
           </div>
           <div class="ri-actions">
@@ -1614,22 +1601,21 @@ function renderHome() {
         </div>`;
     }).join('');
   }
-  // Dismissible reminder banner for projects not exported in 7+ days
+  // Dismissible reminder: jobs not Fully synced for 7+ days (Sync story, not Export).
   if (reminder) {
     const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
     const stale = projs.filter(p => {
-      const status = exportStatus(p);
-      if (status.state === 'ok') return false;
-      const exported = p.lastExportedAt || 0;
-      const sinceExport = exported ? (Date.now() - exported) : Infinity;
-      return sinceExport >= SEVEN_DAYS;
+      if (syncStatus(p).state === 'ok') return false;
+      const synced = p.lastSyncedAt || 0;
+      const sinceSync = synced ? (Date.now() - synced) : Infinity;
+      return sinceSync >= SEVEN_DAYS;
     });
     let dismissed = 0;
     try { dismissed = parseInt(localStorage.getItem('exportReminderDismissed') || '0', 10) || 0; } catch {}
     if (stale.length && (Date.now() - dismissed) >= THREE_DAYS) {
       reminder.innerHTML = `<div class="export-reminder">
-        <span>You have ${stale.length} project${stale.length===1?'':'s'} not yet backed up. Tap a project to export it.</span>
+        <span>You have ${stale.length} project${stale.length===1?'':'s'} not yet synced to office. Tap Sync on a project, or open it and use Sync to office.</span>
         <button onclick="dismissExportReminder(event)" aria-label="Dismiss">×</button>
       </div>`;
     } else {
@@ -3635,20 +3621,7 @@ function setupDrawToolbar() {
 
 // ---------- Menu ----------
 function toggleMenu() {
-  const menu = document.getElementById('workMenu');
-  menu.classList.toggle('open');
-  if (menu.classList.contains('open')) refreshMenuTrashButton();
-}
-function refreshMenuTrashButton() {
-  const btn = document.getElementById('menuTrashBtn');
-  if (!btn) return;
-  const ok = project && isFullySyncedToOffice(project);
-  btn.disabled = !ok;
-  btn.style.opacity = ok ? '' : '0.45';
-  btn.title = ok
-    ? 'Move this job to trash'
-    : 'Sync to office first — delete is only allowed when Fully synced';
-  btn.textContent = ok ? '🗑 Move to trash' : '🗑 Sync before delete';
+  document.getElementById('workMenu').classList.toggle('open');
 }
 function closeMenu() { document.getElementById('workMenu').classList.remove('open'); }
 document.addEventListener('click', (e) => {
@@ -7125,7 +7098,7 @@ async function exportProjectZip() {
       await _runPartsExport(items, setLabel, {
         intro: items.photos.length + ' photos · about ' + totalMb + ' MB (avg ' + avgMb + ' MB each) — over the ' +
           Math.round(SINGLE_ZIP_LIMIT / 1024 / 1024) + ' MB one-ZIP limit for this phone.\n\n' +
-          'If that average looks high, these are full-resolution photos taken before the size fix — run 🗜 Shrink photos from the ⋯ menu and the job will fit in one ZIP.'
+          'If that average looks high, these are full-resolution photos taken before the size fix — use Shrink photos on the Export sheet and the job will fit in one ZIP.'
       });
 
     } else {
