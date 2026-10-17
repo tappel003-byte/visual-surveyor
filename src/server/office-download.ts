@@ -4,7 +4,7 @@ export type OfficeDownloadFile = {
   /** Human label (zip part name or zipPath from manifest). */
   label: string;
   sizeBytes: number | null;
-  /** Direct HTTPS URL to Lovable/Supabase storage (time-limited). */
+  /** Direct HTTPS URL to Supabase storage (time-limited). */
   signedUrl: string;
 };
 
@@ -17,6 +17,10 @@ export type OfficeJobDownloadPayload = {
   getPagePath: string;
   signedUrlTtlSeconds: number;
   files: OfficeDownloadFile[];
+  manifestExpectedFiles: number | null;
+  storageObjectCount: number;
+  syncIncomplete: boolean;
+  missingManifestPaths: number;
 };
 
 type ManifestJson = {
@@ -59,45 +63,72 @@ async function loadManifest(jobId: string): Promise<ManifestJson | null> {
   }
 }
 
-/** Builds per-file signed download URLs from Lovable exports storage (server-only). */
+/** Builds per-file signed download URLs from exports storage (server-only). */
 export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDownloadPayload> {
   const base = {
     jobId,
     getPagePath: `/get?job=${encodeURIComponent(jobId)}`,
     signedUrlTtlSeconds: SIGNED_URL_TTL_SECONDS,
     files: [] as OfficeDownloadFile[],
+    manifestExpectedFiles: null as number | null,
+    storageObjectCount: 0,
+    syncIncomplete: false,
+    missingManifestPaths: 0,
   };
 
   if (!officeDownloadStorageConfigured()) {
     return { ...base, kind: "empty", folderName: null, uploadKind: null };
   }
 
+  const { listStoredObjectsForJob } = await import("@/server/export-storage-stats");
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const bucket = supabaseAdmin.storage.from("exports");
+  let storedObjects: Awaited<ReturnType<typeof listStoredObjectsForJob>> = [];
+  try {
+    storedObjects = await listStoredObjectsForJob(bucket, jobId);
+  } catch (e) {
+    console.error("[office-download] storage walk failed", jobId, e);
+  }
+  const contentObjects = storedObjects.filter((o) => o.relativePath !== "manifest.json");
+  const storedPathSet = new Set(contentObjects.map((o) => o.relativePath));
+  const sizeByPath = new Map(contentObjects.map((o) => [o.relativePath, o.sizeBytes]));
+  base.storageObjectCount = contentObjects.length;
+
   const manifest = await loadManifest(jobId);
   if (manifest?.files?.length) {
     const folderName = manifest.folderName?.trim() || null;
     const uploadKind = manifest.uploadKind?.trim() || null;
     const files: OfficeDownloadFile[] = [];
+    let missingManifestPaths = 0;
     for (const entry of manifest.files) {
       const path = entry.path?.trim();
       const label = entry.zipPath?.trim() || path;
       if (!path || !label) continue;
+      if (!storedPathSet.has(path)) {
+        missingManifestPaths++;
+        continue;
+      }
       const storagePath = `${jobId}/${path}`;
       const signedUrl = await signObject(storagePath);
       if (!signedUrl) continue;
-      files.push({ label, sizeBytes: null, signedUrl });
+      files.push({ label, sizeBytes: sizeByPath.get(path) ?? null, signedUrl });
     }
     files.sort((a, b) => a.label.localeCompare(b.label));
+    const manifestExpectedFiles = manifest.files.length;
+    const syncIncomplete = missingManifestPaths > 0 || manifestExpectedFiles > contentObjects.length;
     return {
       ...base,
       kind: files.length ? "manifest" : "empty",
       folderName,
       uploadKind,
       files,
+      manifestExpectedFiles,
+      syncIncomplete,
+      missingManifestPaths,
     };
   }
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.storage.from("exports").list(jobId, { limit: 200 });
+  const { data, error } = await bucket.list(jobId, { limit: 200 });
   if (error) {
     console.error("[office-download] list failed", jobId, error.message);
     return { ...base, kind: "empty", folderName: null, uploadKind: null };
@@ -122,5 +153,8 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
     folderName: null,
     uploadKind: null,
     files,
+    manifestExpectedFiles: null,
+    syncIncomplete: false,
+    missingManifestPaths: 0,
   };
 }

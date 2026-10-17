@@ -1,4 +1,5 @@
-const EXPORTS_LIST_URL = "https://visual-surveyor.lovable.app/api/public/exports-list";
+import { statsForExportJob } from "@/server/export-storage-stats";
+import { officeDownloadStorageConfigured } from "@/server/office-download";
 
 export type OfficeJobFolder = {
   /** Top-level folder name (same id used by `/get?job=`). */
@@ -7,53 +8,40 @@ export type OfficeJobFolder = {
   displayName: string | null;
   fileCount: number;
   totalBytes: number;
+  manifestFileCount: number | null;
+  storageObjectCount: number;
+  syncIncomplete: boolean;
 };
 
-export function exportsListTokenConfigured(): boolean {
-  return Boolean(process.env.EXPORTS_LIST_TOKEN?.trim());
-}
-
-type ExportsListResponse = {
-  jobs?: Array<{ id: string; displayName?: string | null; fileCount: number; totalBytes: number }>;
-};
-
-/** Fetches job folders from the Lovable public exports-list API (server-only). */
-export async function fetchExportJobListFromLovable(): Promise<
-  { ok: true; jobs: OfficeJobFolder[] } | { ok: false; unauthorized: boolean }
+/** Lists job folders from Supabase `exports` storage (Netlify server-only). */
+export async function fetchExportJobList(): Promise<
+  { ok: true; jobs: OfficeJobFolder[] } | { ok: false; missingServiceRole: boolean }
 > {
-  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
-  if (!token) {
-    return { ok: false, unauthorized: true };
+  if (!officeDownloadStorageConfigured()) {
+    return { ok: false, missingServiceRole: true };
   }
 
-  const res = await fetch(EXPORTS_LIST_URL, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (res.status === 401) {
-    return { ok: false, unauthorized: true };
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const bucket = supabaseAdmin.storage.from("exports");
+  const { data: top, error } = await bucket.list("", { limit: 1000 });
+  if (error) {
+    throw new Error(`Exports list failed: ${error.message}`);
   }
 
-  if (!res.ok) {
-    throw new Error(`Exports list failed (${res.status}).`);
-  }
-
-  const body = (await res.json()) as ExportsListResponse;
   const jobs: OfficeJobFolder[] = [];
-  for (const item of body.jobs ?? []) {
-    const id = item.id?.trim();
-    if (!id) continue;
-    const displayName =
-      typeof item.displayName === "string" && item.displayName.trim() ? item.displayName.trim() : null;
+  for (const item of top ?? []) {
+    const stats = await statsForExportJob(bucket, item.name);
     jobs.push({
-      id,
-      displayName,
-      fileCount: Number(item.fileCount) || 0,
-      totalBytes: Number(item.totalBytes) || 0,
+      id: stats.id,
+      displayName: stats.displayName,
+      fileCount: stats.fileCount,
+      totalBytes: stats.totalBytes,
+      manifestFileCount: stats.manifestFileCount,
+      storageObjectCount: stats.storageObjectCount,
+      syncIncomplete: stats.syncIncomplete,
     });
   }
 
+  jobs.sort((a, b) => (a.displayName || a.id).localeCompare(b.displayName || b.id));
   return { ok: true, jobs };
 }
