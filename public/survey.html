@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build marker: update-link-visible-1 -->
+<!-- build marker: office-nav-jump-1 -->
 
 <html lang="en">
 <head>
@@ -152,6 +152,9 @@
   .home-head .brand{font-size:11px;letter-spacing:.18em;color:var(--muted);font-weight:600;text-transform:uppercase}
   .home-head h1{font-size:28px;margin:6px 0 0;font-weight:700;letter-spacing:-.02em}
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
+  .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
+  .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .home-jumps a.home-office-jump{color:var(--accent);font-weight:600}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
@@ -591,7 +594,10 @@
 <div id="screenHome" class="screen active">
   <div class="home-head">
     <h1>PGG Photo Documentation</h1>
-    <a href="#" id="updateAppLink" style="display:inline-block;font-size:13px;color:var(--muted);text-decoration:underline;margin-top:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">Update app</a>
+    <div class="home-jumps">
+      <a href="/office" id="officeJumpLink" class="home-office-jump" target="_top" rel="noopener">PGG Office</a>
+      <a href="#" id="updateAppLink">Update app</a>
+    </div>
   </div>
 
 
