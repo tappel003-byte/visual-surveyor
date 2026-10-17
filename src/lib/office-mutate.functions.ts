@@ -4,9 +4,12 @@ import { hasValidOfficeSession } from "@/server/office-session";
 import { isSafeExportJobId } from "@/server/office-download";
 import {
   fetchDeleteExportJobFromLovable,
+  fetchExportPinsFromLovable,
   fetchSetExportFromFromLovable,
+  fetchUpdateExportPinsFromLovable,
 } from "@/server/office-mutate";
 import { exportsListTokenConfigured } from "@/server/office-jobs";
+import type { OfficePinsPayload } from "@/lib/office-pins";
 
 export const officeDeleteJob = createServerFn({ method: "POST" })
   .validator(z.object({ jobId: z.string().min(1).max(200) }))
@@ -51,4 +54,58 @@ export const officeSetJobFrom = createServerFn({ method: "POST" })
       throw new Error("Could not update From (unauthorized).");
     }
     return { syncedFrom: result.syncedFrom };
+  });
+
+export const officeGetJobPins = createServerFn({ method: "POST" })
+  .validator(z.object({ jobId: z.string().min(1).max(200) }))
+  .handler(async ({ data }): Promise<OfficePinsPayload> => {
+    if (!hasValidOfficeSession()) {
+      throw new Error("Sign in required.");
+    }
+    if (!isSafeExportJobId(data.jobId)) {
+      throw new Error("Invalid job id.");
+    }
+    if (!exportsListTokenConfigured()) {
+      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
+    }
+
+    const result = await fetchExportPinsFromLovable(data.jobId.trim());
+    if (!result.ok) {
+      throw new Error("Could not load pin notes (unauthorized).");
+    }
+    return result.payload;
+  });
+
+export const officeUpdateJobPins = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      jobId: z.string().min(1).max(200),
+      updates: z
+        .array(
+          z.object({
+            pinId: z.string().max(200).optional(),
+            pinNum: z.string().max(40).optional(),
+            description: z.string().max(8000),
+          }),
+        )
+        .min(1)
+        .max(500),
+    }),
+  )
+  .handler(async ({ data }): Promise<OfficePinsPayload> => {
+    if (!hasValidOfficeSession()) {
+      throw new Error("Sign in required.");
+    }
+    if (!isSafeExportJobId(data.jobId)) {
+      throw new Error("Invalid job id.");
+    }
+    if (!exportsListTokenConfigured()) {
+      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
+    }
+
+    const result = await fetchUpdateExportPinsFromLovable(data.jobId.trim(), data.updates);
+    if (!result.ok) {
+      throw new Error("Could not save pin notes (unauthorized).");
+    }
+    return result.payload;
   });

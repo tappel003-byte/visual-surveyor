@@ -18,11 +18,8 @@ import {
   OfficeDesktopReminder,
   PGG,
 } from "@/components/office/OfficeChrome";
-import {
-  loadSignedUrlMapForJob,
-  readSignedUrl,
-  writeSignedUrl,
-} from "@/lib/office-client-cache";
+import { OfficePinNotesEditor } from "@/components/office/OfficePinNotesEditor";
+import { loadSignedUrlMapForJob, readSignedUrl, writeSignedUrl } from "@/lib/office-client-cache";
 
 function formatFileSize(bytes: number | null): string {
   if (bytes == null || bytes <= 0) return "—";
@@ -95,6 +92,7 @@ export function JobFileExplorer({
   const [signingPath, setSigningPath] = useState<string | null>(null);
   const [signError, setSignError] = useState<string | null>(null);
   const [packageBusy, setPackageBusy] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const inFlightRef = useRef<Record<string, Promise<string | null>>>({});
   const statusRef = useRef(onStatusChange);
@@ -137,7 +135,9 @@ export function JobFileExplorer({
       setSigningPath(entry.storagePath);
       setSignError(null);
       if (reason !== "thumb") {
-        setStatus(reason === "download" ? `Preparing download: ${entry.name}…` : `Opening ${entry.name}…`);
+        setStatus(
+          reason === "download" ? `Preparing download: ${entry.name}…` : `Opening ${entry.name}…`,
+        );
       }
       try {
         const result = await officeSignFile({
@@ -374,6 +374,17 @@ export function JobFileExplorer({
             >
               {packageBusy ? "Downloading…" : "Download package"}
             </button>
+            {data.kind === "manifest" && (
+              <button
+                type="button"
+                className={OFFICE_BTN_CLASS}
+                style={btnSecondary}
+                onClick={() => setNotesOpen(true)}
+                title="Edit pin descriptions / notes for this job"
+              >
+                Edit notes
+              </button>
+            )}
           </div>
 
           {data.kind === "manifest" && (
@@ -434,7 +445,10 @@ export function JobFileExplorer({
 
           {/* Explorer-native folders + non-image files first */}
           {hasListRows && (
-            <div className="office-explorer-table" style={{ overflowX: "auto", marginBottom: imageFiles.length > 0 ? 12 : 0 }}>
+            <div
+              className="office-explorer-table"
+              style={{ overflowX: "auto", marginBottom: imageFiles.length > 0 ? 12 : 0 }}
+            >
               <table
                 style={{
                   width: "100%",
@@ -464,7 +478,9 @@ export function JobFileExplorer({
                           className={`office-list-row${selected ? " is-selected" : ""}`}
                           aria-selected={selected}
                           onClick={() => setSelectedPath(folderKey)}
-                          onDoubleClick={() => setDirPath(dirPath ? `${dirPath}/${folder}` : folder)}
+                          onDoubleClick={() =>
+                            setDirPath(dirPath ? `${dirPath}/${folder}` : folder)
+                          }
                           style={{ borderTop: `1px solid ${PGG.line}` }}
                         >
                           <td style={{ padding: "4px 10px" }} colSpan={1}>
@@ -624,6 +640,13 @@ export function JobFileExplorer({
           )}
         </>
       )}
+
+      <OfficePinNotesEditor
+        jobId={jobId}
+        open={notesOpen}
+        onClose={() => setNotesOpen(false)}
+        onStatusChange={setStatus}
+      />
 
       {preview && (
         <div

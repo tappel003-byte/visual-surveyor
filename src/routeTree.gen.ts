@@ -17,6 +17,7 @@ import { Route as ApiPublicExportsDeleteRouteImport } from './routes/api/public/
 import { Route as ApiPublicExportsFromRouteImport } from './routes/api/public/exports-from'
 import { Route as ApiPublicExportsJobRouteImport } from './routes/api/public/exports-job'
 import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
+import { Route as ApiPublicExportsPinsRouteImport } from './routes/api/public/exports-pins'
 import { Route as ApiPublicExportsSignRouteImport } from './routes/api/public/exports-sign'
 import { Route as OfficeJobsJobIdRouteImport } from './routes/office.jobs.$jobId'
 
@@ -60,6 +61,11 @@ const ApiPublicExportsListRoute = ApiPublicExportsListRouteImport.update({
   path: '/api/public/exports-list',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicExportsPinsRoute = ApiPublicExportsPinsRouteImport.update({
+  id: '/api/public/exports-pins',
+  path: '/api/public/exports-pins',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicExportsSignRoute = ApiPublicExportsSignRouteImport.update({
   id: '/api/public/exports-sign',
   path: '/api/public/exports-sign',
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-pins': typeof ApiPublicExportsPinsRoute
   '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-pins': typeof ApiPublicExportsPinsRoute
   '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-pins': typeof ApiPublicExportsPinsRoute
   '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-pins'
     | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   fileRoutesByTo: FileRoutesByTo
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-pins'
     | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   id:
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-pins'
     | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   fileRoutesById: FileRoutesById
@@ -153,6 +165,7 @@ export interface RootRouteChildren {
   ApiPublicExportsFromRoute: typeof ApiPublicExportsFromRoute
   ApiPublicExportsJobRoute: typeof ApiPublicExportsJobRoute
   ApiPublicExportsListRoute: typeof ApiPublicExportsListRoute
+  ApiPublicExportsPinsRoute: typeof ApiPublicExportsPinsRoute
   ApiPublicExportsSignRoute: typeof ApiPublicExportsSignRoute
 }
 
@@ -214,6 +227,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicExportsListRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/exports-pins': {
+      id: '/api/public/exports-pins'
+      path: '/api/public/exports-pins'
+      fullPath: '/api/public/exports-pins'
+      preLoaderRoute: typeof ApiPublicExportsPinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/exports-sign': {
       id: '/api/public/exports-sign'
       path: '/api/public/exports-sign'
@@ -252,6 +272,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicExportsFromRoute: ApiPublicExportsFromRoute,
   ApiPublicExportsJobRoute: ApiPublicExportsJobRoute,
   ApiPublicExportsListRoute: ApiPublicExportsListRoute,
+  ApiPublicExportsPinsRoute: ApiPublicExportsPinsRoute,
   ApiPublicExportsSignRoute: ApiPublicExportsSignRoute,
 }
 export const routeTree = rootRouteImport

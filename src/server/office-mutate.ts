@@ -1,10 +1,9 @@
-import {
-  isSafeExportJobId,
-  officeDownloadStorageConfigured,
-} from "@/server/office-download";
+import { isSafeExportJobId, officeDownloadStorageConfigured } from "@/server/office-download";
+import type { OfficePinsPayload, PinDescriptionUpdate } from "@/lib/office-pins";
 
 const EXPORTS_DELETE_URL = "https://visual-surveyor.lovable.app/api/public/exports-delete";
 const EXPORTS_FROM_URL = "https://visual-surveyor.lovable.app/api/public/exports-from";
+const EXPORTS_PINS_URL = "https://visual-surveyor.lovable.app/api/public/exports-pins";
 
 type ManifestJson = {
   version?: number;
@@ -169,4 +168,76 @@ export async function fetchSetExportFromFromLovable(
   }
   const body = (await res.json()) as { syncedFrom?: string };
   return { ok: true, syncedFrom: body.syncedFrom?.trim() || syncedFrom.trim() };
+}
+
+/** Netlify → Lovable: load pin notes from pins.csv. */
+export async function fetchExportPinsFromLovable(
+  jobId: string,
+): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const url = `${EXPORTS_PINS_URL}?jobId=${encodeURIComponent(jobId)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (res.status === 404) {
+    throw new Error(
+      "Pin notes API missing (404). Publish once in Lovable so /api/public/exports-pins is live.",
+    );
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errBody = (await res.json()) as { error?: string };
+      detail = errBody.error ? `: ${errBody.error}` : "";
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`Exports pins read failed (${res.status})${detail}`);
+  }
+  const payload = (await res.json()) as OfficePinsPayload;
+  return { ok: true, payload };
+}
+
+/** Netlify → Lovable: write pin description edits back to pins.csv. */
+export async function fetchUpdateExportPinsFromLovable(
+  jobId: string,
+  updates: PinDescriptionUpdate[],
+): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const res = await fetch(EXPORTS_PINS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jobId, updates }),
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (res.status === 404) {
+    throw new Error(
+      "Pin notes API missing (404). Publish once in Lovable so /api/public/exports-pins is live.",
+    );
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errBody = (await res.json()) as { error?: string };
+      detail = errBody.error ? `: ${errBody.error}` : "";
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`Exports pins update failed (${res.status})${detail}`);
+  }
+  const payload = (await res.json()) as OfficePinsPayload;
+  return { ok: true, payload };
 }
