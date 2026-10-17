@@ -11,7 +11,7 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Lovable-only: mint signed export URLs with service role (Netlify calls this with Bearer token). */
+/** Lovable-only: list job files without signing (lazy sign via /api/public/exports-sign). */
 export const Route = createFileRoute("/api/public/exports-job")({
   server: {
     handlers: {

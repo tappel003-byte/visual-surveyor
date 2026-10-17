@@ -13,8 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GetRouteImport } from './routes/get'
 import { Route as OfficeRouteImport } from './routes/office'
 import { Route as OfficeIndexRouteImport } from './routes/office.index'
+import { Route as ApiPublicExportsDeleteRouteImport } from './routes/api/public/exports-delete'
+import { Route as ApiPublicExportsFromRouteImport } from './routes/api/public/exports-from'
 import { Route as ApiPublicExportsJobRouteImport } from './routes/api/public/exports-job'
 import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
+import { Route as ApiPublicExportsSignRouteImport } from './routes/api/public/exports-sign'
 import { Route as OfficeJobsJobIdRouteImport } from './routes/office.jobs.$jobId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -37,6 +40,16 @@ const OfficeIndexRoute = OfficeIndexRouteImport.update({
   path: '/',
   getParentRoute: () => OfficeRoute,
 } as any)
+const ApiPublicExportsDeleteRoute = ApiPublicExportsDeleteRouteImport.update({
+  id: '/api/public/exports-delete',
+  path: '/api/public/exports-delete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsFromRoute = ApiPublicExportsFromRouteImport.update({
+  id: '/api/public/exports-from',
+  path: '/api/public/exports-from',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicExportsJobRoute = ApiPublicExportsJobRouteImport.update({
   id: '/api/public/exports-job',
   path: '/api/public/exports-job',
@@ -45,6 +58,11 @@ const ApiPublicExportsJobRoute = ApiPublicExportsJobRouteImport.update({
 const ApiPublicExportsListRoute = ApiPublicExportsListRouteImport.update({
   id: '/api/public/exports-list',
   path: '/api/public/exports-list',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsSignRoute = ApiPublicExportsSignRouteImport.update({
+  id: '/api/public/exports-sign',
+  path: '/api/public/exports-sign',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OfficeJobsJobIdRoute = OfficeJobsJobIdRouteImport.update({
@@ -58,16 +76,22 @@ export interface FileRoutesByFullPath {
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
   '/office/': typeof OfficeIndexRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeIndexRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesById {
@@ -76,8 +100,11 @@ export interface FileRoutesById {
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
   '/office/': typeof OfficeIndexRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRouteTypes {
@@ -87,16 +114,22 @@ export interface FileRouteTypes {
     | '/get'
     | '/office'
     | '/office/'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/get'
     | '/office'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   id:
     | '__root__'
@@ -104,8 +137,11 @@ export interface FileRouteTypes {
     | '/get'
     | '/office'
     | '/office/'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
     | '/api/public/exports-job'
     | '/api/public/exports-list'
+    | '/api/public/exports-sign'
     | '/office/jobs/$jobId'
   fileRoutesById: FileRoutesById
 }
@@ -113,8 +149,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GetRoute: typeof GetRoute
   OfficeRoute: typeof OfficeRouteWithChildren
+  ApiPublicExportsDeleteRoute: typeof ApiPublicExportsDeleteRoute
+  ApiPublicExportsFromRoute: typeof ApiPublicExportsFromRoute
   ApiPublicExportsJobRoute: typeof ApiPublicExportsJobRoute
   ApiPublicExportsListRoute: typeof ApiPublicExportsListRoute
+  ApiPublicExportsSignRoute: typeof ApiPublicExportsSignRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -147,6 +186,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OfficeIndexRouteImport
       parentRoute: typeof OfficeRoute
     }
+    '/api/public/exports-delete': {
+      id: '/api/public/exports-delete'
+      path: '/api/public/exports-delete'
+      fullPath: '/api/public/exports-delete'
+      preLoaderRoute: typeof ApiPublicExportsDeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-from': {
+      id: '/api/public/exports-from'
+      path: '/api/public/exports-from'
+      fullPath: '/api/public/exports-from'
+      preLoaderRoute: typeof ApiPublicExportsFromRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/exports-job': {
       id: '/api/public/exports-job'
       path: '/api/public/exports-job'
@@ -159,6 +212,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/exports-list'
       fullPath: '/api/public/exports-list'
       preLoaderRoute: typeof ApiPublicExportsListRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-sign': {
+      id: '/api/public/exports-sign'
+      path: '/api/public/exports-sign'
+      fullPath: '/api/public/exports-sign'
+      preLoaderRoute: typeof ApiPublicExportsSignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/office/jobs/$jobId': {
@@ -188,8 +248,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GetRoute: GetRoute,
   OfficeRoute: OfficeRouteWithChildren,
+  ApiPublicExportsDeleteRoute: ApiPublicExportsDeleteRoute,
+  ApiPublicExportsFromRoute: ApiPublicExportsFromRoute,
   ApiPublicExportsJobRoute: ApiPublicExportsJobRoute,
   ApiPublicExportsListRoute: ApiPublicExportsListRoute,
+  ApiPublicExportsSignRoute: ApiPublicExportsSignRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

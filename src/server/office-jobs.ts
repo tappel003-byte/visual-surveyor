@@ -10,6 +10,10 @@ export type OfficeJobFolder = {
   manifestFileCount: number | null;
   storageObjectCount: number;
   syncIncomplete: boolean;
+  /** Last synced (`manifest.syncedAt`), ISO string when present. */
+  syncedAt: string | null;
+  /** Device nickname from Sync (`syncedFrom` / `deviceName`). */
+  syncedFrom: string | null;
 };
 
 export function exportsListTokenConfigured(): boolean {
@@ -25,6 +29,8 @@ type ExportsListResponse = {
     manifestFileCount?: number | null;
     storageObjectCount?: number;
     syncIncomplete?: boolean;
+    syncedAt?: string | null;
+    syncedFrom?: string | null;
   }>;
 };
 
@@ -61,6 +67,10 @@ export async function fetchExportJobListFromLovable(): Promise<
     const manifestFileCount =
       typeof item.manifestFileCount === "number" ? item.manifestFileCount : null;
     const storageObjectCount = Number(item.storageObjectCount) || 0;
+    const syncedAt =
+      typeof item.syncedAt === "string" && item.syncedAt.trim() ? item.syncedAt.trim() : null;
+    const syncedFrom =
+      typeof item.syncedFrom === "string" && item.syncedFrom.trim() ? item.syncedFrom.trim() : null;
     jobs.push({
       id,
       displayName,
@@ -69,9 +79,16 @@ export async function fetchExportJobListFromLovable(): Promise<
       manifestFileCount,
       storageObjectCount,
       syncIncomplete: Boolean(item.syncIncomplete),
+      syncedAt,
+      syncedFrom,
     });
   }
 
-  jobs.sort((a, b) => (a.displayName || a.id).localeCompare(b.displayName || b.id));
+  jobs.sort((a, b) => {
+    const aTime = a.syncedAt ? Date.parse(a.syncedAt) : 0;
+    const bTime = b.syncedAt ? Date.parse(b.syncedAt) : 0;
+    if (aTime !== bTime) return bTime - aTime;
+    return (a.displayName || a.id).localeCompare(b.displayName || b.id);
+  });
   return { ok: true, jobs };
 }

@@ -1,7 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import {
+  FolderIcon,
+  OfficeChrome,
+  formatLastSynced,
+  formatSize,
+  fromLabel,
+} from "@/components/office/OfficeChrome";
 import { officeAuthStatus, officeLogin, officeLogout } from "@/lib/office-auth.functions";
-import { officeListJobs, type OfficeJobListResult } from "@/lib/office-jobs.functions";
+import { officeListJobs, type OfficeJobFolder, type OfficeJobListResult } from "@/lib/office-jobs.functions";
+import { officeDeleteJob, officeSetJobFrom } from "@/lib/office-mutate.functions";
 
 export const Route = createFileRoute("/office/")({
   head: () => ({
@@ -28,12 +36,6 @@ export const Route = createFileRoute("/office/")({
   component: OfficeExplorer,
 });
 
-function formatSizeMb(totalBytes: number): string {
-  const mb = totalBytes / (1024 * 1024);
-  if (mb < 0.01 && totalBytes > 0) return "<0.01 MB";
-  return `${mb.toFixed(2)} MB`;
-}
-
 function OfficeExplorer() {
   const { auth: initialAuth, jobs: initialJobs } = Route.useLoaderData();
   const [auth, setAuth] = useState(initialAuth);
@@ -43,6 +45,8 @@ function OfficeExplorer() {
   const [listError, setListError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [listRefreshing, setListRefreshing] = useState(false);
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+
   const reloadJobs = async () => {
     setListError(null);
     setListRefreshing(true);
@@ -91,26 +95,22 @@ function OfficeExplorer() {
     }
   };
 
-  const shell = {
-    maxWidth: 720,
+  const shell: CSSProperties = {
+    maxWidth: 480,
     margin: "0 auto",
     padding: "32px 20px",
-    fontFamily: "system-ui, sans-serif",
-    color: "#2c241b",
-  } as const;
+    fontFamily: "Segoe UI, system-ui, sans-serif",
+    color: "#1a1a1a",
+  };
 
   if (!auth.configured) {
     return (
       <div style={shell}>
         <h1 style={{ fontSize: 22, marginBottom: 8 }}>PGG Office File Explorer</h1>
-        <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5 }}>
-          Stage A shell is deployed, but this Netlify site has not been given office credentials yet.
-          In Netlify → Site settings → Environment variables, add{" "}
-          <code>NLF_OFFICE_PASSWORD</code> (shared company password) and{" "}
-          <code>NLF_SESSION_SECRET</code> (random string, at least 16 characters), then redeploy.
-        </p>
-        <p style={{ fontSize: 13, color: "#6b5d4f", marginTop: 16 }}>
-          Field app stays passwordless. Existing Export and <code>/get?job=</code> links are unchanged.
+        <p style={{ fontSize: 14, color: "#5f5f5f", lineHeight: 1.5 }}>
+          Office credentials are not set on this Netlify site yet. Add{" "}
+          <code>NLF_OFFICE_PASSWORD</code> and <code>NLF_SESSION_SECRET</code>, then redeploy. See{" "}
+          <code>docs/nlf-office-env.md</code>.
         </p>
       </div>
     );
@@ -120,9 +120,9 @@ function OfficeExplorer() {
     return (
       <div style={shell}>
         <h1 style={{ fontSize: 22, marginBottom: 8 }}>PGG Office File Explorer</h1>
-        <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, marginBottom: 20 }}>
-          Company password required. This page is the www middleman for downloading synced jobs to PGG
-          servers — not the field survey app.
+        <p style={{ fontSize: 14, color: "#5f5f5f", lineHeight: 1.5, marginBottom: 20 }}>
+          Company password required. Browse synced field jobs and download files — not the field
+          survey app.
         </p>
         <form onSubmit={onLogin}>
           <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
@@ -137,8 +137,8 @@ function OfficeExplorer() {
               width: "100%",
               maxWidth: 320,
               padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #d4c8b8",
+              borderRadius: 4,
+              border: "1px solid #c8c8c8",
               fontSize: 15,
             }}
           />
@@ -152,10 +152,10 @@ function OfficeExplorer() {
             disabled={busy || !password}
             style={{
               marginTop: 14,
-              padding: "12px 20px",
+              padding: "10px 18px",
               border: 0,
-              borderRadius: 10,
-              background: "#7a4b2a",
+              borderRadius: 4,
+              background: "#0b57d0",
               color: "#fff",
               fontWeight: 700,
               fontSize: 15,
@@ -172,197 +172,305 @@ function OfficeExplorer() {
   const jobList = jobs?.jobs ?? [];
   const listReady = jobs?.listAvailable ?? false;
 
+  const setJobList = (next: OfficeJobFolder[]) => {
+    setJobs((prev) => ({ listAvailable: prev?.listAvailable ?? true, jobs: next }));
+  };
+
+  const editFrom = async (job: OfficeJobFolder) => {
+    const next = window.prompt(
+      "Set From (whose phone). Saved into the job manifest without a full re-sync.",
+      job.syncedFrom?.trim() || "",
+    );
+    if (next == null) return;
+    const label = next.trim();
+    if (!label) return;
+    setRowBusyId(job.id);
+    setListError(null);
+    try {
+      const result = await officeSetJobFrom({ data: { jobId: job.id, syncedFrom: label } });
+      setJobList(jobList.map((j) => (j.id === job.id ? { ...j, syncedFrom: result.syncedFrom } : j)));
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Could not update From.");
+    } finally {
+      setRowBusyId(null);
+    }
+  };
+
+  const deleteJob = async (job: OfficeJobFolder) => {
+    const name = job.displayName || job.id;
+    if (
+      !confirm(
+        `Delete "${name}" from office staging?\n\nRemoves the synced copy from shared storage. Field phones keep their local copy.`,
+      )
+    ) {
+      return;
+    }
+    setRowBusyId(job.id);
+    setListError(null);
+    try {
+      await officeDeleteJob({ data: { jobId: job.id } });
+      setJobList(jobList.filter((j) => j.id !== job.id));
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setRowBusyId(null);
+    }
+  };
+
   return (
-    <div style={shell}>
-      <header style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 24 }}>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 22, marginBottom: 4 }}>PGG Office File Explorer</h1>
-          <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Staging middleman — synced field jobs in shared storage. Use <strong>Open</strong> to browse
-            photos and download individual files (large jobs). Legacy <code>/get?job=</code> ZIP links still work.
+    <OfficeChrome
+      jobs={jobList}
+      listAvailable={listReady}
+      selectedJobId={null}
+      onRefresh={() => reloadJobs().catch(() => {})}
+      refreshing={listRefreshing}
+      onJobsChanged={setJobList}
+      onLogout={() => onLogout().catch(() => {})}
+    >
+      <div style={{ padding: "12px 14px 28px" }}>
+        {!listReady && (
+          <p style={{ fontSize: 14, color: "#5f5f5f", lineHeight: 1.5 }}>
+            Job list unavailable — Netlify needs <code>EXPORTS_LIST_TOKEN</code>. Do not add{" "}
+            <code>SUPABASE_*</code> on Netlify.
           </p>
-        </div>
-        <button
-          type="button"
-          onClick={onLogout}
-          disabled={busy}
-          style={{
-            padding: "8px 12px",
-            border: "1px solid #7a4b2a",
-            borderRadius: 8,
-            background: "#fff",
-            color: "#7a4b2a",
-            fontSize: 13,
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          Sign out
-        </button>
-      </header>
+        )}
 
-      {!listReady && (
-        <section
-          style={{
-            border: "1px solid #e8c9a8",
-            borderRadius: 12,
-            padding: "18px 16px",
-            background: "#fff8f0",
-            marginBottom: 20,
-          }}
-        >
-          <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Job list is unavailable — Netlify needs <code>EXPORTS_LIST_TOKEN</code> (same Bearer token as Lovable).
-            Ask Claude to confirm that variable under <strong>Netlify → Site configuration → Environment variables</strong>,
-            then wait for production publish. Do not add <code>SUPABASE_*</code> keys on Netlify. See{" "}
-            <code>docs/nlf-office-env.md</code>.
-          </p>
-        </section>
-      )}
-
-      {listReady && jobList.length === 0 && (
-        <section
-          style={{
-            border: "1px dashed #d4c8b8",
-            borderRadius: 12,
-            padding: "28px 20px",
-            background: "#faf7f2",
-            textAlign: "center",
-          }}
-        >
-          <h2 style={{ fontSize: 17, margin: "0 0 10px" }}>No jobs in staging yet</h2>
-          <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.55, margin: 0, maxWidth: 480, marginInline: "auto" }}>
-            When field <strong>Sync</strong> is enabled (Stage C), completed jobs will appear here.
-            Field **Sync to office** (⋯ menu) and Export cloud uploads land in the same staging bucket and show here after refresh.
-          </p>
-        </section>
-      )}
-
-      {listReady && jobList.length > 0 && (
-        <section>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <h2 style={{ fontSize: 16, margin: 0 }}>Job folders ({jobList.length})</h2>
-            <button
-              type="button"
-              onClick={() => reloadJobs().catch(() => {})}
-              disabled={busy || listRefreshing}
-              style={{
-                padding: "6px 10px",
-                border: "1px solid #d4c8b8",
-                borderRadius: 8,
-                background: "#fff",
-                fontSize: 12,
-                cursor: listRefreshing ? "wait" : "pointer",
-                color: "#6b5d4f",
-              }}
-            >
-              {listRefreshing ? "Refreshing…" : "Refresh"}
-            </button>
-          </div>
-          {listError && (
-            <p style={{ color: "#a33", fontSize: 13, margin: "0 0 12px" }} role="alert">
-              {listError}
+        {listReady && jobList.length === 0 && (
+          <div style={{ textAlign: "center", padding: "40px 16px", color: "#5f5f5f" }}>
+            <h2 style={{ fontSize: 17, margin: "0 0 8px", color: "#1a1a1a" }}>No jobs in staging yet</h2>
+            <p style={{ fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+              On the phone: Sync to office (or Auto-sync). Then Refresh.
             </p>
-          )}
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {jobList.map((job) => {
-              const title = job.displayName || "Field export";
-              return (
-                <li
-                  key={job.id}
-                  style={{
-                    padding: "12px 0",
-                    borderTop: "1px solid #e5ddd2",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Link
-                        to="/office/jobs/$jobId"
-                        params={{ jobId: job.id }}
-                        style={{
-                          display: "block",
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: "#7a4b2a",
-                          textDecoration: "none",
-                          lineHeight: 1.35,
-                        }}
-                      >
-                        {title}
-                      </Link>
-                      <span
-                        style={{
-                          display: "block",
-                          marginTop: 2,
-                          fontSize: 11,
-                          color: "#8a7a68",
-                          wordBreak: "break-all",
-                          fontFamily: "ui-monospace, monospace",
-                        }}
-                      >
-                        {job.id}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 13, color: "#6b5d4f", flexShrink: 0, textAlign: "right" }}>
-                      {job.fileCount} file{job.fileCount === 1 ? "" : "s"}
-                      {job.syncIncomplete && job.manifestFileCount != null ? (
-                        <span
-                          style={{ display: "block", fontSize: 11, color: "#a33", fontWeight: 600 }}
-                          title={`${job.storageObjectCount} of ${job.manifestFileCount} files in storage`}
-                        >
-                          {job.storageObjectCount}/{job.manifestFileCount} in storage
-                        </span>
-                      ) : null}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        color: "#8a7a68",
-                        flexShrink: 0,
-                        minWidth: 72,
-                        textAlign: "right",
-                      }}
-                    >
-                      {formatSizeMb(job.totalBytes)}
-                    </span>
-                    <Link
-                      to="/office/jobs/$jobId"
-                      params={{ jobId: job.id }}
-                      style={{
-                        padding: "8px 14px",
-                        border: "1px solid #7a4b2a",
-                        borderRadius: 8,
-                        background: "#fff",
-                        color: "#7a4b2a",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        textDecoration: "none",
-                        flexShrink: 0,
-                      }}
-                    >
-                      Open
-                    </Link>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+          </div>
+        )}
 
-      <p style={{ fontSize: 12, color: "#8a7a68", marginTop: 24 }}>
-        Export on the phone and <code>/get?job=</code> remain fully available until Tim retires them
-        after NLF is verified.
-      </p>
-    </div>
+        {listError && (
+          <p style={{ color: "#a33", fontSize: 13, margin: "0 0 12px" }} role="alert">
+            {listError}
+          </p>
+        )}
+
+        {listReady && jobList.length > 0 && (
+          <>
+            <p style={{ fontSize: 12, color: "#5f5f5f", margin: "0 0 10px" }}>
+              Date = last synced. From = device nickname (or set here for older jobs).
+            </p>
+            <div style={{ overflowX: "auto" }} className="office-job-table-wrap">
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                  border: "1px solid #d4d4d4",
+                  minWidth: 680,
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f3f3f3", textAlign: "left" }}>
+                    <th style={th}>Name</th>
+                    <th style={th} title="Last synced">
+                      Date
+                    </th>
+                    <th style={th}>Type</th>
+                    <th style={th}>Size</th>
+                    <th style={th} title="Device nickname or office label">
+                      From
+                    </th>
+                    <th style={th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobList.map((job) => {
+                    const title = job.displayName || "Field export";
+                    const getHref = `/get?job=${encodeURIComponent(job.id)}`;
+                    const rowBusy = rowBusyId === job.id;
+                    return (
+                      <tr key={job.id} style={{ borderTop: "1px solid #ebebeb" }}>
+                        <td style={td}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                            <FolderIcon />
+                            <div style={{ minWidth: 0 }}>
+                              <Link
+                                to="/office/jobs/$jobId"
+                                params={{ jobId: job.id }}
+                                style={{ fontWeight: 600, color: "#0b57d0", textDecoration: "none" }}
+                              >
+                                {title}
+                              </Link>
+                              {job.syncIncomplete && job.manifestFileCount != null ? (
+                                <span
+                                  style={{
+                                    display: "block",
+                                    fontSize: 11,
+                                    color: "#a33",
+                                    fontWeight: 600,
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {job.storageObjectCount}/{job.manifestFileCount} in storage
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap", color: "#5f5f5f" }}>
+                          {formatLastSynced(job.syncedAt)}
+                        </td>
+                        <td style={{ ...td, color: "#5f5f5f" }}>
+                          Folder
+                          <span style={{ display: "block", fontSize: 11, color: "#8a8a8a" }}>
+                            {job.fileCount} file{job.fileCount === 1 ? "" : "s"}
+                          </span>
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap", color: "#5f5f5f" }}>
+                          {formatSize(job.totalBytes)}
+                        </td>
+                        <td style={{ ...td, color: "#5f5f5f", maxWidth: 160 }}>
+                          <button
+                            type="button"
+                            onClick={() => editFrom(job)}
+                            disabled={rowBusy}
+                            title="Edit From"
+                            style={{
+                              border: 0,
+                              background: "transparent",
+                              padding: 0,
+                              color: "#0b57d0",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: 13,
+                            }}
+                          >
+                            {fromLabel(job.syncedFrom)}
+                          </button>
+                        </td>
+                        <td style={td}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            <Link to="/office/jobs/$jobId" params={{ jobId: job.id }} style={actionBtn}>
+                              Open
+                            </Link>
+                            <a href={getHref} style={actionBtn}>
+                              Download
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => deleteJob(job)}
+                              disabled={rowBusy}
+                              style={{ ...actionBtn, color: "#a33", cursor: "pointer" }}
+                            >
+                              {rowBusy ? "…" : "Delete"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <ul className="office-job-mobile" style={{ listStyle: "none", padding: 0, margin: 0, display: "none" }}>
+              {jobList.map((job) => {
+                const title = job.displayName || "Field export";
+                const getHref = `/get?job=${encodeURIComponent(job.id)}`;
+                const rowBusy = rowBusyId === job.id;
+                return (
+                  <li key={job.id} style={{ padding: "12px 0", borderBottom: "1px solid #ebebeb" }}>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <FolderIcon />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Link
+                          to="/office/jobs/$jobId"
+                          params={{ jobId: job.id }}
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 600,
+                            color: "#0b57d0",
+                            textDecoration: "none",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {title}
+                        </Link>
+                        <div style={{ fontSize: 12, color: "#5f5f5f", marginTop: 4, lineHeight: 1.4 }}>
+                          {formatLastSynced(job.syncedAt)} · {formatSize(job.totalBytes)} ·{" "}
+                          {job.fileCount} files ·{" "}
+                          <button
+                            type="button"
+                            onClick={() => editFrom(job)}
+                            style={{
+                              border: 0,
+                              background: "transparent",
+                              padding: 0,
+                              color: "#0b57d0",
+                              fontWeight: 600,
+                              fontSize: 12,
+                            }}
+                          >
+                            {fromLabel(job.syncedFrom)}
+                          </button>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                          <Link
+                            to="/office/jobs/$jobId"
+                            params={{ jobId: job.id }}
+                            style={{ ...actionBtn, flex: 1, textAlign: "center" }}
+                          >
+                            Open
+                          </Link>
+                          <a href={getHref} style={{ ...actionBtn, flex: 1, textAlign: "center" }}>
+                            Download
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => deleteJob(job)}
+                            disabled={rowBusy}
+                            style={{ ...actionBtn, color: "#a33", flex: 1 }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <style>{`
+              @media (max-width: 720px) {
+                .office-job-table-wrap { display: none !important; }
+                .office-job-mobile { display: block !important; }
+              }
+            `}</style>
+          </>
+        )}
+      </div>
+    </OfficeChrome>
   );
 }
+
+const th: CSSProperties = {
+  padding: "8px 10px",
+  borderBottom: "1px solid #d4d4d4",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+};
+
+const td: CSSProperties = {
+  padding: "10px",
+  verticalAlign: "middle",
+};
+
+const actionBtn: CSSProperties = {
+  padding: "7px 12px",
+  border: "1px solid #8a8a8a",
+  borderRadius: 3,
+  background: "#fff",
+  color: "#1a1a1a",
+  fontSize: 13,
+  fontWeight: 600,
+  textDecoration: "none",
+  display: "inline-block",
+};

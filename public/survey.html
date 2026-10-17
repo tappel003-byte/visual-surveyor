@@ -759,6 +759,7 @@
   </div>
   <div class="menu" id="workMenu">
     <button onclick="syncProjectToOffice()">☁️ Sync to office</button>
+    <button id="autoSyncMenuBtn" onclick="toggleAutoSyncPreference()">⟳ Auto-sync: …</button>
     <button onclick="openExport()">📤 Export</button>
     <button onclick="editSetup()">⚙️ Edit setup</button>
     <div class="sep"></div>
@@ -1411,13 +1412,20 @@ function updateAppHeight() {
 }
 function goHome() {
   closeSheets();
-  if (project) { saveProject(); }
+  const leaving = project;
+  if (leaving) { saveProject(); }
   project = null;
   ui.selectedPinId = null;
   ui.undo = [];
   ui.redo = [];
   renderHome();
   showScreen('screenHome');
+  // Auto-sync after leaving a job (debounced; never-lose via resumable upload).
+  if (leaving && projectNeedsOfficeSync(leaving)) {
+    if (autoSyncPreference() == null) ensureAutoSyncPreferenceAsked();
+    // Re-attach leaving project briefly via schedule — maybeAutoSync finds it in store.
+    scheduleAutoSyncOffice('leave-job');
+  }
 }
 
 // ---------- HOME ----------
@@ -6949,14 +6957,94 @@ async function exportProjectCloud() {
   }
 }
 
-// ---------- Office Sync (Stage C) ----------
+// ---------- Office Sync (Stage C) + Auto-sync ----------
 // Same raw-asset upload path as cloud Export, but aimed at /office staging — no ZIP on phone.
+const DEVICE_NICKNAME_KEY = 'pgg_device_nickname';
+const AUTO_SYNC_KEY = 'pgg_auto_sync_office'; // 'on' | 'off' | unset
+let _officeSyncBusy = false;
+let _autoSyncQueued = false;
+let _autoSyncTimer = null;
+
+/** One-time phone nickname → written to manifest as syncedFrom / deviceName for /office From column. */
+function getOrAskDeviceNickname() {
+  let nick = '';
+  try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
+  if (nick) return nick;
+  const asked = window.prompt(
+    'Name this phone for the office File Explorer (e.g. "Tim phone" or "Carlos phone").\n\n' +
+    'Shown in the From column after Sync. Set once on this device.',
+    ''
+  );
+  nick = (asked || '').trim();
+  if (!nick) nick = 'Unknown phone';
+  try { localStorage.setItem(DEVICE_NICKNAME_KEY, nick); } catch (e) {}
+  return nick;
+}
+
+function autoSyncPreference() {
+  try { return localStorage.getItem(AUTO_SYNC_KEY); } catch (e) { return null; }
+}
+
+function isAutoSyncOn() {
+  return autoSyncPreference() === 'on';
+}
+
+/** Prompt once: OK = enable auto-sync, Cancel = leave manual-only. */
+function ensureAutoSyncPreferenceAsked() {
+  const cur = autoSyncPreference();
+  if (cur === 'on' || cur === 'off') return cur;
+  const ok = confirm(
+    'Turn on Auto-sync to office?\n\n' +
+    'When you leave a job, the app goes to the background, or connectivity returns, ' +
+    'this phone uploads changes to office staging (only when needed — not constant spam).\n\n' +
+    'Manual Sync and Export still work. Files already uploaded stay safe if a sync pauses.\n\n' +
+    'OK = enable Auto-sync\nCancel = keep manual Sync only'
+  );
+  const v = ok ? 'on' : 'off';
+  try { localStorage.setItem(AUTO_SYNC_KEY, v); } catch (e) {}
+  refreshAutoSyncMenuLabel();
+  return v;
+}
+
+function toggleAutoSyncPreference() {
+  closeMenu();
+  const cur = autoSyncPreference();
+  let next;
+  if (cur === 'on') {
+    next = 'off';
+    toast('Auto-sync off');
+  } else {
+    next = 'on';
+    toast('Auto-sync on');
+    // ensure nickname exists before first background run
+    getOrAskDeviceNickname();
+  }
+  try { localStorage.setItem(AUTO_SYNC_KEY, next); } catch (e) {}
+  refreshAutoSyncMenuLabel();
+  if (next === 'on') scheduleAutoSyncOffice('menu-enable');
+}
+
+function refreshAutoSyncMenuLabel() {
+  const btn = document.getElementById('autoSyncMenuBtn');
+  if (!btn) return;
+  const cur = autoSyncPreference();
+  btn.textContent = cur === 'on' ? '⟳ Auto-sync: On' : (cur === 'off' ? '⟳ Auto-sync: Off' : '⟳ Auto-sync: Ask…');
+}
+
 function syncStatus(p) {
   const updated = p.updatedAt || 0;
   const synced = p.lastSyncedAt || 0;
   if (!synced) return { state: 'none', label: 'Not synced' };
   if (updated > synced + 1000) return { state: 'stale', label: 'Changes since sync' };
   return { state: 'ok', label: 'Synced ' + relTime(synced) };
+}
+
+function projectNeedsOfficeSync(p) {
+  if (!p) return false;
+  const updated = p.updatedAt || 0;
+  const synced = p.lastSyncedAt || 0;
+  if (!synced) return !!(p.pins && p.pins.length);
+  return updated > synced + 1000;
 }
 
 function _showSyncComplete(folderName, jobId) {
@@ -6981,16 +7069,33 @@ function _showSyncComplete(folderName, jobId) {
   });
 }
 
-async function syncProjectToOffice() {
-  if (!project) return;
-  closeMenu();
-  closeSheets();
-  if (!project.pins || !project.pins.length) {
-    if (!confirm('No pins yet — sync anyway?')) return;
+/**
+ * Core office sync upload. opts.silent = auto-sync (no modal UI; toast only).
+ * opts.projectRef = project object to update (defaults to current `project`).
+ * Never deletes local files. Resumes via existing raw upload progress.
+ */
+async function runOfficeSyncUpload(opts) {
+  opts = opts || {};
+  const silent = !!opts.silent;
+  const target = opts.projectRef || project;
+  if (!target) return { ok: false, reason: 'no-project' };
+  if (_officeSyncBusy) return { ok: false, reason: 'busy' };
+  if (exportPanel.el && !silent) {
+    /* manual sync owns the panel */
+  } else if (exportPanel.el && silent) {
+    return { ok: false, reason: 'export-busy' };
   }
-  exportPanel.open('Sync to office');
-  exportPanel.msg('Preparing job package…');
+
+  _officeSyncBusy = true;
+  const prevProject = project;
   try {
+    // collectExportItems / upload use global `project`
+    project = target;
+    if (!silent) {
+      exportPanel.open('Sync to office');
+      exportPanel.msg('Preparing job package…');
+    }
+
     const items = await collectExportItems();
     let totalBytes = await _totalPhotoBytes(items.photos);
     for (const f of items.meta) {
@@ -6999,17 +7104,22 @@ async function syncProjectToOffice() {
     }
     const totalMb = Math.round(totalBytes / 1024 / 1024);
     if (totalBytes > OFFICE_STAGING_LIMIT) {
-      exportPanel.close();
-      alert(
-        'This job is about ' + totalMb + ' MB — over the 1 GB office staging limit.\n\n' +
-        'Finish a smaller job first, or ask the office to clear confirmed downloads from staging. ' +
-        'Export to this phone still works with no size cap.'
-      );
-      return;
+      if (!silent) {
+        exportPanel.close();
+        alert(
+          'This job is about ' + totalMb + ' MB — over the 1 GB office staging limit.\n\n' +
+          'Finish a smaller job first, or ask the office to clear confirmed downloads from staging. ' +
+          'Export to this phone still works with no size cap.'
+        );
+      } else {
+        console.warn('[auto-sync] skipped — over staging limit', totalMb);
+      }
+      return { ok: false, reason: 'too-large' };
     }
 
     for (;;) {
       if (!navigator.onLine) {
+        if (silent) return { ok: false, reason: 'offline' };
         exportPanel.msg('No internet — Sync needs a connection.');
         const c = await exportPanel.ask([
           { label: 'Try again', value: 'retry' },
@@ -7017,21 +7127,36 @@ async function syncProjectToOffice() {
         ]);
         if (c === 'retry') continue;
         exportPanel.close();
-        return;
+        return { ok: false, reason: 'offline' };
       }
       try {
-        exportPanel.msg('Uploading picture map + photos…');
+        const deviceName = getOrAskDeviceNickname();
+        if (!silent) exportPanel.msg('Uploading picture map + photos…');
         const jobId = await _uploadRawAssets(items, (n, t) => {
-          exportPanel.msg('Uploading ' + n + ' of ' + t + ' files…');
-        }, { uploadKind: 'office-sync', syncedAt: new Date().toISOString() });
-        project.lastSyncedAt = Date.now();
-        project.syncJobId = jobId;
+          if (!silent) exportPanel.msg('Uploading ' + n + ' of ' + t + ' files…');
+        }, {
+          uploadKind: 'office-sync',
+          syncedAt: new Date().toISOString(),
+          syncedFrom: deviceName,
+          deviceName: deviceName
+        });
+        target.lastSyncedAt = Date.now();
+        target.syncJobId = jobId;
         save();
-        await _showSyncComplete(items.folderName, jobId);
-        exportPanel.close();
-        return;
+        if (silent) {
+          toast('Auto-synced to office');
+        } else {
+          await _showSyncComplete(items.folderName, jobId);
+          exportPanel.close();
+        }
+        return { ok: true, jobId: jobId };
       } catch (err) {
         console.error(err);
+        if (silent) {
+          // Progress key keeps partial uploads — resume on next auto/manual sync.
+          toast('Auto-sync paused — will retry');
+          return { ok: false, reason: 'error', error: err };
+        }
         exportPanel.msg(
           'Sync paused: ' + (err && err.message ? err.message : String(err)) +
           '\nFiles already uploaded are safe — tap Resume to continue.'
@@ -7042,15 +7167,93 @@ async function syncProjectToOffice() {
         ]);
         if (c === 'retry') continue;
         exportPanel.close();
-        return;
+        return { ok: false, reason: 'cancelled' };
       }
     }
   } catch (err) {
     console.error(err);
-    exportPanel.close();
-    alert('Could not start sync.\n\n' + (err && err.message ? err.message : String(err)));
+    if (!silent) {
+      exportPanel.close();
+      alert('Could not start sync.\n\n' + (err && err.message ? err.message : String(err)));
+    }
+    return { ok: false, reason: 'error', error: err };
+  } finally {
+    project = prevProject;
+    _officeSyncBusy = false;
+    if (_autoSyncQueued) {
+      _autoSyncQueued = false;
+      scheduleAutoSyncOffice('queued');
+    }
   }
 }
+
+async function syncProjectToOffice() {
+  if (!project) return;
+  closeMenu();
+  closeSheets();
+  if (!project.pins || !project.pins.length) {
+    if (!confirm('No pins yet — sync anyway?')) return;
+  }
+  ensureAutoSyncPreferenceAsked();
+  await runOfficeSyncUpload({ silent: false, projectRef: project });
+}
+
+/** Debounced auto-sync trigger — background / online / leave job. */
+function scheduleAutoSyncOffice(reason) {
+  if (!isAutoSyncOn()) return;
+  if (_autoSyncTimer) clearTimeout(_autoSyncTimer);
+  _autoSyncTimer = setTimeout(function () {
+    _autoSyncTimer = null;
+    maybeAutoSyncOffice(reason);
+  }, reason === 'online' ? 1500 : 800);
+}
+
+async function maybeAutoSyncOffice(reason) {
+  if (!isAutoSyncOn()) return;
+  if (!navigator.onLine) return;
+  if (_officeSyncBusy) { _autoSyncQueued = true; return; }
+  if (exportPanel.el) return; // don't interrupt Export / manual Sync UI
+
+  // Prefer the open job; else first stale job in store (one at a time).
+  let target = null;
+  if (project && projectNeedsOfficeSync(project)) {
+    target = project;
+  } else if (!project) {
+    const list = (store && store.projects) || [];
+    for (let i = 0; i < list.length; i++) {
+      if (projectNeedsOfficeSync(list[i])) { target = list[i]; break; }
+    }
+  }
+  if (!target) return;
+
+  console.log('[auto-sync]', reason || 'tick', target.address || target.id);
+  await runOfficeSyncUpload({ silent: true, projectRef: target });
+}
+
+function _wireOfficeAutoSync() {
+  refreshAutoSyncMenuLabel();
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'hidden') return;
+    if (project) {
+      try { saveProject(); } catch (e) {}
+    }
+    if (autoSyncPreference() == null) {
+      // First background: ask once, then maybe sync.
+      ensureAutoSyncPreferenceAsked();
+    }
+    scheduleAutoSyncOffice('background');
+  });
+  window.addEventListener('online', function () {
+    if (isAutoSyncOn()) scheduleAutoSyncOffice('online');
+  });
+}
+try {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _wireOfficeAutoSync, { once: true });
+  } else {
+    _wireOfficeAutoSync();
+  }
+} catch (e) { console.warn('auto-sync wire failed', e); }
 
 // Big jobs: never build one giant file. Metadata rides in part 1; photos batch
 // out. All parts are BUILT first (one at a time, so peak memory stays small),

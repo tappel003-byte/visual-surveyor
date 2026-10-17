@@ -13,6 +13,11 @@ export type StoredObject = {
 export type ExportManifestJson = {
   folderName?: string;
   uploadKind?: string;
+  /** ISO timestamp written by field Sync / Export cloud. */
+  syncedAt?: string;
+  /** Device nickname from the phone that synced (`syncedFrom` preferred). */
+  syncedFrom?: string;
+  deviceName?: string;
   files?: Array<{ path: string; zipPath: string }>;
 };
 
@@ -25,6 +30,10 @@ export type JobFolderStats = {
   manifestFileCount: number | null;
   storageObjectCount: number;
   syncIncomplete: boolean;
+  /** Last synced time from manifest (`syncedAt`), if present. */
+  syncedAt: string | null;
+  /** Whose phone synced — device nickname (`syncedFrom` / `deviceName`). */
+  syncedFrom: string | null;
 };
 
 type ListBucket = {
@@ -90,6 +99,18 @@ function displayNameFromManifest(manifest: ExportManifestJson | null): string | 
   return name || null;
 }
 
+function syncedAtFromManifest(manifest: ExportManifestJson | null): string | null {
+  const raw = manifest?.syncedAt?.trim();
+  if (!raw) return null;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? new Date(t).toISOString() : raw;
+}
+
+function syncedFromFromManifest(manifest: ExportManifestJson | null): string | null {
+  const from = manifest?.syncedFrom?.trim() || manifest?.deviceName?.trim();
+  return from || null;
+}
+
 /** Stats for one top-level exports bucket folder (job id). */
 export async function statsForExportJob(bucket: ListBucket, jobId: string): Promise<JobFolderStats> {
   const manifest = await loadExportManifest(bucket, jobId);
@@ -131,5 +152,7 @@ export async function statsForExportJob(bucket: ListBucket, jobId: string): Prom
     manifestFileCount,
     storageObjectCount,
     syncIncomplete,
+    syncedAt: syncedAtFromManifest(manifest),
+    syncedFrom: syncedFromFromManifest(manifest),
   };
 }
