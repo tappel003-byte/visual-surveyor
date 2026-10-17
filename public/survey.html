@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build marker: update-link-visible-1 -->
+<!-- build marker: home-open-all-jobs-1 -->
 
 <html lang="en">
 <head>
@@ -152,6 +152,8 @@
   .home-head .brand{font-size:11px;letter-spacing:.18em;color:var(--muted);font-weight:600;text-transform:uppercase}
   .home-head h1{font-size:28px;margin:6px 0 0;font-weight:700;letter-spacing:-.02em}
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
+  .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
+  .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
@@ -591,15 +593,21 @@
 <div id="screenHome" class="screen active">
   <div class="home-head">
     <h1>PGG Photo Documentation</h1>
-    <a href="#" id="updateAppLink" style="display:inline-block;font-size:13px;color:var(--muted);text-decoration:underline;margin-top:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">Update app</a>
+    <div class="home-jumps">
+      <a href="#" id="updateAppLink">Update app</a>
+    </div>
   </div>
 
 
-  <button class="mode-btn" style="padding:10px 14px;margin-bottom:16px" onclick="triggerImportProject()">
-    <div class="icon" style="font-size:18px;width:32px;height:32px">📥</div>
-    <div class="meta"><span style="font-size:14px">Import project file</span></div>
-  </button>
   <input type="file" id="importFileInput" accept=".pgg,.zip,application/zip" style="display:none" onchange="_onImportFileChosen(event)">
+
+  <a href="/office" class="mode-btn" target="_top" rel="noopener" style="text-decoration:none;color:inherit;margin-bottom:16px">
+    <div class="icon">🗂️</div>
+    <div class="meta">
+      <span>Open all jobs</span>
+      <small>Office file explorer · browse photos &amp; download synced jobs</small>
+    </div>
+  </a>
 
   <button class="mode-btn" onclick="startNewProject('internal')">
     <div class="icon">📷</div>
