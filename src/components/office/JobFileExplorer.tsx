@@ -9,6 +9,10 @@ import {
   type ExplorerEntry,
 } from "@/lib/office-file-tree";
 import {
+  downloadOfficeJobPackage,
+  plainOfficeDownloadFailure,
+} from "@/lib/office-package-download";
+import {
   fromLabel,
   OFFICE_BTN_CLASS,
   OfficeDesktopReminder,
@@ -66,9 +70,21 @@ type Props = {
   /** When true, Office chrome provides nav — keep header compact. */
   embedded?: boolean;
   onStatusChange?: (message: string | null) => void;
+  /** When true (list Download → navigate here), start package download once. */
+  autoPackageDownload?: boolean;
+  /** Lets OfficeChrome toolbar Download run the same package ZIP while already on this job. */
+  registerPackageDownload?: (fn: (() => void) | null) => void;
 };
 
-export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }: Props) {
+export function JobFileExplorer({
+  jobId,
+  title,
+  data,
+  embedded,
+  onStatusChange,
+  autoPackageDownload = false,
+  registerPackageDownload,
+}: Props) {
   const [dirPath, setDirPath] = useState("");
   const [preview, setPreview] = useState<{ entry: ExplorerEntry; url: string } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>(() =>
@@ -135,8 +151,7 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
         });
         return result.signedUrl;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Could not open file.";
-        setSignError(msg);
+        setSignError(plainOfficeDownloadFailure(err));
         setStatus(null);
         return null;
       } finally {
@@ -178,15 +193,51 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
     window.setTimeout(() => setStatus(null), 2200);
   };
 
-  const onPackageDownload = () => {
+  const onPackageDownload = async () => {
+    if (packageBusy) return;
+    if (!data.storageLinksAvailable) {
+      setSignError(
+        "Download isn’t available right now. Tell whoever runs the Netlify site to check the shared office list token and Publish once in Lovable. Do not add storage service keys on Netlify.",
+      );
+      return;
+    }
+    if (!data.files.length) {
+      setSignError("No files found for this job yet. Ask the field phone to Sync, then Refresh.");
+      return;
+    }
     setPackageBusy(true);
+    setSignError(null);
     setStatus("Starting package download…");
-    window.setTimeout(() => {
+    try {
+      await downloadOfficeJobPackage({
+        jobId,
+        folderName: data.folderName || title,
+        files: data.files.map((f) => ({ path: f.path, label: f.label })),
+        onProgress: (msg) => setStatus(msg),
+      });
+      window.setTimeout(() => setStatus(null), 3200);
+    } catch (err) {
+      const msg = plainOfficeDownloadFailure(err);
+      setSignError(msg);
+      setStatus(null);
+    } finally {
       setPackageBusy(false);
-      setStatus("Package download started — check browser downloads.");
-      window.setTimeout(() => setStatus(null), 2800);
-    }, 1400);
+    }
   };
+
+  useEffect(() => {
+    registerPackageDownload?.(() => {
+      void onPackageDownload();
+    });
+    return () => registerPackageDownload?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keep chrome toolbar wired to latest download
+  }, [jobId, data.files, data.storageLinksAvailable, registerPackageDownload]);
+
+  useEffect(() => {
+    if (!autoPackageDownload || packageBusy) return;
+    void onPackageDownload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when opened via list Download
+  }, [autoPackageDownload, jobId]);
 
   const previewIndex = preview
     ? imageFiles.findIndex((f) => f.storagePath === preview.entry.storagePath)
@@ -262,18 +313,9 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
       {!data.storageLinksAvailable && (
         <section style={alertBox}>
           <p style={{ margin: 0 }}>
-            File list needs <code>EXPORTS_LIST_TOKEN</code> on Netlify and a Lovable Publish of{" "}
-            <code>/api/public/exports-job</code> (and <code>exports-sign</code> for Open). You can still
-            use the{" "}
-            <a
-              href={data.getPagePath}
-              className={OFFICE_BTN_CLASS}
-              onClick={onPackageDownload}
-              style={{ color: PGG.accent, fontWeight: 700 }}
-            >
-              package download
-            </a>{" "}
-            (<code>/get?job=</code>). Do not add Supabase service-role keys on Netlify.
+            File list and Download need the shared office list token on Netlify and a Lovable Publish of
+            the job list / sign APIs. Do not add storage service keys on Netlify. Ask whoever manages the
+            site to fix that, then Refresh.
           </p>
         </section>
       )}
@@ -323,14 +365,15 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
                 : ""}
               {data.kind === "zip-parts" ? " (ZIP parts)" : ""}
             </span>
-            <a
-              href={data.getPagePath}
+            <button
+              type="button"
               className={`${OFFICE_BTN_CLASS}${packageBusy ? " is-busy" : ""}`}
               style={{ ...btnSecondary, display: "inline-flex" }}
-              onClick={onPackageDownload}
+              onClick={() => void onPackageDownload()}
+              disabled={packageBusy}
             >
               {packageBusy ? "Downloading…" : "Download package"}
-            </a>
+            </button>
           </div>
 
           {data.kind === "manifest" && (

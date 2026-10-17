@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<!-- build marker: lovable-sunset-notice-2026-11-16 -->
+<!-- build marker: exports-lockdown-2026-10-17-sec -->
 
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
+<!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
+<meta name="pgg-app-version" content="2026.10.17-sec" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -200,6 +202,8 @@
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
   .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
   .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .home-app-version{font-size:12px;color:var(--muted);margin-top:8px;font-weight:600;letter-spacing:.02em;
+    font-variant-numeric:tabular-nums}
   /* Quiet by default; compact soft bar when a SW update is waiting */
   .update-app-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:0;max-width:min(280px,92vw)}
   .update-app-wrap.urgent{gap:4px;padding:8px 12px;background:var(--accent-soft);border:1px solid var(--line);border-radius:8px}
@@ -669,6 +673,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.17-sec</p>
   </div>
 
 
@@ -6763,11 +6768,71 @@ const PARTS_README =
 // Cloud transfer: parts upload to Lovable Cloud storage, one link downloads all.
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
 const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
+/** Bump when shipping a field shell Tim must verify on every phone before lockdown SQL. */
+const PGG_APP_VERSION = '2026.10.17-sec';
+
+/** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
+function _isAlreadyExistsUploadDetail(status, detail) {
+  if (status === 409) return true;
+  const d = String(detail || '').toLowerCase();
+  if (!d) return false;
+  return (
+    d.indexOf('already exists') !== -1 ||
+    d.indexOf('duplicate') !== -1 ||
+    d.indexOf('resource already') !== -1 ||
+    d.indexOf('409') !== -1
+  );
+}
+
+function _isAlreadyExistsUploadError(err) {
+  if (!err) return false;
+  const msg = String(err.message || err || '');
+  const statusMatch = /^HTTP (\d{3})/.exec(msg);
+  const status = statusMatch ? Number(statusMatch[1]) : 0;
+  return _isAlreadyExistsUploadDetail(status, msg);
+}
+
+/** Plain-English Sync / upload failures for field staff (never storage jargon). */
+function _plainSyncFailureMessage(err) {
+  const raw = String((err && err.message) || err || '').toLowerCase();
+  if (
+    raw.indexOf('row-level security') !== -1 ||
+    raw.indexOf('rls') !== -1 ||
+    raw.indexOf('permission') !== -1 ||
+    raw.indexOf('not authorized') !== -1 ||
+    raw.indexOf('jwt') !== -1 ||
+    /\bHTTP 40[13]\b/i.test(String((err && err.message) || err || ''))
+  ) {
+    return (
+      'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
+      'First: tap Update app on the home screen, swipe this app out, and open it again. ' +
+      'Check the version under the title matches what the office said to use, then Sync again.\n\n' +
+      'If it still fails after updating, tell the office — staging may be locked for maintenance.'
+    );
+  }
+  if (raw.indexOf('quota') !== -1 || raw.indexOf('payload too large') !== -1 || raw.indexOf('insufficient') !== -1) {
+    return (
+      'Office staging looks full. Photos are still on this phone.\n\n' +
+      'Ask the office to Download jobs to a computer, then Delete them from staging, and try Sync again.'
+    );
+  }
+  if (raw.indexOf('network') !== -1 || raw.indexOf('fetch') !== -1 || raw.indexOf('abort') !== -1 || raw.indexOf('offline') !== -1) {
+    return (
+      'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
+      'Try Sync again when you have a stronger signal.'
+    );
+  }
+  return (
+    'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
+    'Try Sync again when you have a signal. If it keeps failing, tell the office — staging may be locked for maintenance.'
+  );
+}
 
 async function _uploadPart(jobId, part, onProgress) {
   const objectName = jobId + '/' + part.name;
   // Large mobile uploads use TUS: 6 MB chunks, automatic backoff, and resume
   // from the last accepted chunk after a Wi-Fi/cellular interruption.
+  // INSERT only (no x-upsert) — "already exists" counts as done.
   if (window.tus && window.tus.Upload) {
     return new Promise(async (resolve, reject) => {
       const upload = new window.tus.Upload(part.blob, {
@@ -6778,8 +6843,7 @@ async function _uploadPart(jobId, part, onProgress) {
         removeFingerprintOnSuccess: true,
         headers: {
           'apikey': PGG_SUPA_KEY,
-          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-          'x-upsert': 'true'
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY
         },
         metadata: {
           bucketName: 'exports',
@@ -6791,14 +6855,18 @@ async function _uploadPart(jobId, part, onProgress) {
           if (onProgress) onProgress(bytesUploaded, bytesTotal);
         },
         onSuccess() { resolve(); },
-        onError(error) { reject(error); }
+        onError(error) {
+          if (_isAlreadyExistsUploadError(error)) resolve();
+          else reject(error);
+        }
       });
       try {
         const previous = await upload.findPreviousUploads();
         if (previous && previous.length) upload.resumeFromPreviousUpload(previous[0]);
         upload.start();
       } catch (error) {
-        reject(error);
+        if (_isAlreadyExistsUploadError(error)) resolve();
+        else reject(error);
       }
     });
   }
@@ -6814,18 +6882,19 @@ async function _uploadPart(jobId, part, onProgress) {
         headers: {
           'apikey': PGG_SUPA_KEY,
           'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-          'Content-Type': 'application/zip',
-          'x-upsert': 'true'
+          'Content-Type': 'application/zip'
         },
         body: part.blob,
         signal: controller.signal
       });
       if (res.ok) return;
       const detail = (await res.text()).slice(0, 200);
+      if (_isAlreadyExistsUploadDetail(res.status, detail)) return;
       lastError = new Error('HTTP ' + res.status + ': ' + detail);
       if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
     } catch (error) {
       lastError = error;
+      if (_isAlreadyExistsUploadError(error)) return;
       if (error && error.message && error.message.startsWith('HTTP 4') && !error.message.startsWith('HTTP 408') && !error.message.startsWith('HTTP 429')) throw error;
     } finally {
       clearTimeout(timer);
@@ -6871,6 +6940,7 @@ async function _photoBlobForExport(item) {
 
 // Single-object upload with automatic retry/backoff. Objects are small
 // (one photo), so a plain request is both faster and safer than chunking.
+// INSERT only (no x-upsert / UPDATE). If the object already exists, treat as done.
 async function _uploadRawObject(jobId, path, blob, contentType) {
   const url = PGG_SUPA_URL + '/storage/v1/object/exports/' +
     (jobId + '/' + path).split('/').map(encodeURIComponent).join('/');
@@ -6884,18 +6954,19 @@ async function _uploadRawObject(jobId, path, blob, contentType) {
         headers: {
           'apikey': PGG_SUPA_KEY,
           'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-          'Content-Type': contentType || 'application/octet-stream',
-          'x-upsert': 'true'
+          'Content-Type': contentType || 'application/octet-stream'
         },
         body: blob,
         signal: controller.signal
       });
       if (res.ok) return;
       const detail = (await res.text()).slice(0, 160);
+      if (_isAlreadyExistsUploadDetail(res.status, detail)) return;
       lastError = new Error('HTTP ' + res.status + ': ' + detail);
       if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
     } catch (error) {
       lastError = error;
+      if (_isAlreadyExistsUploadError(error)) return;
       if (error && /^HTTP 4(0[0-79]|1[0-9]|2[0-8])/.test(error.message || '')) throw error;
     } finally {
       clearTimeout(timer);
@@ -6905,55 +6976,17 @@ async function _uploadRawObject(jobId, path, blob, contentType) {
   throw lastError || new Error('Upload failed after automatic retries');
 }
 
-// Asks the bucket which files already exist for this job so a resume never
-// re-sends anything that made it up on an earlier attempt.
-async function _listUploadedPaths(jobId) {
-  const found = new Set();
-  const url = PGG_SUPA_URL + '/storage/v1/object/list/exports';
-  for (const prefix of [jobId + '/files', jobId]) {
-    let offset = 0;
-    for (;;) {
-      let page = null;
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'apikey': PGG_SUPA_KEY,
-            'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ prefix: prefix, limit: 1000, offset: offset })
-        });
-        if (!res.ok) return found;
-        page = await res.json();
-      } catch (e) { console.warn('remote list failed', e); return found; }
-      if (!Array.isArray(page) || !page.length) break;
-      for (const row of page) {
-        if (!row || !row.name || !row.id) continue;
-        const rel = (prefix + '/' + row.name).slice(jobId.length + 1);
-        found.add(rel);
-      }
-      if (page.length < 1000) break;
-      offset += page.length;
-    }
-  }
-  return found;
-}
-
-// Uploads every metadata file + photo individually. Resumable: completed paths
-// are remembered, so a retry picks up exactly where it stopped.
+// Uploads every metadata file + photo individually. Resumable from *phone*
+// progress only (pgg_raw_upload_v1) — no remote list / SELECT needed after lockdown.
+// If a path was already uploaded, INSERT "already exists" is treated as success.
 async function _uploadRawAssets(items, onStatus, manifestExtra) {
   const signature = _partsExportSignature(items);
   const prior = _readRawProgress(signature);
   const jobId = (prior && prior.jobId) ||
     (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
   const done = (prior && prior.done) || new Set();
-  if (prior) {
-    try {
-      const remote = await _listUploadedPaths(jobId);
-      remote.forEach(p => done.add(p));
-      if (remote.size) _writeRawProgress(signature, jobId, done);
-    } catch (e) { console.warn('resume check failed', e); }
+  if (prior && prior.jobId) {
+    _writeRawProgress(signature, jobId, done);
   }
 
 
@@ -7390,8 +7423,8 @@ async function runOfficeSyncUpload(opts) {
           return { ok: false, reason: 'error', error: err };
         }
         exportPanel.msg(
-          'Sync paused: ' + (err && err.message ? err.message : String(err)) +
-          '\nFiles already uploaded are safe — tap Resume to continue.'
+          _plainSyncFailureMessage(err) +
+          '\n\nAlready-uploaded files stay on staging. Tap Resume to continue from this phone’s progress.'
         );
         const c = await exportPanel.ask([
           { label: 'Resume sync', value: 'retry' },
@@ -7406,7 +7439,7 @@ async function runOfficeSyncUpload(opts) {
     console.error(err);
     if (!silent) {
       exportPanel.close();
-      alert('Could not start sync.\n\n' + (err && err.message ? err.message : String(err)));
+      alert(_plainSyncFailureMessage(err));
     }
     return { ok: false, reason: 'error', error: err };
   } finally {
@@ -7517,17 +7550,26 @@ async function _runPartsExport(items, setLabel, opts) {
         const jobId = await _uploadRawAssets(items, (n, t) => {
           const line = 'Uploading ' + n + ' of ' + t + ' files…';
           exportPanel.msg(line); setLabel(line);
+        }, {
+          uploadKind: 'cloud-export',
+          syncedAt: new Date().toISOString()
         });
         project.lastExportedAt = Date.now();
+        project.lastSyncedAt = Date.now();
+        project.syncJobId = jobId;
         save();
         _clearPartsProgress();
-        await _showTransferLink(window.location.origin + '/get?job=' + encodeURIComponent(jobId), items.folderName);
+        // Public /get download links are retired — desk uses password-gated /office.
+        await _showSyncComplete(items.folderName, jobId, getOrAskDeviceNickname());
         exportPanel.close();
         closeSheets();
         return;
       } catch (err) {
         console.error(err);
-        exportPanel.msg('Upload paused: ' + (err && err.message ? err.message : String(err)) + '\nFiles already uploaded are safe — resuming continues from there.');
+        exportPanel.msg(
+          _plainSyncFailureMessage(err) +
+          '\n\nAlready-uploaded files stay on staging. Tap Resume to continue.'
+        );
         const c = await exportPanel.ask([
           { label: 'Resume upload', value: 'retry' },
           { label: 'Save to this phone in parts', value: 'back' }

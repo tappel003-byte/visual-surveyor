@@ -22,7 +22,10 @@ export type OfficeJobDownloadPayload = {
   uploadKind: string | null;
   syncedAt: string | null;
   syncedFrom: string | null;
-  /** Same path as legacy Export link — browser downloads from storage, not Netlify. */
+  /**
+   * Legacy field kept for Lovable payload compatibility.
+   * Public /get downloads are retired — desk uses token/sign via /office.
+   */
   getPagePath: string;
   signedUrlTtlSeconds: number;
   files: OfficeDownloadFile[];

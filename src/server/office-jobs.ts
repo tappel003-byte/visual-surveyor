@@ -1,7 +1,7 @@
 const EXPORTS_LIST_URL = "https://visual-surveyor.lovable.app/api/public/exports-list";
 
 export type OfficeJobFolder = {
-  /** Top-level folder name (same id used by `/get?job=`). */
+  /** Top-level folder name (job id used by /office File Explorer). */
   id: string;
   /** Human-readable site / project name from export manifest (`folderName`). */
   displayName: string | null;

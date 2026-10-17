@@ -135,8 +135,16 @@ function OfficeExplorer() {
       setPassword("");
       await refresh();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Login failed.";
-      setError(msg);
+      const raw = err instanceof Error ? err.message : "";
+      if (/wrong password/i.test(raw)) {
+        setError("That password didn’t work. Try again, or ask the office for the company password.");
+      } else if (/not configured|NLF_OFFICE|SESSION_SECRET/i.test(raw)) {
+        setError(
+          "Office sign-in isn’t set up on this site yet. Tell whoever runs Netlify to set the office password secrets, then try again.",
+        );
+      } else {
+        setError("Couldn’t sign in. Check your connection and try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -423,17 +431,24 @@ function OfficeExplorer() {
     }, 2500);
   };
 
-  const markDownload = (jobId: string) => {
+  const startPackageDownload = (jobId: string) => {
     setSelectedJobId(jobId);
     setRowBusyId(jobId);
     setRowBusyKind("download");
-    setStatusMessage("Starting download…");
-    window.setTimeout(() => {
+    setStatusMessage("Opening download…");
+    try {
+      sessionStorage.setItem("pgg_office_auto_package", jobId); // OFFICE_AUTO_PACKAGE_KEY
+    } catch {
+      /* ignore */
+    }
+    void navigate({
+      to: "/office/jobs/$jobId",
+      params: { jobId },
+    }).finally(() => {
       setRowBusyId((cur) => (cur === jobId ? null : cur));
       setRowBusyKind((cur) => (cur === "download" ? null : cur));
-      setStatusMessage("Download started — check browser downloads.");
-      window.setTimeout(() => setStatusMessage(null), 2200);
-    }, 1400);
+      setStatusMessage(null);
+    });
   };
 
   const onListKeyDown = (e: KeyboardEvent<HTMLTableSectionElement>) => {
@@ -636,7 +651,6 @@ function OfficeExplorer() {
             >
               {sortedJobs.map((job) => {
                 const title = job.displayName || "Field export";
-                const getHref = `/get?job=${encodeURIComponent(job.id)}`;
                 const rowBusy = rowBusyId === job.id;
                 const opening = openingJobId === job.id;
                 const selected = selectedJobId === job.id;
@@ -701,14 +715,18 @@ function OfficeExplorer() {
                           >
                             {opening ? "Opening…" : "Open"}
                           </Link>
-                          <a
-                            href={getHref}
+                          <button
+                            type="button"
                             className={`${OFFICE_BTN_CLASS}${rowBusy && rowBusyKind === "download" ? " is-busy" : ""}`}
                             style={{ ...actionBtn, flex: 1, justifyContent: "center" }}
-                            onClick={() => markDownload(job.id)}
+                            disabled={rowBusy}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startPackageDownload(job.id);
+                            }}
                           >
                             {rowBusy && rowBusyKind === "download" ? "…" : "Download"}
-                          </a>
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
