@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { OfficeJobFolder } from "@/lib/office-jobs.functions";
-import { officeDeleteJob, officeSetJobFrom } from "@/lib/office-mutate.functions";
+import { officeDeleteJob, officeSetJobFrom, officeSetJobName } from "@/lib/office-mutate.functions";
 
 /** Shared class for office toolbar/row buttons — :active depress + busy/disabled. */
 export const OFFICE_BTN_CLASS = "office-btn";
@@ -257,9 +257,7 @@ export function OfficeStagingCapacity({
         color: PGG.muted,
       }}
     >
-      <strong style={{ fontSize: 12, color: PGG.ink, fontWeight: 600 }}>
-        Office staging
-      </strong>
+      <strong style={{ fontSize: 12, color: PGG.ink, fontWeight: 600 }}>Office staging</strong>
       <span style={{ color: PGG.muted }}>(temp)</span>
       <div
         style={{
@@ -281,7 +279,9 @@ export function OfficeStagingCapacity({
           }}
         />
       </div>
-      <span style={{ fontWeight: 600, color: critical ? "#8a4500" : PGG.ink, whiteSpace: "nowrap" }}>
+      <span
+        style={{ fontWeight: 600, color: critical ? "#8a4500" : PGG.ink, whiteSpace: "nowrap" }}
+      >
         {usedLabel} / 1 GB
         {used > 0 ? ` (${pct}%)` : ""}
       </span>
@@ -313,8 +313,8 @@ export function OfficeDesktopReminder({ compact }: { compact?: boolean }) {
     >
       <p style={{ margin: 0 }}>
         <strong style={{ fontWeight: 600 }}>Download to this computer</strong>
-        {" — "}office staging is temporary phone Sync storage. Use Download / Download package,
-        then Delete to free the 1 GB.
+        {" — "}office staging is temporary phone Sync storage. Use Download / Download package, then
+        Delete to free the 1 GB.
       </p>
     </div>
   );
@@ -354,9 +354,9 @@ export function OfficeChrome({
 }: Props) {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [busyAction, setBusyAction] = useState<"delete" | "from" | "open" | "logout" | "download" | null>(
-    null,
-  );
+  const [busyAction, setBusyAction] = useState<
+    "delete" | "from" | "name" | "open" | "logout" | "download" | null
+  >(null);
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -372,15 +372,17 @@ export function OfficeChrome({
       ? "Deleting job…"
       : busyAction === "from"
         ? "Saving From…"
-        : busyAction === "open"
-          ? "Opening…"
-          : busyAction === "logout"
-            ? "Signing out…"
-            : busyAction === "download"
-              ? "Starting download…"
-              : refreshing
-                ? "Refreshing…"
-                : null);
+        : busyAction === "name"
+          ? "Saving job name…"
+          : busyAction === "open"
+            ? "Opening…"
+            : busyAction === "logout"
+              ? "Signing out…"
+              : busyAction === "download"
+                ? "Starting download…"
+                : refreshing
+                  ? "Refreshing…"
+                  : null);
 
   useEffect(() => {
     if (!localStatus || busyAction === "download") return;
@@ -442,13 +444,43 @@ export function OfficeChrome({
         data: { jobId: selectedJobId, syncedFrom: label },
       });
       onJobsChanged(
-        jobs.map((j) =>
-          j.id === selectedJobId ? { ...j, syncedFrom: result.syncedFrom } : j,
-        ),
+        jobs.map((j) => (j.id === selectedJobId ? { ...j, syncedFrom: result.syncedFrom } : j)),
       );
       setLocalStatus("From saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update From.");
+      setLocalStatus(null);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const onEditName = async () => {
+    if (!selectedJobId || !selected || busy) return;
+    const current = selected.displayName?.trim() || "";
+    const next = window.prompt(
+      "Customer / job name (address or site title). Shows in the job list and File Explorer header. Saved without a full re-sync.",
+      current || "",
+    );
+    if (next == null) return;
+    const label = next.trim();
+    if (!label) {
+      setError("Job name cannot be empty.");
+      return;
+    }
+    setBusyAction("name");
+    setLocalStatus("Saving job name…");
+    setError(null);
+    try {
+      const result = await officeSetJobName({
+        data: { jobId: selectedJobId, folderName: label },
+      });
+      onJobsChanged(
+        jobs.map((j) => (j.id === selectedJobId ? { ...j, displayName: result.folderName } : j)),
+      );
+      setLocalStatus("Job name saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update job name.");
       setLocalStatus(null);
     } finally {
       setBusyAction(null);
@@ -604,6 +636,16 @@ export function OfficeChrome({
         <div className="office-cmd-group">
           <button
             type="button"
+            onClick={onEditName}
+            disabled={!selectedJobId || busy}
+            className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "name" ? " is-busy" : ""}`}
+            style={toolBtn}
+            title="Edit customer / job name (list + header)"
+          >
+            {busyAction === "name" ? "Saving…" : "Name…"}
+          </button>
+          <button
+            type="button"
             onClick={onEditFrom}
             disabled={!selectedJobId || busy}
             className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "from" ? " is-busy" : ""}`}
@@ -659,7 +701,10 @@ export function OfficeChrome({
           </>
         )}
         {breadcrumbExtra.map((seg, i) => (
-          <span key={`${seg}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span
+            key={`${seg}-${i}`}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
             <span style={crumbSep}>›</span>
             <span style={{ fontWeight: i === breadcrumbExtra.length - 1 ? 700 : 500 }}>{seg}</span>
           </span>
@@ -712,7 +757,9 @@ export function OfficeChrome({
             </p>
           )}
           {listAvailable && jobs.length === 0 && (
-            <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.muted, margin: 0 }}>No jobs yet</p>
+            <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.muted, margin: 0 }}>
+              No jobs yet
+            </p>
           )}
           <ul style={{ listStyle: "none", margin: 0, padding: 0, overflow: "auto", flex: 1 }}>
             {jobs.map((job) => {

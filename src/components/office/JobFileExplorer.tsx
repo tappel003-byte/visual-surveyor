@@ -21,6 +21,7 @@ import {
 } from "@/components/office/OfficeChrome";
 import { OfficePinNotesEditor } from "@/components/office/OfficePinNotesEditor";
 import { loadSignedUrlMapForJob, readSignedUrl, writeSignedUrl } from "@/lib/office-client-cache";
+import { officeSetJobName } from "@/lib/office-mutate.functions";
 
 function formatFileSize(bytes: number | null): string {
   if (bytes == null || bytes <= 0) return "—";
@@ -68,6 +69,8 @@ type Props = {
   /** When true, Office chrome provides nav — keep header compact. */
   embedded?: boolean;
   onStatusChange?: (message: string | null) => void;
+  /** After Name… save — parent updates list + header. */
+  onDisplayNameChange?: (folderName: string) => void;
   /** When true (list Download → navigate here), start package download once. */
   autoPackageDownload?: boolean;
   /** Lets OfficeChrome toolbar Download run the same package ZIP while already on this job. */
@@ -80,6 +83,7 @@ export function JobFileExplorer({
   data,
   embedded,
   onStatusChange,
+  onDisplayNameChange,
   autoPackageDownload = false,
   registerPackageDownload,
 }: Props) {
@@ -95,6 +99,8 @@ export function JobFileExplorer({
   const [signError, setSignError] = useState<string | null>(null);
   const [packageBusy, setPackageBusy] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [nameBusy, setNameBusy] = useState(false);
+  const [localTitle, setLocalTitle] = useState(title);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const inFlightRef = useRef<Record<string, Promise<string | null>>>({});
   const statusRef = useRef(onStatusChange);
@@ -102,6 +108,42 @@ export function JobFileExplorer({
 
   const setStatus = (msg: string | null) => {
     statusRef.current?.(msg);
+  };
+
+  useEffect(() => {
+    setLocalTitle(title);
+  }, [title]);
+
+  const displayTitle = localTitle || title || data.folderName || "Field export";
+
+  const onEditName = async () => {
+    if (nameBusy) return;
+    const next = window.prompt(
+      "Customer / job name (address or site title). Shows in the list and this header.",
+      displayTitle === "Field export" ? "" : displayTitle,
+    );
+    if (next == null) return;
+    const label = next.trim();
+    if (!label) {
+      setSignError("Job name cannot be empty.");
+      return;
+    }
+    setNameBusy(true);
+    setSignError(null);
+    setStatus("Saving job name…");
+    try {
+      const result = await officeSetJobName({ data: { jobId, folderName: label } });
+      setLocalTitle(result.folderName);
+      onDisplayNameChange?.(result.folderName);
+      setStatus("Job name saved.");
+      window.setTimeout(() => setStatus(null), 2000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not update job name.";
+      setSignError(msg);
+      setStatus(null);
+    } finally {
+      setNameBusy(false);
+    }
   };
 
   const entries = useMemo(() => toExplorerEntries(data.files), [data.files]);
@@ -225,7 +267,7 @@ export function JobFileExplorer({
     try {
       await downloadOfficeJobPackage({
         jobId,
-        folderName: data.folderName || title,
+        folderName: displayTitle || data.folderName || title,
         files: data.files.map((f) => ({ path: f.path, label: f.label })),
         onProgress: (msg) => setStatus(msg),
       });
@@ -349,8 +391,18 @@ export function JobFileExplorer({
               minWidth: 0,
             }}
           >
-            {title}
+            {displayTitle}
           </h1>
+          <button
+            type="button"
+            className={`${OFFICE_BTN_CLASS}${nameBusy ? " is-busy" : ""}`}
+            onClick={() => void onEditName()}
+            disabled={nameBusy}
+            title="Edit customer / job name"
+            style={btnSecondary}
+          >
+            {nameBusy ? "Saving…" : "Edit name"}
+          </button>
         </div>
         <p style={{ fontSize: 12, color: PGG.muted, margin: 0, lineHeight: 1.4 }}>
           Last synced: <strong style={{ color: PGG.ink }}>{formatSyncedAt(data.syncedAt)}</strong>
@@ -366,9 +418,9 @@ export function JobFileExplorer({
       {!data.storageLinksAvailable && (
         <section style={alertBox}>
           <p style={{ margin: 0 }}>
-            File list and Download need the shared office list token on Netlify and a Lovable Publish of
-            the job list / sign APIs. Do not add storage service keys on Netlify. Ask whoever manages the
-            site to fix that, then Refresh.
+            File list and Download need the shared office list token on Netlify and a Lovable
+            Publish of the job list / sign APIs. Do not add storage service keys on Netlify. Ask
+            whoever manages the site to fix that, then Refresh.
           </p>
         </section>
       )}
@@ -468,7 +520,7 @@ export function JobFileExplorer({
                   padding: "1px 3px",
                 }}
               >
-                {data.folderName || "Job root"}
+                {displayTitle || "Job root"}
               </button>
               {breadcrumbs.map((segment, i) => {
                 const path = breadcrumbs.slice(0, i + 1).join("/");
