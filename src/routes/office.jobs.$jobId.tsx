@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { JobFileExplorer } from "@/components/office/JobFileExplorer";
 import { OfficeChrome, PGG } from "@/components/office/OfficeChrome";
 import { officeAuthStatus, officeLogout } from "@/lib/office-auth.functions";
@@ -12,6 +12,7 @@ import {
   writeJobsCache,
 } from "@/lib/office-client-cache";
 import { isSafeExportJobId } from "@/lib/office-file-tree";
+import { OFFICE_AUTO_PACKAGE_KEY } from "@/lib/office-package-download";
 
 export const Route = createFileRoute("/office/jobs/$jobId")({
   head: ({ params }) => ({
@@ -79,6 +80,20 @@ function OfficeJobBrowserPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [listHydrating, setListHydrating] = useState(!cached);
   const [explorerStatus, setExplorerStatus] = useState<string | null>(null);
+  const packageTriggerRef = useRef<(() => void) | null>(null);
+  const [autoPackageDownload] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const flag = sessionStorage.getItem(OFFICE_AUTO_PACKAGE_KEY);
+      if (flag === jobId) {
+        sessionStorage.removeItem(OFFICE_AUTO_PACKAGE_KEY);
+        return true;
+      }
+    } catch {
+      /* ignore */
+    }
+    return false;
+  });
 
   const title = cachedJob?.displayName || loaderTitle;
 
@@ -141,6 +156,7 @@ function OfficeJobBrowserPage() {
       }}
       onLogout={() => onLogout().catch(() => {})}
       statusMessage={status}
+      onDownloadPackage={() => packageTriggerRef.current?.()}
     >
       <JobFileExplorer
         jobId={jobId}
@@ -148,6 +164,10 @@ function OfficeJobBrowserPage() {
         data={download}
         embedded
         onStatusChange={setExplorerStatus}
+        autoPackageDownload={autoPackageDownload}
+        registerPackageDownload={(fn) => {
+          packageTriggerRef.current = fn;
+        }}
       />
     </OfficeChrome>
   );

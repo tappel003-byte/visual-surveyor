@@ -36,10 +36,10 @@ export const officeGetJobDownload = createServerFn({ method: "POST" })
   .validator(z.object({ jobId: z.string().min(1).max(200) }))
   .handler(async ({ data }): Promise<OfficeJobDownloadResult> => {
     if (!hasValidOfficeSession()) {
-      throw new Error("Sign in required.");
+      throw new Error("Sign in at /office with the company password, then try again.");
     }
     if (!isSafeExportJobId(data.jobId)) {
-      throw new Error("Invalid job id.");
+      throw new Error("That job link looks wrong. Go back to the office list and open the job again.");
     }
 
     const jobId = data.jobId.trim();
@@ -68,18 +68,20 @@ export const officeSignFile = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<{ signedUrl: string; expiresIn: number }> => {
     if (!hasValidOfficeSession()) {
-      throw new Error("Sign in required.");
+      throw new Error("Sign in at /office with the company password, then try Download again.");
     }
     if (!isSafeExportJobId(data.jobId) || !isSafeExportRelativePath(data.path)) {
-      throw new Error("Invalid file request.");
+      throw new Error("That file link looks wrong. Open the job again from the office list.");
     }
     if (!exportsListTokenConfigured()) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
+      throw new Error(
+        "Download is not available right now. Tell whoever runs Netlify to check the shared office list token and Publish once in Lovable. Do not add storage service keys on Netlify.",
+      );
     }
 
     const result = await fetchOfficeSignedUrlFromLovable(data.jobId.trim(), data.path.trim());
     if (!result.ok) {
-      throw new Error("Could not sign file (unauthorized).");
+      throw new Error("Sign in at /office with the company password, then try Download again.");
     }
     return { signedUrl: result.signedUrl, expiresIn: result.expiresIn };
   });

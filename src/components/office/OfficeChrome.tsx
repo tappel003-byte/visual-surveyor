@@ -331,6 +331,11 @@ type Props = {
   onLogout: () => void;
   /** Optional status from child (e.g. JobFileExplorer signing/download). */
   statusMessage?: string | null;
+  /**
+   * When on a job page, Download runs the token/sign package ZIP in place.
+   * On the jobs list, omit this — Chrome navigates to the job and auto-starts.
+   */
+  onDownloadPackage?: () => void;
   children: ReactNode;
 };
 
@@ -344,6 +349,7 @@ export function OfficeChrome({
   onJobsChanged,
   onLogout,
   statusMessage = null,
+  onDownloadPackage,
   children,
 }: Props) {
   const navigate = useNavigate();
@@ -358,8 +364,6 @@ export function OfficeChrome({
   const selected = selectedJobId ? jobs.find((j) => j.id === selectedJobId) : null;
   const selectedTitle = selected?.displayName || selected?.id || "Jobs";
   const onJobsRoot = !selectedJobId;
-
-  const getHref = selectedJobId ? `/get?job=${encodeURIComponent(selectedJobId)}` : null;
 
   const statusText =
     statusMessage ||
@@ -461,13 +465,34 @@ export function OfficeChrome({
   };
 
   const onPackageDownload = () => {
-    if (!getHref) return;
+    if (!selectedJobId || busy) return;
     setBusyAction("download");
-    setLocalStatus("Starting download…");
-    window.setTimeout(() => {
+    setError(null);
+    if (onDownloadPackage) {
+      setLocalStatus(null);
+      try {
+        onDownloadPackage();
+      } finally {
+        window.setTimeout(() => {
+          setBusyAction((cur) => (cur === "download" ? null : cur));
+        }, 800);
+      }
+      return;
+    }
+    setLocalStatus("Opening download…");
+    // From the jobs list: open File Explorer and auto-start package ZIP (token/sign).
+    try {
+      sessionStorage.setItem("pgg_office_auto_package", selectedJobId); // OFFICE_AUTO_PACKAGE_KEY
+    } catch {
+      /* ignore */
+    }
+    void navigate({
+      to: "/office/jobs/$jobId",
+      params: { jobId: selectedJobId },
+    }).finally(() => {
       setBusyAction((cur) => (cur === "download" ? null : cur));
-      setLocalStatus("Download started — check your browser downloads.");
-    }, 1600);
+      setLocalStatus(null);
+    });
   };
 
   const onLogoutClick = () => {
@@ -550,15 +575,16 @@ export function OfficeChrome({
               Open
             </span>
           )}
-          {getHref ? (
-            <a
-              href={getHref}
+          {selectedJobId ? (
+            <button
+              type="button"
               style={toolBtn}
               className={`${OFFICE_BTN_CLASS}${busyAction === "download" ? " is-busy" : ""}`}
               onClick={onPackageDownload}
+              disabled={busy}
             >
               {busyAction === "download" ? "Downloading…" : "Download"}
-            </a>
+            </button>
           ) : (
             <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
               Download
