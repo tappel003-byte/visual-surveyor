@@ -8,7 +8,12 @@ import {
   toExplorerEntries,
   type ExplorerEntry,
 } from "@/lib/office-file-tree";
-import { fromLabel, OFFICE_BTN_CLASS, PGG } from "@/components/office/OfficeChrome";
+import {
+  fromLabel,
+  OFFICE_BTN_CLASS,
+  OfficeDesktopReminder,
+  PGG,
+} from "@/components/office/OfficeChrome";
 import {
   loadSignedUrlMapForJob,
   readSignedUrl,
@@ -253,6 +258,8 @@ export function JobFileExplorer({ jobId, title, data, embedded, onStatusChange }
           {data.uploadKind === "office-sync" ? " · Field sync" : null}
         </p>
       </header>
+
+      <OfficeDesktopReminder compact />
 
       {!data.storageLinksAvailable && (
         <section style={{ ...card, background: "#fdf4e0", borderColor: "#f0dfae" }}>

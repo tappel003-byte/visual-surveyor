@@ -4,6 +4,7 @@ import {
   FolderIcon,
   OFFICE_BTN_CLASS,
   OfficeChrome,
+  OfficeDesktopReminder,
   PGG,
   formatLastSynced,
   formatSize,
@@ -382,6 +383,8 @@ function OfficeExplorer() {
       statusMessage={statusMessage}
     >
       <div style={{ padding: "14px 14px 28px" }}>
+        <OfficeDesktopReminder />
+
         {!listReady && (
           <p style={{ fontSize: 14, color: PGG.muted, lineHeight: 1.5 }}>
             Job list unavailable — Netlify needs <code>EXPORTS_LIST_TOKEN</code>. Do not add{" "}

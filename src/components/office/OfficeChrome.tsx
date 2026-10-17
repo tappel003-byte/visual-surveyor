@@ -130,6 +130,40 @@ export function fromLabel(syncedFrom: string | null | undefined): string {
   return t || "Unknown";
 }
 
+/** One calm reminder: staging is temporary — get files onto the desktop. */
+export function OfficeDesktopReminder({ compact }: { compact?: boolean }) {
+  return (
+    <div
+      role="note"
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        padding: compact ? "10px 12px" : "12px 14px",
+        marginBottom: compact ? 12 : 14,
+        background: PGG.accentSoft,
+        border: `1px solid ${PGG.line}`,
+        borderRadius: 12,
+        boxShadow: PGG.shadow,
+        color: PGG.ink,
+        fontSize: compact ? 13 : 14,
+        lineHeight: 1.45,
+      }}
+    >
+      <span aria-hidden style={{ fontSize: 16, lineHeight: 1.2, flexShrink: 0 }}>
+        💾
+      </span>
+      <p style={{ margin: 0 }}>
+        <strong style={{ fontWeight: 700 }}>Download jobs to this computer.</strong>{" "}
+        Office staging is a temporary holding area — use{" "}
+        <strong style={{ fontWeight: 700 }}>Download</strong> /{" "}
+        <strong style={{ fontWeight: 700 }}>Download package</strong> so the files live on your
+        desktop (or Documents), not only online.
+      </p>
+    </div>
+  );
+}
+
 type Props = {
   jobs: OfficeJobFolder[];
   listAvailable: boolean;
