@@ -8,7 +8,7 @@ Netlify `/office` talks to **Lovable Cloud APIs** with `EXPORTS_LIST_TOKEN`. A N
 
 1. Open the **visual-surveyor** project in Lovable.
 2. Confirm the latest `main` (or synced) code includes:
-   - `GET /api/public/exports-list` (`syncedAt` / `syncedFrom`)
+   - `GET /api/public/exports-list` (**manifest-light** — no per-job recursive storage walk; `syncedAt` / `syncedFrom` from `manifest.json`)
    - `GET /api/public/exports-job` (unsigned file list — fast Open)
    - `GET /api/public/exports-sign` (lazy signed URL on click)
    - `POST /api/public/exports-delete` (**new** — delete job folder)
