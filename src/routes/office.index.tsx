@@ -5,6 +5,7 @@ import {
   OFFICE_BTN_CLASS,
   OfficeChrome,
   OfficeDesktopReminder,
+  OfficeStagingCapacity,
   PGG,
   formatLastSynced,
   formatSize,
@@ -384,6 +385,12 @@ function OfficeExplorer() {
     >
       <div style={{ padding: "14px 14px 28px" }}>
         <OfficeDesktopReminder />
+        {listReady && (
+          <OfficeStagingCapacity
+            usedBytes={jobList.reduce((sum, j) => sum + (Number(j.totalBytes) || 0), 0)}
+            jobCount={jobList.length}
+          />
+        )}
 
         {!listReady && (
           <p style={{ fontSize: 14, color: PGG.muted, lineHeight: 1.5 }}>

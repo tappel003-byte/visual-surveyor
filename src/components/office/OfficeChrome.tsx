@@ -130,6 +130,95 @@ export function fromLabel(syncedFrom: string | null | undefined): string {
   return t || "Unknown";
 }
 
+/** NLF www office staging working set (~1 GB). */
+export const OFFICE_STAGING_BUDGET_BYTES = 1024 * 1024 * 1024;
+
+/** Staging used vs 1 GB budget — sum of job totalBytes (from manifests). */
+export function OfficeStagingCapacity({
+  usedBytes,
+  jobCount,
+}: {
+  usedBytes: number;
+  jobCount: number;
+}) {
+  const budget = OFFICE_STAGING_BUDGET_BYTES;
+  const used = Math.max(0, usedBytes);
+  const pct = Math.min(100, Math.round((used / budget) * 1000) / 10);
+  const warn = pct >= 70;
+  const critical = pct >= 90;
+  const barColor = critical ? "#b45309" : warn ? "#c48a2a" : PGG.accent;
+  const usedLabel =
+    used <= 0 && jobCount > 0
+      ? "size unknown"
+      : used >= 1024 * 1024 * 1024
+        ? `${(used / (1024 * 1024 * 1024)).toFixed(2)} GB`
+        : used >= 1024 * 1024
+          ? `${(used / (1024 * 1024)).toFixed(used >= 100 * 1024 * 1024 ? 0 : 1)} MB`
+          : used > 0
+            ? `${Math.max(1, Math.round(used / 1024))} KB`
+            : "0 MB";
+
+  return (
+    <div
+      role="status"
+      aria-label={`Staging capacity: ${usedLabel} of 1 GB used`}
+      style={{
+        padding: "12px 14px",
+        marginBottom: 14,
+        background: PGG.paper,
+        border: `1px solid ${critical || warn ? "#e8c9a8" : PGG.line}`,
+        borderRadius: 12,
+        boxShadow: PGG.shadow,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          gap: 8,
+          alignItems: "baseline",
+          marginBottom: 8,
+        }}
+      >
+        <strong style={{ fontSize: 14, color: PGG.ink, fontWeight: 700 }}>
+          Staging capacity
+        </strong>
+        <span style={{ fontSize: 13, fontWeight: 700, color: critical ? "#8a4500" : PGG.ink }}>
+          Used: {usedLabel} of 1 GB
+          {used > 0 ? ` (${pct}%)` : ""}
+        </span>
+      </div>
+      <div
+        style={{
+          height: 10,
+          borderRadius: 999,
+          background: PGG.accentSoft,
+          overflow: "hidden",
+          border: `1px solid ${PGG.line}`,
+        }}
+      >
+        <div
+          style={{
+            width: `${used <= 0 && jobCount > 0 ? 0 : Math.max(used > 0 ? 2 : 0, pct)}%`,
+            height: "100%",
+            background: barColor,
+            borderRadius: 999,
+            transition: "width .2s ease",
+          }}
+        />
+      </div>
+      <p style={{ margin: "8px 0 0", fontSize: 12, color: PGG.muted, lineHeight: 1.4 }}>
+        www office staging working set (~1 GB). Download jobs to this computer, then Delete to free
+        space.
+        {used <= 0 && jobCount > 0
+          ? " Re-sync a job from the phone to report its size."
+          : ""}
+      </p>
+    </div>
+  );
+}
+
 /** One calm reminder: staging is temporary — get files onto the desktop. */
 export function OfficeDesktopReminder({ compact }: { compact?: boolean }) {
   return (

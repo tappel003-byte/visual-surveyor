@@ -18,7 +18,9 @@ export type ExportManifestJson = {
   /** Device nickname from the phone that synced (`syncedFrom` preferred). */
   syncedFrom?: string;
   deviceName?: string;
-  files?: Array<{ path: string; zipPath: string }>;
+  /** Total payload bytes (written by field Sync) — used by light list / capacity meter. */
+  totalBytes?: number;
+  files?: Array<{ path: string; zipPath: string; sizeBytes?: number }>;
 };
 
 export type JobFolderStats = {
@@ -126,12 +128,20 @@ export async function lightStatsForExportJob(
       .filter((p): p is string => Boolean(p));
     const manifestFileCount = manifestPaths.length > 0 ? manifestPaths.length : null;
     const fileCount = manifestFileCount ?? 0;
+    const declared =
+      typeof manifest.totalBytes === "number" && Number.isFinite(manifest.totalBytes)
+        ? Math.max(0, Math.round(manifest.totalBytes))
+        : 0;
+    const fromFileSizes = (manifest.files ?? []).reduce((sum, f) => {
+      const n = typeof f.sizeBytes === "number" && Number.isFinite(f.sizeBytes) ? f.sizeBytes : 0;
+      return sum + Math.max(0, n);
+    }, 0);
     return {
       id: jobId,
       displayName: displayNameFromManifest(manifest),
       fileCount,
-      /** Unknown without a walk — office UI shows "—" for 0. */
-      totalBytes: 0,
+      /** Prefer manifest.totalBytes; else sum per-file sizeBytes — no storage walk. */
+      totalBytes: declared > 0 ? declared : fromFileSizes,
       manifestFileCount,
       /** Provisional; Open/deep refresh compares real storage. */
       storageObjectCount: fileCount,

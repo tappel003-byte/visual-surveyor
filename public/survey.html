@@ -6818,6 +6818,7 @@ async function _uploadRawAssets(items, onStatus, manifestExtra) {
 
   const total = tasks.length;
   let completed = 0, next = 0, failure = null;
+  let totalBytesAcc = 0;
   const manifestFiles = [];
   const tick = () => onStatus && onStatus(completed, total);
 
@@ -6837,7 +6838,9 @@ async function _uploadRawAssets(items, onStatus, manifestExtra) {
       if (!blob) { completed++; tick(); continue; }
       const path = t.path || ('files/' + t.photo.folder + '/' + t.photo.base + '.' + mimeExt(blob.type));
       const type = t.type || blob.type || 'image/jpeg';
-      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, '') });
+      const sizeBytes = Number(blob.size) || 0;
+      totalBytesAcc += sizeBytes;
+      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, ''), sizeBytes: sizeBytes });
       if (done.has(path)) { completed++; blob = null; tick(); continue; }
       try {
         await _uploadRawObject(jobId, path, blob, type);
@@ -6863,6 +6866,8 @@ async function _uploadRawAssets(items, onStatus, manifestExtra) {
     version: 1,
     folderName: items.folderName,
     createdAt: new Date().toISOString(),
+    /** Staging capacity meter — office list sums this without a storage walk. */
+    totalBytes: totalBytesAcc,
     files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath)),
     ...(manifestExtra || {})
   };
@@ -7198,7 +7203,8 @@ async function runOfficeSyncUpload(opts) {
           uploadKind: 'office-sync',
           syncedAt: new Date().toISOString(),
           syncedFrom: deviceName,
-          deviceName: deviceName
+          deviceName: deviceName,
+          totalBytes: totalBytes
         });
         target.lastSyncedAt = Date.now();
         target.syncJobId = jobId;
