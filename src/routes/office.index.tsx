@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState, type CSSProperties } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
 import {
   FolderIcon,
   OFFICE_BTN_CLASS,
@@ -19,6 +19,9 @@ import {
   patchJobsCache,
   writeJobsCache,
 } from "@/lib/office-client-cache";
+
+type SortKey = "name" | "date" | "type" | "size" | "from";
+type SortDir = "asc" | "desc";
 
 export const Route = createFileRoute("/office/")({
   head: () => ({
@@ -90,6 +93,10 @@ function OfficeExplorer() {
   const [rowBusyKind, setRowBusyKind] = useState<"delete" | "from" | "open" | "download" | null>(null);
   const [openingJobId, setOpeningJobId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const navigate = useNavigate();
 
   const reloadJobs = async () => {
     setListError(null);
@@ -155,6 +162,45 @@ function OfficeExplorer() {
     minHeight: "100vh",
     background: PGG.bg,
   };
+
+  const jobList = jobs?.jobs ?? [];
+  const listReady = jobs?.listAvailable ?? false;
+
+  const sortedJobs = useMemo(() => {
+    const list = [...jobList];
+    const dir = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "name":
+          cmp = (a.displayName || a.id).localeCompare(b.displayName || b.id, undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "date":
+          cmp = (Date.parse(a.syncedAt || "") || 0) - (Date.parse(b.syncedAt || "") || 0);
+          break;
+        case "type":
+          cmp = (a.fileCount || 0) - (b.fileCount || 0);
+          break;
+        case "size":
+          cmp = (a.totalBytes || 0) - (b.totalBytes || 0);
+          break;
+        case "from":
+          cmp = fromLabel(a.syncedFrom).localeCompare(fromLabel(b.syncedFrom), undefined, {
+            sensitivity: "base",
+          });
+          break;
+      }
+      return cmp * dir;
+    });
+    return list;
+  }, [jobList, sortKey, sortDir]);
+
+  // Seed session cache so Open job can skip a full Lovable list round-trip
+  useEffect(() => {
+    if (jobs?.listAvailable) writeJobsCache(jobs);
+  }, [jobs]);
 
   if (!auth.configured) {
     return (
@@ -280,23 +326,39 @@ function OfficeExplorer() {
     );
   }
 
-  const jobList = jobs?.jobs ?? [];
-  const listReady = jobs?.listAvailable ?? false;
-
   const setJobList = (next: OfficeJobFolder[]) => {
     setJobs((prev) => {
       const listAvailable = prev?.listAvailable ?? true;
       patchJobsCache(next, listAvailable);
       return { listAvailable, jobs: next };
     });
+    if (selectedJobId && !next.some((j) => j.id === selectedJobId)) {
+      setSelectedJobId(null);
+    }
   };
 
-  // Seed session cache so Open job can skip a full Lovable list round-trip
-  useEffect(() => {
-    if (jobs?.listAvailable) writeJobsCache(jobs);
-  }, [jobs]);
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "date" || key === "size" ? "desc" : "asc");
+    }
+  };
+
+  const sortMark = (key: SortKey) => {
+    if (sortKey !== key) return "";
+    return sortDir === "asc" ? " ▲" : " ▼";
+  };
+
+  const openJob = (jobId: string) => {
+    setSelectedJobId(jobId);
+    markOpening(jobId);
+    void navigate({ to: "/office/jobs/$jobId", params: { jobId } });
+  };
 
   const editFrom = async (job: OfficeJobFolder) => {
+    setSelectedJobId(job.id);
     const next = window.prompt(
       "Set From (whose phone). Saved into the job manifest without a full re-sync.",
       job.syncedFrom?.trim() || "",
@@ -323,6 +385,7 @@ function OfficeExplorer() {
   };
 
   const deleteJob = async (job: OfficeJobFolder) => {
+    setSelectedJobId(job.id);
     const name = job.displayName || job.id;
     if (
       !confirm(
@@ -361,6 +424,7 @@ function OfficeExplorer() {
   };
 
   const markDownload = (jobId: string) => {
+    setSelectedJobId(jobId);
     setRowBusyId(jobId);
     setRowBusyKind("download");
     setStatusMessage("Starting download…");
@@ -372,18 +436,41 @@ function OfficeExplorer() {
     }, 1400);
   };
 
+  const onListKeyDown = (e: KeyboardEvent<HTMLTableSectionElement>) => {
+    if (sortedJobs.length === 0) return;
+    const idx = selectedJobId ? sortedJobs.findIndex((j) => j.id === selectedJobId) : -1;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = sortedJobs[Math.min(sortedJobs.length - 1, Math.max(0, idx + 1))];
+      if (next) setSelectedJobId(next.id);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const next = sortedJobs[Math.max(0, idx <= 0 ? 0 : idx - 1)];
+      if (next) setSelectedJobId(next.id);
+    } else if (e.key === "Enter" && selectedJobId) {
+      e.preventDefault();
+      openJob(selectedJobId);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setSelectedJobId(sortedJobs[0]?.id ?? null);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setSelectedJobId(sortedJobs[sortedJobs.length - 1]?.id ?? null);
+    }
+  };
+
   return (
     <OfficeChrome
       jobs={jobList}
       listAvailable={listReady}
-      selectedJobId={null}
+      selectedJobId={selectedJobId}
       onRefresh={() => reloadJobs().catch(() => {})}
       refreshing={listRefreshing}
       onJobsChanged={setJobList}
       onLogout={() => onLogout().catch(() => {})}
       statusMessage={statusMessage}
     >
-      <div style={{ padding: "14px 14px 28px" }}>
+      <div style={{ padding: "8px 10px 20px" }}>
         <OfficeDesktopReminder />
         {listReady && (
           <OfficeStagingCapacity
@@ -393,7 +480,7 @@ function OfficeExplorer() {
         )}
 
         {!listReady && (
-          <p style={{ fontSize: 14, color: PGG.muted, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 13, color: PGG.muted, lineHeight: 1.5 }}>
             Job list unavailable — Netlify needs <code>EXPORTS_LIST_TOKEN</code>. Do not add{" "}
             <code>SUPABASE_*</code> on Netlify.
           </p>
@@ -403,30 +490,31 @@ function OfficeExplorer() {
           <div
             style={{
               textAlign: "center",
-              padding: "40px 16px",
+              padding: "36px 16px",
               color: PGG.muted,
-              background: PGG.paper,
               border: `1px dashed ${PGG.line}`,
-              borderRadius: 14,
             }}
           >
-            <h2 style={{ fontSize: 17, margin: "0 0 8px", color: PGG.ink }}>No jobs in staging yet</h2>
-            <p style={{ fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+            <h2 style={{ fontSize: 15, margin: "0 0 6px", color: PGG.ink, fontWeight: 600 }}>
+              No jobs in staging yet
+            </h2>
+            <p style={{ fontSize: 13, margin: 0, lineHeight: 1.45 }}>
               On the phone: Sync to office (or Auto-sync). Then Refresh.
             </p>
           </div>
         )}
 
         {listError && (
-          <p style={{ color: PGG.bad, fontSize: 13, margin: "0 0 12px" }} role="alert">
+          <p style={{ color: PGG.bad, fontSize: 12, margin: "0 0 8px" }} role="alert">
             {listError}
           </p>
         )}
 
         {listReady && jobList.length > 0 && (
           <>
-            <p style={{ fontSize: 12, color: PGG.muted, margin: "0 0 12px" }}>
-              Date = last synced. From = device nickname (or set here for older jobs).
+            <p style={{ fontSize: 11, color: PGG.muted, margin: "0 0 6px" }}>
+              Click to select · double-click or Enter to open · Date = last synced · From = device
+              nickname
             </p>
             <div style={{ overflowX: "auto" }} className="office-job-table-wrap">
               <table
@@ -435,47 +523,54 @@ function OfficeExplorer() {
                   borderCollapse: "collapse",
                   fontSize: 13,
                   border: `1px solid ${PGG.line}`,
-                  borderRadius: 14,
-                  overflow: "hidden",
                   background: PGG.paper,
-                  boxShadow: PGG.shadow,
                   minWidth: 680,
                 }}
+                aria-label="Synced jobs"
               >
                 <thead>
-                  <tr style={{ background: PGG.accentSoft, textAlign: "left" }}>
-                    <th style={th}>Name</th>
-                    <th style={th} title="Last synced">
-                      Date
-                    </th>
-                    <th style={th}>Type</th>
-                    <th style={th}>Size</th>
-                    <th style={th} title="Device nickname or office label">
-                      From
-                    </th>
-                    <th style={th}>Actions</th>
+                  <tr>
+                    {(
+                      [
+                        ["name", "Name"],
+                        ["date", "Date"],
+                        ["type", "Type"],
+                        ["size", "Size"],
+                        ["from", "From"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <th key={key} className="office-col-header" title={`Sort by ${label}`}>
+                        <button type="button" onClick={() => toggleSort(key)}>
+                          {label}
+                          {sortMark(key)}
+                        </button>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {jobList.map((job) => {
+                <tbody
+                  tabIndex={0}
+                  onKeyDown={onListKeyDown}
+                  style={{ outline: "none" }}
+                  aria-label="Job list — use arrow keys to select"
+                >
+                  {sortedJobs.map((job) => {
                     const title = job.displayName || "Field export";
-                    const getHref = `/get?job=${encodeURIComponent(job.id)}`;
-                    const rowBusy = rowBusyId === job.id;
-                    const opening = openingJobId === job.id;
+                    const selected = selectedJobId === job.id;
                     return (
-                      <tr key={job.id} style={{ borderTop: `1px solid ${PGG.line}` }}>
+                      <tr
+                        key={job.id}
+                        className={`office-list-row${selected ? " is-selected" : ""}`}
+                        aria-selected={selected}
+                        onClick={() => setSelectedJobId(job.id)}
+                        onDoubleClick={() => openJob(job.id)}
+                        style={{ borderTop: `1px solid ${PGG.line}` }}
+                      >
                         <td style={td}>
-                          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                             <FolderIcon />
                             <div style={{ minWidth: 0 }}>
-                              <Link
-                                to="/office/jobs/$jobId"
-                                params={{ jobId: job.id }}
-                                onClick={() => markOpening(job.id)}
-                                style={{ fontWeight: 600, color: PGG.accent, textDecoration: "none" }}
-                              >
-                                {title}
-                              </Link>
+                              <span style={{ fontWeight: 600, color: PGG.ink }}>{title}</span>
                               {job.syncIncomplete && job.manifestFileCount != null ? (
                                 <span
                                   style={{
@@ -483,7 +578,7 @@ function OfficeExplorer() {
                                     fontSize: 11,
                                     color: PGG.bad,
                                     fontWeight: 600,
-                                    marginTop: 2,
+                                    marginTop: 1,
                                   }}
                                 >
                                   {job.storageObjectCount}/{job.manifestFileCount} in storage
@@ -495,11 +590,9 @@ function OfficeExplorer() {
                         <td style={{ ...td, whiteSpace: "nowrap", color: PGG.muted }}>
                           {formatLastSynced(job.syncedAt)}
                         </td>
-                        <td style={{ ...td, color: PGG.muted }}>
-                          Folder
-                          <span style={{ display: "block", fontSize: 11, color: PGG.muted }}>
-                            {job.fileCount} file{job.fileCount === 1 ? "" : "s"}
-                          </span>
+                        <td style={{ ...td, color: PGG.muted, whiteSpace: "nowrap" }}>
+                          File folder
+                          <span style={{ color: PGG.muted }}> · {job.fileCount} items</span>
                         </td>
                         <td style={{ ...td, whiteSpace: "nowrap", color: PGG.muted }}>
                           {formatSize(job.totalBytes)}
@@ -507,54 +600,28 @@ function OfficeExplorer() {
                         <td style={{ ...td, color: PGG.muted, maxWidth: 160 }}>
                           <button
                             type="button"
-                            onClick={() => editFrom(job)}
-                            disabled={rowBusy}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void editFrom(job);
+                            }}
+                            disabled={rowBusyId === job.id}
                             title="Edit From"
-                            className={`${OFFICE_BTN_CLASS} office-btn-linkish${rowBusy && rowBusyKind === "from" ? " is-busy" : ""}`}
+                            className={`${OFFICE_BTN_CLASS} office-btn-linkish${rowBusyId === job.id && rowBusyKind === "from" ? " is-busy" : ""}`}
                             style={{
                               border: 0,
                               background: "transparent",
-                              padding: "2px 4px",
+                              padding: "1px 2px",
                               color: PGG.accent,
                               fontWeight: 600,
                               cursor: "pointer",
                               textAlign: "left",
                               fontSize: 13,
-                              borderRadius: 6,
                             }}
                           >
-                            {rowBusy && rowBusyKind === "from" ? "Saving…" : fromLabel(job.syncedFrom)}
+                            {rowBusyId === job.id && rowBusyKind === "from"
+                              ? "Saving…"
+                              : fromLabel(job.syncedFrom)}
                           </button>
-                        </td>
-                        <td style={td}>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            <Link
-                              to="/office/jobs/$jobId"
-                              params={{ jobId: job.id }}
-                              onClick={() => markOpening(job.id)}
-                              className={`${OFFICE_BTN_CLASS}${opening ? " is-busy" : ""}`}
-                              style={actionBtn}
-                            >
-                              {opening ? "Opening…" : "Open"}
-                            </Link>
-                            <a
-                              href={getHref}
-                              className={`${OFFICE_BTN_CLASS}${rowBusy && rowBusyKind === "download" ? " is-busy" : ""}`}
-                              style={actionBtn}
-                              onClick={() => markDownload(job.id)}
-                            >
-                              {rowBusy && rowBusyKind === "download" ? "Downloading…" : "Download"}
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => deleteJob(job)}
-                              disabled={rowBusy}
-                              className={`${OFFICE_BTN_CLASS} office-btn-danger${rowBusy && rowBusyKind === "delete" ? " is-busy" : ""}`}
-                              style={{ ...actionBtn, color: PGG.bad, cursor: "pointer" }}
-                            >
-                              {rowBusy && rowBusyKind === "delete" ? "Deleting…" : "Delete"}
-                            </button>
-                          </div>
                         </td>
                       </tr>
                     );
@@ -563,47 +630,53 @@ function OfficeExplorer() {
               </table>
             </div>
 
-            <ul className="office-job-mobile" style={{ listStyle: "none", padding: 0, margin: 0, display: "none" }}>
-              {jobList.map((job) => {
+            <ul
+              className="office-job-mobile"
+              style={{ listStyle: "none", padding: 0, margin: 0, display: "none" }}
+            >
+              {sortedJobs.map((job) => {
                 const title = job.displayName || "Field export";
                 const getHref = `/get?job=${encodeURIComponent(job.id)}`;
                 const rowBusy = rowBusyId === job.id;
                 const opening = openingJobId === job.id;
+                const selected = selectedJobId === job.id;
                 return (
                   <li
                     key={job.id}
+                    className={`office-list-row${selected ? " is-selected" : ""}`}
+                    onClick={() => setSelectedJobId(job.id)}
                     style={{
-                      padding: 14,
-                      marginBottom: 10,
-                      background: PGG.paper,
-                      border: `1px solid ${PGG.line}`,
-                      borderRadius: 14,
-                      boxShadow: PGG.shadow,
+                      padding: "10px 8px",
+                      borderBottom: `1px solid ${PGG.line}`,
                     }}
                   >
-                    <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8 }}>
                       <FolderIcon />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <Link
-                          to="/office/jobs/$jobId"
-                          params={{ jobId: job.id }}
-                          onClick={() => markOpening(job.id)}
+                        <button
+                          type="button"
+                          onClick={() => openJob(job.id)}
                           style={{
-                            fontSize: 15,
+                            all: "unset",
+                            display: "block",
+                            fontSize: 14,
                             fontWeight: 600,
-                            color: PGG.accent,
-                            textDecoration: "none",
+                            color: PGG.ink,
+                            cursor: "pointer",
                             wordBreak: "break-word",
                           }}
                         >
                           {title}
-                        </Link>
-                        <div style={{ fontSize: 12, color: PGG.muted, marginTop: 4, lineHeight: 1.4 }}>
+                        </button>
+                        <div style={{ fontSize: 12, color: PGG.muted, marginTop: 3, lineHeight: 1.35 }}>
                           {formatLastSynced(job.syncedAt)} · {formatSize(job.totalBytes)} ·{" "}
                           {job.fileCount} files ·{" "}
                           <button
                             type="button"
-                            onClick={() => editFrom(job)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void editFrom(job);
+                            }}
                             disabled={rowBusy}
                             className={`${OFFICE_BTN_CLASS} office-btn-linkish`}
                             style={{
@@ -618,27 +691,30 @@ function OfficeExplorer() {
                             {fromLabel(job.syncedFrom)}
                           </button>
                         </div>
-                        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                           <Link
                             to="/office/jobs/$jobId"
                             params={{ jobId: job.id }}
                             onClick={() => markOpening(job.id)}
                             className={`${OFFICE_BTN_CLASS}${opening ? " is-busy" : ""}`}
-                            style={{ ...actionBtn, flex: 1, textAlign: "center", justifyContent: "center" }}
+                            style={{ ...actionBtn, flex: 1, justifyContent: "center" }}
                           >
                             {opening ? "Opening…" : "Open"}
                           </Link>
                           <a
                             href={getHref}
                             className={`${OFFICE_BTN_CLASS}${rowBusy && rowBusyKind === "download" ? " is-busy" : ""}`}
-                            style={{ ...actionBtn, flex: 1, textAlign: "center", justifyContent: "center" }}
+                            style={{ ...actionBtn, flex: 1, justifyContent: "center" }}
                             onClick={() => markDownload(job.id)}
                           >
                             {rowBusy && rowBusyKind === "download" ? "…" : "Download"}
                           </a>
                           <button
                             type="button"
-                            onClick={() => deleteJob(job)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void deleteJob(job);
+                            }}
                             disabled={rowBusy}
                             className={`${OFFICE_BTN_CLASS} office-btn-danger${rowBusy && rowBusyKind === "delete" ? " is-busy" : ""}`}
                             style={{ ...actionBtn, color: PGG.bad, flex: 1, justifyContent: "center" }}
@@ -666,30 +742,20 @@ function OfficeExplorer() {
   );
 }
 
-const th: CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: `1px solid ${PGG.line}`,
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-  color: PGG.muted,
-  fontSize: 12,
-};
-
 const td: CSSProperties = {
-  padding: "12px",
+  padding: "5px 10px",
   verticalAlign: "middle",
 };
 
 const actionBtn: CSSProperties = {
-  padding: "8px 12px",
+  padding: "6px 10px",
   border: `1px solid ${PGG.line}`,
-  borderRadius: 10,
+  borderRadius: 2,
   background: PGG.paper,
   color: PGG.ink,
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 600,
   textDecoration: "none",
   display: "inline-flex",
   alignItems: "center",
-  boxShadow: PGG.shadow,
 };
