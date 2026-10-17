@@ -94,7 +94,29 @@ export function JobFileExplorer({ jobId, title, data }: Props) {
         </section>
       )}
 
-      {data.storageLinksAvailable && data.kind === "empty" && (
+      {data.storageLinksAvailable && data.syncIncomplete && (
+        <section
+          style={{
+            border: "1px solid #e8c9a8",
+            borderRadius: 12,
+            padding: "14px 14px",
+            background: "#fff8f0",
+            marginBottom: 16,
+          }}
+        >
+          <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
+            <strong>Sync looks incomplete.</strong>{" "}
+            {data.manifestExpectedFiles != null
+              ? `Manifest lists ${data.manifestExpectedFiles} files; ${data.storageObjectCount} are in storage`
+              : `${data.storageObjectCount} files in storage`}
+            {data.missingManifestPaths > 0 ? ` (${data.missingManifestPaths} missing from manifest paths)` : ""}.
+            On the phone, open this job → <strong>⋯</strong> → <strong>Sync to office</strong> →{" "}
+            <strong>Resume sync</strong> to upload the rest. Nothing here is deleted automatically.
+          </p>
+        </section>
+      )}
+
+      {data.storageLinksAvailable && data.kind === "empty" && !data.syncIncomplete && (
         <p style={{ fontSize: 14, color: "#a33" }}>No files found for this job in exports storage yet.</p>
       )}
 

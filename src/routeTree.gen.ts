@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GetRouteImport } from './routes/get'
 import { Route as OfficeRouteImport } from './routes/office'
+import { Route as OfficeIndexRouteImport } from './routes/office.index'
 import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
 import { Route as OfficeJobsJobIdRouteImport } from './routes/office.jobs.$jobId'
 
@@ -30,6 +31,11 @@ const OfficeRoute = OfficeRouteImport.update({
   path: '/office',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OfficeIndexRoute = OfficeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OfficeRoute,
+} as any)
 const ApiPublicExportsListRoute = ApiPublicExportsListRouteImport.update({
   id: '/api/public/exports-list',
   path: '/api/public/exports-list',
@@ -45,13 +51,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
+  '/office/': typeof OfficeIndexRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
-  '/office': typeof OfficeRouteWithChildren
+  '/office': typeof OfficeIndexRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
+  '/office/': typeof OfficeIndexRoute
   '/api/public/exports-list': typeof ApiPublicExportsListRoute
   '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
@@ -69,6 +77,7 @@ export interface FileRouteTypes {
     | '/'
     | '/get'
     | '/office'
+    | '/office/'
     | '/api/public/exports-list'
     | '/office/jobs/$jobId'
   fileRoutesByTo: FileRoutesByTo
@@ -83,6 +92,7 @@ export interface FileRouteTypes {
     | '/'
     | '/get'
     | '/office'
+    | '/office/'
     | '/api/public/exports-list'
     | '/office/jobs/$jobId'
   fileRoutesById: FileRoutesById
@@ -117,6 +127,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OfficeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/office/': {
+      id: '/office/'
+      path: '/'
+      fullPath: '/office/'
+      preLoaderRoute: typeof OfficeIndexRouteImport
+      parentRoute: typeof OfficeRoute
+    }
     '/api/public/exports-list': {
       id: '/api/public/exports-list'
       path: '/api/public/exports-list'
@@ -135,10 +152,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface OfficeRouteChildren {
+  OfficeIndexRoute: typeof OfficeIndexRoute
   OfficeJobsJobIdRoute: typeof OfficeJobsJobIdRoute
 }
 
 const OfficeRouteChildren: OfficeRouteChildren = {
+  OfficeIndexRoute: OfficeIndexRoute,
   OfficeJobsJobIdRoute: OfficeJobsJobIdRoute,
 }
 
