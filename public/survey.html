@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build marker: office-nav-jump-1 -->
+<!-- build marker: home-open-all-jobs-1 -->
 
 <html lang="en">
 <head>
@@ -154,7 +154,6 @@
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
   .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
   .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
-  .home-jumps a.home-office-jump{color:var(--accent);font-weight:600}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
@@ -595,17 +594,20 @@
   <div class="home-head">
     <h1>PGG Photo Documentation</h1>
     <div class="home-jumps">
-      <a href="/office" id="officeJumpLink" class="home-office-jump" target="_top" rel="noopener">PGG Office</a>
       <a href="#" id="updateAppLink">Update app</a>
     </div>
   </div>
 
 
-  <button class="mode-btn" style="padding:10px 14px;margin-bottom:16px" onclick="triggerImportProject()">
-    <div class="icon" style="font-size:18px;width:32px;height:32px">📥</div>
-    <div class="meta"><span style="font-size:14px">Import project file</span></div>
-  </button>
   <input type="file" id="importFileInput" accept=".pgg,.zip,application/zip" style="display:none" onchange="_onImportFileChosen(event)">
+
+  <a href="/office" class="mode-btn" target="_top" rel="noopener" style="text-decoration:none;color:inherit;margin-bottom:16px">
+    <div class="icon">🗂️</div>
+    <div class="meta">
+      <span>Open all jobs</span>
+      <small>Office file explorer · browse photos &amp; download synced jobs</small>
+    </div>
+  </a>
 
   <button class="mode-btn" onclick="startNewProject('internal')">
     <div class="icon">📷</div>
