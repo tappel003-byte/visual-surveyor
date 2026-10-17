@@ -360,7 +360,7 @@ function OfficeExplorer() {
   const editFrom = async (job: OfficeJobFolder) => {
     setSelectedJobId(job.id);
     const next = window.prompt(
-      "Set From (whose phone). Saved into the job manifest without a full re-sync.",
+      "Set From (user and device). Same label phones set on Sync — saved without a full re-sync.",
       job.syncedFrom?.trim() || "",
     );
     if (next == null) return;
@@ -513,8 +513,8 @@ function OfficeExplorer() {
         {listReady && jobList.length > 0 && (
           <>
             <p style={{ fontSize: 11, color: PGG.muted, margin: "0 0 6px" }}>
-              Click to select · double-click or Enter to open · Date = last synced · From = device
-              nickname
+              Click to select · double-click or Enter to open · Date = last synced · From = user
+              &amp; device (phone nickname after Sync)
             </p>
             <div style={{ overflowX: "auto" }} className="office-job-table-wrap">
               <table

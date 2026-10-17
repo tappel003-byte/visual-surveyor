@@ -243,7 +243,7 @@ export function OfficeStagingCapacity({
   return (
     <div
       role="status"
-      aria-label={`Staging capacity: ${usedLabel} of 1 GB used`}
+      aria-label={`Office staging capacity: ${usedLabel} of 1 GB used`}
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -257,7 +257,10 @@ export function OfficeStagingCapacity({
         color: PGG.muted,
       }}
     >
-      <strong style={{ fontSize: 12, color: PGG.ink, fontWeight: 600 }}>Staging</strong>
+      <strong style={{ fontSize: 12, color: PGG.ink, fontWeight: 600 }}>
+        Office staging
+      </strong>
+      <span style={{ color: PGG.muted }}>(temp)</span>
       <div
         style={{
           flex: "1 1 120px",
@@ -283,7 +286,7 @@ export function OfficeStagingCapacity({
         {used > 0 ? ` (${pct}%)` : ""}
       </span>
       <span style={{ flex: "1 1 160px", minWidth: 0 }}>
-        Download then Delete to free space.
+        Phone Sync lands here — Download to this computer, then Delete to free the 1 GB.
         {used <= 0 && jobCount > 0 ? " Re-sync to report size." : ""}
       </span>
     </div>
@@ -310,7 +313,8 @@ export function OfficeDesktopReminder({ compact }: { compact?: boolean }) {
     >
       <p style={{ margin: 0 }}>
         <strong style={{ fontWeight: 600 }}>Download to this computer</strong>
-        {" — "}staging is temporary. Use Download / Download package, then Delete to free space.
+        {" — "}office staging is temporary phone Sync storage. Use Download / Download package,
+        then Delete to free the 1 GB.
       </p>
     </div>
   );
@@ -417,7 +421,7 @@ export function OfficeChrome({
     if (!selectedJobId || !selected || busy) return;
     const current = selected.syncedFrom?.trim() || "";
     const next = window.prompt(
-      "Set From (whose phone / who synced). Saved into the job manifest so the column stays filled without a full re-sync.",
+      "Set From (user and device). Same label phones set on Sync — saved into the job without a full re-sync.",
       current || "",
     );
     if (next == null) return;
