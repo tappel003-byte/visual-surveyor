@@ -7073,7 +7073,7 @@ function getOrAskDeviceNickname() {
   try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
   if (nick) return nick;
   const asked = window.prompt(
-    "Name this phone (e.g. Tim's phone, Brian's phone).\n\n" +
+    "Name this phone (user and device you're using this on).\n\n" +
     'Shown as From in the office File Explorer after Sync. Set once on this device.',
     ''
   );
@@ -7170,10 +7170,14 @@ function projectNeedsOfficeSync(p) {
   return updated > synced + 1000;
 }
 
-function _showSyncComplete(folderName, jobId) {
+function _showSyncComplete(folderName, jobId, deviceName) {
+  const fromLine = deviceName
+    ? 'From: ' + deviceName + ' (shown in the office File Explorer).\n\n'
+    : '';
   exportPanel.msg(
     '"' + folderName + '" is in office staging.\n\n' +
-    'The office File Explorer (/office) lists this job after refresh. ' +
+    fromLine +
+    'On a desk computer: open /office → Download package → then Delete on staging to free space. ' +
     'Original photos and picture map — full size, same package as Export.'
   );
   return new Promise(resolve => {
@@ -7270,7 +7274,7 @@ async function runOfficeSyncUpload(opts) {
         if (silent) {
           toast('Auto-synced to office');
         } else {
-          await _showSyncComplete(items.folderName, jobId);
+          await _showSyncComplete(items.folderName, jobId, deviceName);
           exportPanel.close();
         }
         return { ok: true, jobId: jobId };
