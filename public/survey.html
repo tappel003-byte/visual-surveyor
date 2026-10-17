@@ -90,20 +90,26 @@
   }
 
   // No auto-activate / auto-reload. Updates happen only when the user taps
-  // the "Update app" link (see #updateAppLink logic further down).
-  // When a new SW is waiting, make that link yellow/urgent (setUpdateAppUrgent).
+  // the "Update" control (see #updateAppLink logic further down).
+  // When a new SW is waiting, show a quiet urgent state + reopen hint.
 
   /** Called from SW registration + Update app UI — keep in sync. */
   window.__pggSetUpdateAppUrgent = function (urgent) {
     const link = document.getElementById("updateAppLink");
+    const wrap = document.getElementById("updateAppWrap");
+    const hint = document.getElementById("updateAppHint");
     if (!link) return;
     if (urgent) {
       link.classList.add("update-app-urgent");
+      if (wrap) wrap.classList.add("urgent");
+      if (hint) hint.hidden = false;
       if (!link.dataset.busy) {
-        link.textContent = "Update available — tap here";
+        link.textContent = "Update";
       }
     } else {
       link.classList.remove("update-app-urgent");
+      if (wrap) wrap.classList.remove("urgent");
+      if (hint) hint.hidden = true;
       if (!link.dataset.busy) {
         link.textContent = "Update app";
       }
@@ -194,11 +200,13 @@
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
   .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
   .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
-  /* Quiet by default; loud when a SW update is waiting */
+  /* Quiet by default; compact soft bar when a SW update is waiting */
+  .update-app-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:0;max-width:min(280px,92vw)}
+  .update-app-wrap.urgent{gap:4px;padding:8px 12px;background:var(--accent-soft);border:1px solid var(--line);border-radius:8px}
   .home-jumps a#updateAppLink.update-app-urgent{
-    color:#5c1a00;font-weight:800;font-size:14px;text-decoration:none;
-    background:#f5c518;border:2px solid #c44b1a;padding:10px 16px;border-radius:12px;
-    box-shadow:0 2px 8px rgba(196,75,26,.25);letter-spacing:.01em}
+    color:var(--accent);font-weight:600;font-size:13px;text-decoration:underline;
+    background:transparent;border:none;padding:0;border-radius:0;box-shadow:none;letter-spacing:0}
+  .update-app-hint{margin:0;font-size:11px;line-height:1.35;color:var(--muted);font-weight:500;text-align:center}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
@@ -643,7 +651,10 @@
   <div class="home-head">
     <h1>PGG Photo Documentation</h1>
     <div class="home-jumps">
-      <a href="#" id="updateAppLink">Update app</a>
+      <div id="updateAppWrap" class="update-app-wrap">
+        <a href="#" id="updateAppLink">Update app</a>
+        <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
+      </div>
     </div>
   </div>
 
@@ -8274,12 +8285,14 @@ pvSetupGestures();
 </div>
 
 <script>
-// Update app link — quiet when current; yellow/urgent when a new SW is waiting.
+// Update app link — quiet when current; soft urgent bar + reopen hint when waiting.
 (function(){
   var link = document.getElementById("updateAppLink");
   if (!link) return;
+  var wrap = document.getElementById("updateAppWrap");
+  var hint = document.getElementById("updateAppHint");
   var STATE_IDLE = "Update app";
-  var STATE_READY = "Update available — tap here";
+  var STATE_READY = "Update";
   var STATE_BUSY = "Fetching latest…";
   var STATE_ERR  = "Couldn't update — tap to retry";
   var busy = false;
@@ -8291,9 +8304,13 @@ pvSetupGestures();
     }
     if (urgent) {
       link.classList.add("update-app-urgent");
+      if (wrap) wrap.classList.add("urgent");
+      if (hint) hint.hidden = false;
       if (!busy) link.textContent = STATE_READY;
     } else {
       link.classList.remove("update-app-urgent");
+      if (wrap) wrap.classList.remove("urgent");
+      if (hint) hint.hidden = true;
       if (!busy) link.textContent = STATE_IDLE;
     }
   }
