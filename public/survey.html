@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- build marker: office-edit-job-info-2026-10-17 -->
+<!-- build marker: lovable-sunset-dec16-2026-10-17 -->
 
 <html lang="en">
 <head>
@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.17-download" />
+<meta name="pgg-app-version" content="2026.10.17-sunset-dec" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -673,7 +673,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.17-download</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.17-sunset-dec</p>
   </div>
 
 
@@ -1076,9 +1076,9 @@ const STORAGE_KEY = 'pgg_survey_v1';
 const MAX_IMG_DIM = 2400;        // floor plan downscale cap
 const MAX_PHOTO_DIM = 3000;       // photo downscale cap
 const UNDO_LIMIT = 30;
-/** Fixed end of Lovable hosting for the field app (≈30 days from 2026-10-17 notice). */
-const LOVABLE_SUNSET_END_ISO = '2026-11-16';
-const LOVABLE_SUNSET_END_LABEL = '16 November 2026';
+/** Fixed end of Lovable hosting for the field app (two months from 2026-10-16 → 16 Dec 2026). */
+const LOVABLE_SUNSET_END_ISO = '2026-12-16';
+const LOVABLE_SUNSET_END_LABEL = '16 December 2026';
 const WWW_FIELD_APP_URL = 'https://www.pggphotodocumentation.com';
 
 // ---- State ----
@@ -1546,7 +1546,7 @@ function renderLovableSunsetNotices() {
       banner.innerHTML =
         'This app will no longer be hosted on this platform after <strong>' +
         LOVABLE_SUNSET_END_LABEL +
-        '</strong> (30 days from this notice). Please use <a href="' +
+        '</strong> (two months from this notice). Please use <a href="' +
         WWW_FIELD_APP_URL +
         '" target="_top" rel="noopener">' +
         'www.pggphotodocumentation.com</a> — create a home screen icon and start using that app.';
@@ -6765,7 +6765,7 @@ const PARTS_README =
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
 const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 /** Bump when shipping a field shell Tim must verify on every phone before lockdown SQL. */
-const PGG_APP_VERSION = '2026.10.17-download';
+const PGG_APP_VERSION = '2026.10.17-sunset-dec';
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
 function _isAlreadyExistsUploadDetail(status, detail) {
