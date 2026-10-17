@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OfficeJobDownloadResult } from "@/lib/office-download.functions";
 import { officeSignFile } from "@/lib/office-download.functions";
 import {
@@ -61,33 +61,53 @@ export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
   const [dirPath, setDirPath] = useState("");
   const [preview, setPreview] = useState<{ entry: ExplorerEntry; url: string } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>({});
+  const urlCacheRef = useRef(urlCache);
+  urlCacheRef.current = urlCache;
   const [signingPath, setSigningPath] = useState<string | null>(null);
   const [signError, setSignError] = useState<string | null>(null);
+  const inFlightRef = useRef<Record<string, Promise<string | null>>>({});
 
   const entries = useMemo(() => toExplorerEntries(data.files), [data.files]);
   const { folders, files } = useMemo(() => listDirectory(entries, dirPath), [entries, dirPath]);
+
+  const imageFiles = useMemo(() => files.filter((f) => isImageFileName(f.name)), [files]);
+  const otherFiles = useMemo(() => files.filter((f) => !isImageFileName(f.name)), [files]);
 
   const breadcrumbs = dirPath ? dirPath.split("/") : [];
 
   const resolveUrl = async (entry: ExplorerEntry): Promise<string | null> => {
     if (entry.signedUrl) return entry.signedUrl;
-    const cached = urlCache[entry.storagePath];
+    const cached = urlCacheRef.current[entry.storagePath];
     if (cached) return cached;
-    setSigningPath(entry.storagePath);
-    setSignError(null);
-    try {
-      const result = await officeSignFile({
-        data: { jobId, path: entry.storagePath },
-      });
-      setUrlCache((prev) => ({ ...prev, [entry.storagePath]: result.signedUrl }));
-      return result.signedUrl;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not open file.";
-      setSignError(msg);
-      return null;
-    } finally {
-      setSigningPath(null);
-    }
+
+    const existing = inFlightRef.current[entry.storagePath];
+    if (existing) return existing;
+
+    const promise = (async () => {
+      setSigningPath(entry.storagePath);
+      setSignError(null);
+      try {
+        const result = await officeSignFile({
+          data: { jobId, path: entry.storagePath },
+        });
+        setUrlCache((prev) => {
+          const next = { ...prev, [entry.storagePath]: result.signedUrl };
+          urlCacheRef.current = next;
+          return next;
+        });
+        return result.signedUrl;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not open file.";
+        setSignError(msg);
+        return null;
+      } finally {
+        setSigningPath((cur) => (cur === entry.storagePath ? null : cur));
+        delete inFlightRef.current[entry.storagePath];
+      }
+    })();
+
+    inFlightRef.current[entry.storagePath] = promise;
+    return promise;
   };
 
   const onOpenFile = async (entry: ExplorerEntry) => {
@@ -112,6 +132,43 @@ export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
     a.click();
     a.remove();
   };
+
+  const previewIndex = preview
+    ? imageFiles.findIndex((f) => f.storagePath === preview.entry.storagePath)
+    : -1;
+
+  const imageFilesRef = useRef(imageFiles);
+  imageFilesRef.current = imageFiles;
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
+
+  const showAdjacent = async (delta: number) => {
+    const imgs = imageFilesRef.current;
+    const cur = previewRef.current;
+    if (!cur || imgs.length === 0) return;
+    const idx = imgs.findIndex((f) => f.storagePath === cur.entry.storagePath);
+    if (idx < 0) return;
+    const next = imgs[(idx + delta + imgs.length) % imgs.length];
+    if (!next) return;
+    const url = await resolveUrl(next);
+    if (!url) return;
+    setPreview({ entry: next, url });
+  };
+
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreview(null);
+      if (e.key === "ArrowRight") void showAdjacent(1);
+      if (e.key === "ArrowLeft") void showAdjacent(-1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // showAdjacent closes over stable refs + resolveUrl identity is fine for mount of preview
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview?.entry.storagePath]);
+
+  const hasListRows = folders.length > 0 || otherFiles.length > 0;
 
   return (
     <div style={shell}>
@@ -206,10 +263,12 @@ export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
           >
             <span>
               {data.files.length} file{data.files.length === 1 ? "" : "s"}
+              {imageFiles.length > 0
+                ? ` · ${imageFiles.length} photo${imageFiles.length === 1 ? "" : "s"}`
+                : ""}
               {data.kind === "zip-parts" ? " (ZIP parts)" : ""}
               {" · "}
-              Links signed when you open or download (~{Math.round(data.signedUrlTtlSeconds / 60)}{" "}
-              min)
+              Thumbnails / opens signed on demand (~{Math.round(data.signedUrlTtlSeconds / 60)} min)
             </span>
             <a href={data.getPagePath} style={{ ...btnSecondary, display: "inline-block" }}>
               Download package
@@ -271,146 +330,193 @@ export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
             </nav>
           )}
 
-          {/* Desktop table */}
-          <div className="office-explorer-table" style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 13,
-                background: "#fff",
-                border: "1px solid #d4d4d4",
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#f3f3f3", textAlign: "left" }}>
-                  <th style={{ padding: "8px 10px", borderBottom: "1px solid #d4d4d4", fontWeight: 600 }}>
-                    Name
-                  </th>
-                  <th
-                    style={{
-                      padding: "8px 10px",
-                      borderBottom: "1px solid #d4d4d4",
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                    }}
-                    className="office-col-hide-sm"
-                  >
-                    Type
-                  </th>
-                  <th
-                    style={{
-                      padding: "8px 10px",
-                      borderBottom: "1px solid #d4d4d4",
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Size
-                  </th>
-                  <th
-                    style={{
-                      padding: "8px 10px",
-                      borderBottom: "1px solid #d4d4d4",
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.kind === "manifest" &&
-                  folders.map((folder) => (
-                    <tr key={`dir-${folder}`} style={{ borderTop: "1px solid #ebebeb" }}>
-                      <td style={{ padding: "8px 10px" }} colSpan={4}>
-                        <button
-                          type="button"
-                          onClick={() => setDirPath(dirPath ? `${dirPath}/${folder}` : folder)}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            border: 0,
-                            background: "transparent",
-                            cursor: "pointer",
-                            padding: 0,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: "#0b57d0",
-                            textAlign: "left",
-                          }}
-                        >
-                          <FolderIcon />
-                          {folder}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                {files.map((file) => {
-                  const busy = signingPath === file.storagePath;
-                  return (
-                    <tr key={file.storagePath} style={{ borderTop: "1px solid #ebebeb" }}>
-                      <td style={{ padding: "8px 10px", maxWidth: 360 }}>
-                        <button
-                          type="button"
-                          onClick={() => onOpenFile(file)}
-                          disabled={busy}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            border: 0,
-                            background: "transparent",
-                            cursor: busy ? "wait" : "pointer",
-                            padding: 0,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: "#0b57d0",
-                            textAlign: "left",
-                            wordBreak: "break-word",
-                          }}
-                        >
-                          <FileIcon image={isImageFileName(file.name)} />
-                          {file.name}
-                        </button>
-                      </td>
-                      <td
-                        style={{ padding: "8px 10px", color: "#5f5f5f", whiteSpace: "nowrap" }}
-                        className="office-col-hide-sm"
-                      >
-                        {fileTypeLabel(file.name)}
-                      </td>
-                      <td style={{ padding: "8px 10px", color: "#5f5f5f", whiteSpace: "nowrap" }}>
-                        {formatFileSize(file.sizeBytes)}
-                      </td>
-                      <td style={{ padding: "8px 10px" }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {imageFiles.length > 0 && (
+            <section aria-label="Photo gallery" style={{ marginBottom: hasListRows ? 18 : 0 }}>
+              <h2
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  margin: "0 0 10px",
+                  color: "#3a3a3a",
+                }}
+              >
+                Photos
+              </h2>
+              <div
+                className="office-photo-grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {imageFiles.map((file) => (
+                  <PhotoThumb
+                    key={file.storagePath}
+                    entry={file}
+                    busy={signingPath === file.storagePath}
+                    cachedUrl={urlCache[file.storagePath] ?? file.signedUrl}
+                    onNeedUrl={() => resolveUrl(file)}
+                    onOpen={() => onOpenFile(file)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {hasListRows && (
+            <div className="office-explorer-table" style={{ overflowX: "auto" }}>
+              {imageFiles.length > 0 && (
+                <h2
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    margin: "0 0 10px",
+                    color: "#3a3a3a",
+                  }}
+                >
+                  Folders & other files
+                </h2>
+              )}
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 13,
+                  background: "#fff",
+                  border: "1px solid #d4d4d4",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f3f3f3", textAlign: "left" }}>
+                    <th style={{ padding: "8px 10px", borderBottom: "1px solid #d4d4d4", fontWeight: 600 }}>
+                      Name
+                    </th>
+                    <th
+                      style={{
+                        padding: "8px 10px",
+                        borderBottom: "1px solid #d4d4d4",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                      className="office-col-hide-sm"
+                    >
+                      Type
+                    </th>
+                    <th
+                      style={{
+                        padding: "8px 10px",
+                        borderBottom: "1px solid #d4d4d4",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Size
+                    </th>
+                    <th
+                      style={{
+                        padding: "8px 10px",
+                        borderBottom: "1px solid #d4d4d4",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.kind === "manifest" &&
+                    folders.map((folder) => (
+                      <tr key={`dir-${folder}`} style={{ borderTop: "1px solid #ebebeb" }}>
+                        <td style={{ padding: "8px 10px" }} colSpan={4}>
+                          <button
+                            type="button"
+                            onClick={() => setDirPath(dirPath ? `${dirPath}/${folder}` : folder)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              border: 0,
+                              background: "transparent",
+                              cursor: "pointer",
+                              padding: 0,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: "#0b57d0",
+                              textAlign: "left",
+                            }}
+                          >
+                            <FolderIcon />
+                            {folder}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  {otherFiles.map((file) => {
+                    const busy = signingPath === file.storagePath;
+                    return (
+                      <tr key={file.storagePath} style={{ borderTop: "1px solid #ebebeb" }}>
+                        <td style={{ padding: "8px 10px", maxWidth: 360 }}>
                           <button
                             type="button"
                             onClick={() => onOpenFile(file)}
                             disabled={busy}
-                            style={btnSecondary}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              border: 0,
+                              background: "transparent",
+                              cursor: busy ? "wait" : "pointer",
+                              padding: 0,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: "#0b57d0",
+                              textAlign: "left",
+                              wordBreak: "break-word",
+                            }}
                           >
-                            {busy ? "…" : "Open"}
+                            <FileIcon image={false} />
+                            {file.name}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => onDownloadFile(file)}
-                            disabled={busy}
-                            style={btnSecondary}
-                          >
-                            Download
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td
+                          style={{ padding: "8px 10px", color: "#5f5f5f", whiteSpace: "nowrap" }}
+                          className="office-col-hide-sm"
+                        >
+                          {fileTypeLabel(file.name)}
+                        </td>
+                        <td style={{ padding: "8px 10px", color: "#5f5f5f", whiteSpace: "nowrap" }}>
+                          {formatFileSize(file.sizeBytes)}
+                        </td>
+                        <td style={{ padding: "8px 10px" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => onOpenFile(file)}
+                              disabled={busy}
+                              style={btnSecondary}
+                            >
+                              {busy ? "…" : "Open"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDownloadFile(file)}
+                              disabled={busy}
+                              style={btnSecondary}
+                            >
+                              Download
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -422,26 +528,102 @@ export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.75)",
+            background: "rgba(0,0,0,0.82)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            padding: 20,
+            padding: 16,
             zIndex: 50,
           }}
           onClick={() => setPreview(null)}
         >
           <div
-            style={{ maxWidth: "min(100%, 960px)", maxHeight: "90vh", textAlign: "center" }}
+            style={{
+              width: "100%",
+              maxWidth: "min(100%, 1100px)",
+              maxHeight: "92vh",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <p style={{ color: "#fff", fontSize: 14, marginBottom: 10 }}>{preview.entry.name}</p>
-            <img
-              src={preview.url}
-              alt={preview.entry.name}
-              style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 4 }}
-            />
+            <p
+              style={{
+                color: "#fff",
+                fontSize: 14,
+                margin: "0 0 10px",
+                wordBreak: "break-word",
+                maxWidth: "100%",
+              }}
+            >
+              {preview.entry.name}
+              {imageFiles.length > 1 && previewIndex >= 0
+                ? ` · ${previewIndex + 1} / ${imageFiles.length}`
+                : ""}
+            </p>
+            <div
+              style={{
+                position: "relative",
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              {imageFiles.length > 1 && (
+                <button
+                  type="button"
+                  aria-label="Previous photo"
+                  onClick={() => void showAdjacent(-1)}
+                  style={{
+                    ...btnSecondary,
+                    position: "absolute",
+                    left: 0,
+                    zIndex: 1,
+                    background: "rgba(255,255,255,0.92)",
+                    minWidth: 40,
+                    padding: "10px 12px",
+                  }}
+                  className="office-lightbox-nav"
+                >
+                  ‹
+                </button>
+              )}
+              <img
+                src={preview.url}
+                alt={preview.entry.name}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "72vh",
+                  objectFit: "contain",
+                  borderRadius: 4,
+                  background: "#111",
+                }}
+              />
+              {imageFiles.length > 1 && (
+                <button
+                  type="button"
+                  aria-label="Next photo"
+                  onClick={() => void showAdjacent(1)}
+                  style={{
+                    ...btnSecondary,
+                    position: "absolute",
+                    right: 0,
+                    zIndex: 1,
+                    background: "rgba(255,255,255,0.92)",
+                    minWidth: 40,
+                    padding: "10px 12px",
+                  }}
+                  className="office-lightbox-nav"
+                >
+                  ›
+                </button>
+              )}
+            </div>
             <div
               style={{
                 marginTop: 14,
@@ -477,9 +659,139 @@ export function JobFileExplorer({ jobId, title, data, embedded }: Props) {
       <style>{`
         @media (max-width: 640px) {
           .office-col-hide-sm { display: none !important; }
+          .office-photo-grid {
+            grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)) !important;
+            gap: 6px !important;
+          }
         }
       `}</style>
     </div>
+  );
+}
+
+type PhotoThumbProps = {
+  entry: ExplorerEntry;
+  busy: boolean;
+  cachedUrl: string | null;
+  onNeedUrl: () => Promise<string | null>;
+  onOpen: () => void;
+};
+
+/** Lazy-sign when the thumb scrolls into view — never batch-sign on page load. */
+function PhotoThumb({ entry, busy, cachedUrl, onNeedUrl, onOpen }: PhotoThumbProps) {
+  const rootRef = useRef<HTMLButtonElement>(null);
+  const onNeedUrlRef = useRef(onNeedUrl);
+  onNeedUrlRef.current = onNeedUrl;
+  const [src, setSrc] = useState<string | null>(cachedUrl);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const requestedRef = useRef(false);
+
+  useEffect(() => {
+    if (cachedUrl) setSrc(cachedUrl);
+  }, [cachedUrl]);
+
+  useEffect(() => {
+    if (src || requestedRef.current) return;
+    const el = rootRef.current;
+    if (!el) return;
+
+    const load = () => {
+      if (requestedRef.current) return;
+      requestedRef.current = true;
+      setLoading(true);
+      void onNeedUrlRef.current().then((url) => {
+        setLoading(false);
+        if (url) setSrc(url);
+        else setFailed(true);
+      });
+    };
+
+    if (typeof IntersectionObserver === "undefined") {
+      load();
+      return;
+    }
+
+    const io = new IntersectionObserver(
+      (observed) => {
+        if (observed.some((e) => e.isIntersecting)) {
+          load();
+          io.disconnect();
+        }
+      },
+      { rootMargin: "120px", threshold: 0.01 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [src, entry.storagePath]);
+
+  return (
+    <button
+      ref={rootRef}
+      type="button"
+      onClick={onOpen}
+      disabled={busy && !src}
+      aria-label={`Open ${entry.name}`}
+      title={entry.name}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
+        border: "1px solid #d4d4d4",
+        borderRadius: 4,
+        background: "#f7f7f7",
+        padding: 0,
+        cursor: busy && !src ? "wait" : "pointer",
+        overflow: "hidden",
+        textAlign: "left",
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          aspectRatio: "1 / 1",
+          background: "#e8e8e8",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          position: "relative",
+        }}
+      >
+        {src && !failed ? (
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            onError={() => setFailed(true)}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        ) : (
+          <span style={{ color: "#8a8a8a", fontSize: 12 }}>
+            {failed ? "Preview n/a" : loading || busy ? "…" : "Photo"}
+          </span>
+        )}
+      </div>
+      <span
+        style={{
+          fontSize: 11,
+          lineHeight: 1.25,
+          padding: "5px 6px",
+          color: "#1a1a1a",
+          fontWeight: 600,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {entry.name}
+      </span>
+    </button>
   );
 }
 
