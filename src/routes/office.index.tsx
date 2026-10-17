@@ -212,10 +212,10 @@ function OfficeExplorer() {
           }}
         >
           <p style={{ fontSize: 14, color: "#6b5d4f", lineHeight: 1.5, margin: 0 }}>
-            Job list is unavailable — the Netlify site is missing server storage credentials. Ask Claude (or whoever
-            manages deploys) to check <strong>Netlify → Site configuration → Environment variables</strong> for{" "}
-            <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code>, then redeploy. You do not need
-            Lovable publish or a Supabase account. See <code>docs/nlf-office-env.md</code>.
+            Job list is unavailable — Netlify needs <code>EXPORTS_LIST_TOKEN</code> (same Bearer token as Lovable).
+            Ask Claude to confirm that variable under <strong>Netlify → Site configuration → Environment variables</strong>,
+            then wait for production publish. Do not add <code>SUPABASE_*</code> keys on Netlify. See{" "}
+            <code>docs/nlf-office-env.md</code>.
           </p>
         </section>
       )}

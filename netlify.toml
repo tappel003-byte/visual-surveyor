@@ -7,5 +7,5 @@
   command = "bun run build"
   publish = "dist"
 
-# NLF office explorer: NLF_OFFICE_PASSWORD, NLF_SESSION_SECRET, and (Stage B) SUPABASE_URL +
-# SUPABASE_SERVICE_ROLE_KEY — see docs/nlf-office-env.md (no custom domain required).
+# NLF office explorer: NLF_OFFICE_PASSWORD, NLF_SESSION_SECRET, EXPORTS_LIST_TOKEN only.
+# Do not set SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY on Netlify — see docs/nlf-office-env.md.

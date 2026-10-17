@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { officeDownloadStorageConfigured } from "@/server/office-download";
-import { fetchExportJobList, type OfficeJobFolder } from "@/server/office-jobs";
+import {
+  exportsListTokenConfigured,
+  fetchExportJobListFromLovable,
+  type OfficeJobFolder,
+} from "@/server/office-jobs";
 import { hasValidOfficeSession } from "@/server/office-session";
 
 export type OfficeJobListResult = {
@@ -16,11 +19,11 @@ export const officeListJobs = createServerFn({ method: "POST" }).handler(async (
     throw new Error("Sign in required.");
   }
 
-  if (!officeDownloadStorageConfigured()) {
+  if (!exportsListTokenConfigured()) {
     return { listAvailable: false, jobs: [] };
   }
 
-  const result = await fetchExportJobList();
+  const result = await fetchExportJobListFromLovable();
   if (!result.ok) {
     return { listAvailable: false, jobs: [] };
   }
