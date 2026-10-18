@@ -75,6 +75,10 @@ type Props = {
   autoPackageDownload?: boolean;
   /** Lets OfficeChrome toolbar Download run the same package ZIP while already on this job. */
   registerPackageDownload?: (fn: (() => void) | null) => void;
+  /** Lets OfficeChrome ← Back go up one folder or return to the job list. */
+  registerNavigateUp?: (fn: (() => void) | null) => void;
+  /** Folder segments under the job (chrome breadcrumb + Back tooltip). */
+  onFolderPathChange?: (segments: string[]) => void;
 };
 
 export function JobFileExplorer({
@@ -86,6 +90,8 @@ export function JobFileExplorer({
   onDisplayNameChange,
   autoPackageDownload = false,
   registerPackageDownload,
+  registerNavigateUp,
+  onFolderPathChange,
 }: Props) {
   const navigate = useNavigate();
   const [dirPath, setDirPath] = useState("");
@@ -165,6 +171,18 @@ export function JobFileExplorer({
     }
     void navigate({ to: "/office" });
   };
+
+  useEffect(() => {
+    onFolderPathChange?.(dirPath ? dirPath.split("/") : []);
+  }, [dirPath, onFolderPathChange]);
+
+  useEffect(() => {
+    registerNavigateUp?.(() => {
+      goBackUp();
+    });
+    return () => registerNavigateUp?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keep chrome Back wired to latest folder
+  }, [dirPath, registerNavigateUp]);
 
   const resolveUrl = async (
     entry: ExplorerEntry,
@@ -362,26 +380,6 @@ export function JobFileExplorer({
             marginBottom: 4,
           }}
         >
-          <button
-            type="button"
-            className={OFFICE_BTN_CLASS}
-            onClick={goBackUp}
-            title={dirPath ? "Back to parent folder" : "Back to office job list"}
-            aria-label={dirPath ? "Back to parent folder" : "Back to office job list"}
-            style={{
-              ...btnSecondary,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "4px 10px",
-              fontWeight: 700,
-            }}
-          >
-            <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
-              ←
-            </span>
-            Back
-          </button>
           <h1
             style={{
               fontSize: embedded ? 15 : 16,

@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { JobFileExplorer } from "@/components/office/JobFileExplorer";
 import { OfficeChrome, PGG } from "@/components/office/OfficeChrome";
@@ -81,6 +81,7 @@ function OfficeJobBrowserPage() {
     title: string;
     download: Awaited<ReturnType<typeof officeGetJobDownload>>;
   };
+  const navigate = useNavigate();
   const cached = typeof window !== "undefined" ? readJobsCache() : null;
   const [jobs, setJobs] = useState<OfficeJobFolder[]>(cached?.jobs ?? []);
   const [listAvailableState, setListAvailableState] = useState(cached?.listAvailable ?? true);
@@ -88,7 +89,9 @@ function OfficeJobBrowserPage() {
   const [listHydrating, setListHydrating] = useState(!cached);
   const [explorerStatus, setExplorerStatus] = useState<string | null>(null);
   const [titleOverride, setTitleOverride] = useState<string | null>(null);
+  const [folderSegments, setFolderSegments] = useState<string[]>([]);
   const packageTriggerRef = useRef<(() => void) | null>(null);
+  const navigateUpRef = useRef<(() => void) | null>(null);
   const [autoPackageDownload] = useState(() => {
     if (typeof window === "undefined") return false;
     try {
@@ -152,11 +155,15 @@ function OfficeJobBrowserPage() {
     (listHydrating && !jobs.length ? "Loading jobs…" : null) ||
     (refreshing && jobs.length ? "Refreshing job list…" : null);
 
+  const navigateUpLabel =
+    folderSegments.length > 0 ? "Back to parent folder" : "Back to office job list";
+
   return (
     <OfficeChrome
       jobs={jobs}
       listAvailable={listAvailableState}
       selectedJobId={jobId}
+      breadcrumbExtra={folderSegments}
       onRefresh={() => onRefresh().catch(() => {})}
       refreshing={refreshing}
       onJobsChanged={(next) => {
@@ -166,6 +173,14 @@ function OfficeJobBrowserPage() {
       onLogout={() => onLogout().catch(() => {})}
       statusMessage={status}
       onDownloadPackage={() => packageTriggerRef.current?.()}
+      onNavigateUp={() => {
+        if (navigateUpRef.current) {
+          navigateUpRef.current();
+          return;
+        }
+        void navigate({ to: "/office" });
+      }}
+      navigateUpLabel={navigateUpLabel}
     >
       <JobFileExplorer
         jobId={jobId}
@@ -184,6 +199,12 @@ function OfficeJobBrowserPage() {
         autoPackageDownload={autoPackageDownload}
         registerPackageDownload={(fn) => {
           packageTriggerRef.current = fn;
+        }}
+        registerNavigateUp={(fn) => {
+          navigateUpRef.current = fn;
+        }}
+        onFolderPathChange={(segments) => {
+          setFolderSegments((prev) => (prev.join("/") === segments.join("/") ? prev : segments));
         }}
       />
     </OfficeChrome>
