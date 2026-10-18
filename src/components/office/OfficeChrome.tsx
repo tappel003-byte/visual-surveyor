@@ -336,6 +336,13 @@ type Props = {
    * On the jobs list, omit this — Chrome navigates to the job and auto-starts.
    */
   onDownloadPackage?: () => void;
+  /**
+   * Primary ← Back (command bar). On a job page: up one folder or to the job list.
+   * On the jobs list: omit — Chrome links Back to Field home.
+   */
+  onNavigateUp?: () => void;
+  /** Tooltip / aria for onNavigateUp (e.g. "Back to parent folder"). */
+  navigateUpLabel?: string;
   children: ReactNode;
 };
 
@@ -350,12 +357,14 @@ export function OfficeChrome({
   onLogout,
   statusMessage = null,
   onDownloadPackage,
+  onNavigateUp,
+  navigateUpLabel,
   children,
 }: Props) {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<
-    "delete" | "from" | "name" | "open" | "logout" | "download" | null
+    "delete" | "from" | "name" | "open" | "logout" | "download" | "back" | null
   >(null);
   const [localStatus, setLocalStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -364,6 +373,14 @@ export function OfficeChrome({
   const selected = selectedJobId ? jobs.find((j) => j.id === selectedJobId) : null;
   const selectedTitle = selected?.displayName || selected?.id || "Jobs";
   const onJobsRoot = !selectedJobId;
+
+  const backTitle =
+    navigateUpLabel ||
+    (selectedJobId
+      ? breadcrumbExtra.length > 0
+        ? "Back to parent folder"
+        : "Back to office job list"
+      : "Back to field home");
 
   const statusText =
     statusMessage ||
@@ -380,9 +397,11 @@ export function OfficeChrome({
               ? "Signing out…"
               : busyAction === "download"
                 ? "Starting download…"
-                : refreshing
-                  ? "Refreshing…"
-                  : null);
+                : busyAction === "back"
+                  ? "Going back…"
+                  : refreshing
+                    ? "Refreshing…"
+                    : null);
 
   useEffect(() => {
     if (!localStatus || busyAction === "download") return;
@@ -538,6 +557,36 @@ export function OfficeChrome({
     onRefresh();
   };
 
+  /** Primary Back: job page uses onNavigateUp; list page → Field home. */
+  const onBackClick = () => {
+    if (busy) return;
+    if (selectedJobId && onNavigateUp) {
+      setBusyAction("back");
+      setLocalStatus("Going back…");
+      try {
+        onNavigateUp();
+      } finally {
+        window.setTimeout(() => {
+          setBusyAction((cur) => (cur === "back" ? null : cur));
+          setLocalStatus((cur) => (cur === "Going back…" ? null : cur));
+        }, 280);
+      }
+      return;
+    }
+    if (selectedJobId) {
+      setBusyAction("back");
+      setLocalStatus("Going back…");
+      void navigate({ to: "/office" }).finally(() => {
+        setBusyAction((cur) => (cur === "back" ? null : cur));
+        setLocalStatus(null);
+      });
+      return;
+    }
+    setBusyAction("back");
+    setLocalStatus("Going back…");
+    window.location.href = "/";
+  };
+
   return (
     <div style={root}>
       {/* Title bar */}
@@ -588,15 +637,51 @@ export function OfficeChrome({
         </button>
       </header>
 
-      {/* Command bar — grouped like Explorer */}
+      {/* Command bar — grouped like Explorer; ← Back first (primary nav) */}
       <div style={toolbar} role="toolbar" aria-label="File commands">
+        <div className="office-cmd-group">
+          {onJobsRoot ? (
+            <a
+              href="/"
+              className={`${OFFICE_BTN_CLASS} office-btn-primary`}
+              style={{ ...toolBtn, fontWeight: 700, gap: 4 }}
+              title={backTitle}
+              aria-label={backTitle}
+              onClick={() => {
+                setBusyAction("back");
+                setLocalStatus("Going back…");
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+                ←
+              </span>
+              Back
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={onBackClick}
+              disabled={busy}
+              className={`${OFFICE_BTN_CLASS} office-btn-primary${busyAction === "back" ? " is-busy" : ""}`}
+              style={{ ...toolBtn, fontWeight: 700, gap: 4 }}
+              title={backTitle}
+              aria-label={backTitle}
+            >
+              <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+                ←
+              </span>
+              {busyAction === "back" ? "…" : "Back"}
+            </button>
+          )}
+        </div>
+        <span className="office-cmd-sep" aria-hidden />
         <div className="office-cmd-group">
           {selectedJobId ? (
             <Link
               to="/office/jobs/$jobId"
               params={{ jobId: selectedJobId }}
               style={toolBtn}
-              className={`${OFFICE_BTN_CLASS} office-btn-primary${busyAction === "open" ? " is-busy" : ""}`}
+              className={`${OFFICE_BTN_CLASS}${busyAction === "open" ? " is-busy" : ""}`}
               onClick={markOpenBusy}
               aria-disabled={busyAction === "open"}
             >
