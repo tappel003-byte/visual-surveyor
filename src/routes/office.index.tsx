@@ -470,9 +470,25 @@ function OfficeExplorer() {
     setListError(null);
     try {
       await officeDeleteJob({ data: { jobId: job.id, source: job.source } });
-      setJobList(jobList.filter((j) => j.id !== job.id));
-      setStatusMessage("Deleted.");
-      window.setTimeout(() => setStatusMessage(null), 1800);
+      // Drop cache, then re-fetch so dual-host leftovers cannot linger.
+      clearJobsCache();
+      setStatusMessage("Deleted — refreshing list…");
+      try {
+        const next = await officeListJobs();
+        writeJobsCache(next);
+        setJobs(next);
+        const stillThere = next.jobs.some((j) => j.id === job.id);
+        setStatusMessage(
+          stillThere
+            ? "Delete ran, but the job is still listed — tap Refresh. If it stays, tell the team."
+            : "Deleted.",
+        );
+        window.setTimeout(() => setStatusMessage(null), stillThere ? 5000 : 1800);
+      } catch {
+        setJobList(jobList.filter((j) => j.id !== job.id));
+        setStatusMessage("Deleted.");
+        window.setTimeout(() => setStatusMessage(null), 1800);
+      }
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Delete failed.");
       setStatusMessage(null);
