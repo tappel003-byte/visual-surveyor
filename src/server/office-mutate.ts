@@ -5,11 +5,17 @@ import {
   writeManifest,
   type LockerManifest,
 } from "@/server/office-blobs";
+import { isLovableOfficeRuntime, type OfficeJobSource } from "@/server/office-host";
 import type { OfficePinsPayload, PinDescriptionUpdate } from "@/lib/office-pins";
 import {
-  readExportJobPins,
-  updateExportJobPinDescriptions,
+  readExportJobPins as readBlobsPins,
+  updateExportJobPinDescriptions as updateBlobsPins,
 } from "@/server/office-pins";
+
+const EXPORTS_DELETE_URL = "https://visual-surveyor.lovable.app/api/public/exports-delete";
+const EXPORTS_FROM_URL = "https://visual-surveyor.lovable.app/api/public/exports-from";
+const EXPORTS_NAME_URL = "https://visual-surveyor.lovable.app/api/public/exports-name";
+const EXPORTS_PINS_URL = "https://visual-surveyor.lovable.app/api/public/exports-pins";
 
 /** Human-facing job label for office list / header (keeps spaces; strips path-illegal chars). */
 export function sanitizeOfficeFolderName(raw: string): string {
@@ -22,15 +28,57 @@ export function sanitizeOfficeFolderName(raw: string): string {
 }
 
 /** Delete every object under the Blobs job folder. */
-export async function deleteExportJobFolder(jobId: string): Promise<{ deleted: number }> {
+export async function deleteExportJobFolderBlobs(jobId: string): Promise<{ deleted: number }> {
   if (!isSafeExportJobId(jobId)) {
     throw new Error("Invalid job id.");
   }
   return deleteJobFolder(jobId);
 }
 
-/** Update or create manifest syncedFrom / deviceName for office From column. */
-export async function updateExportJobFrom(
+/** Delete every object under exports/<jobId>/ (Lovable / service role). */
+export async function deleteExportJobFolderSupabase(jobId: string): Promise<{ deleted: number }> {
+  if (!isSafeExportJobId(jobId)) {
+    throw new Error("Invalid job id.");
+  }
+
+  const { listStoredObjectsForJob } = await import("@/server/export-storage-stats");
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const bucket = supabaseAdmin.storage.from("exports");
+
+  let objects: Awaited<ReturnType<typeof listStoredObjectsForJob>> = [];
+  try {
+    objects = await listStoredObjectsForJob(bucket, jobId);
+  } catch (e) {
+    console.error("[office-mutate] list for delete failed", jobId, e);
+    throw new Error("Could not list job files for delete.");
+  }
+
+  const paths = objects.map((o) => `${jobId}/${o.relativePath}`);
+  if (!paths.length) {
+    const { error } = await bucket.remove([`${jobId}/manifest.json`]);
+    if (error) {
+      console.warn("[office-mutate] empty-job remove", error.message);
+    }
+    return { deleted: 0 };
+  }
+
+  let deleted = 0;
+  const chunkSize = 100;
+  for (let i = 0; i < paths.length; i += chunkSize) {
+    const chunk = paths.slice(i, i + chunkSize);
+    const { data, error } = await bucket.remove(chunk);
+    if (error) {
+      console.error("[office-mutate] remove failed", jobId, error.message);
+      throw new Error(`Delete failed: ${error.message}`);
+    }
+    deleted += data?.length ?? chunk.length;
+  }
+
+  return { deleted };
+}
+
+/** Update Blobs manifest syncedFrom. */
+export async function updateExportJobFromBlobs(
   jobId: string,
   syncedFrom: string,
 ): Promise<{ syncedFrom: string }> {
@@ -42,7 +90,7 @@ export async function updateExportJobFrom(
     throw new Error("From label required.");
   }
 
-  let manifest: LockerManifest = (await readManifest(jobId)) || {
+  const manifest: LockerManifest = (await readManifest(jobId)) || {
     version: 1,
     folderName: jobId,
     files: [],
@@ -56,8 +104,8 @@ export async function updateExportJobFrom(
   return { syncedFrom: label };
 }
 
-/** Update manifest folderName — office list title / job header. */
-export async function updateExportJobFolderName(
+/** Update Blobs manifest folderName. */
+export async function updateExportJobFolderNameBlobs(
   jobId: string,
   folderName: string,
 ): Promise<{ folderName: string; officeNameEditedAt: string }> {
@@ -69,7 +117,7 @@ export async function updateExportJobFolderName(
     throw new Error("Job name required.");
   }
 
-  let manifest: LockerManifest = (await readManifest(jobId)) || {
+  const manifest: LockerManifest = (await readManifest(jobId)) || {
     version: 1,
     folderName: jobId,
     files: [],
@@ -84,52 +132,325 @@ export async function updateExportJobFolderName(
   return { folderName: label, officeNameEditedAt: nowIso };
 }
 
-/** Blobs delete (session-gated via server fn). */
-export async function fetchDeleteExportJobFromLovable(
+/** Netlify → Lovable delete API. */
+export async function fetchDeleteExportJobViaLovableApi(
   jobId: string,
 ): Promise<{ ok: true; deleted: number } | { ok: false; unauthorized: boolean }> {
-  const result = await deleteExportJobFolder(jobId);
-  return { ok: true, deleted: result.deleted };
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const url = `${EXPORTS_DELETE_URL}?jobId=${encodeURIComponent(jobId)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (!res.ok) {
+    throw new Error(
+      `Exports delete failed (${res.status}). Publish once in Lovable so /api/public/exports-delete is live.`,
+    );
+  }
+  const body = (await res.json()) as { deleted?: number };
+  return { ok: true, deleted: Number(body.deleted) || 0 };
 }
 
-/** Blobs From write-back. */
-export async function fetchSetExportFromFromLovable(
+/** Netlify → Lovable From write-back. */
+export async function fetchSetExportFromViaLovableApi(
   jobId: string,
   syncedFrom: string,
 ): Promise<{ ok: true; syncedFrom: string } | { ok: false; unauthorized: boolean }> {
-  const result = await updateExportJobFrom(jobId, syncedFrom);
-  return { ok: true, syncedFrom: result.syncedFrom };
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const res = await fetch(EXPORTS_FROM_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jobId, syncedFrom }),
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (!res.ok) {
+    throw new Error(
+      `Exports from update failed (${res.status}). Publish once in Lovable so /api/public/exports-from is live.`,
+    );
+  }
+  const body = (await res.json()) as { syncedFrom?: string };
+  return { ok: true, syncedFrom: body.syncedFrom?.trim() || syncedFrom.trim() };
 }
 
-/** Blobs job display-name write-back. */
-export async function fetchSetExportNameFromLovable(
+/** Netlify → Lovable job display-name write-back. */
+export async function fetchSetExportNameViaLovableApi(
   jobId: string,
   folderName: string,
 ): Promise<
   | { ok: true; folderName: string; officeNameEditedAt: string | null }
   | { ok: false; unauthorized: boolean }
 > {
-  const result = await updateExportJobFolderName(jobId, folderName);
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const res = await fetch(EXPORTS_NAME_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jobId, folderName }),
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (res.status === 404) {
+    throw new Error(
+      "Job name API missing (404). Publish once in Lovable so /api/public/exports-name is live.",
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Exports name update failed (${res.status}).`);
+  }
+  const body = (await res.json()) as { folderName?: string; officeNameEditedAt?: string };
   return {
     ok: true,
-    folderName: result.folderName,
-    officeNameEditedAt: result.officeNameEditedAt,
+    folderName: body.folderName?.trim() || sanitizeOfficeFolderName(folderName),
+    officeNameEditedAt: body.officeNameEditedAt?.trim() || null,
   };
 }
 
-/** Blobs: load pin notes from pins.csv. */
-export async function fetchExportPinsFromLovable(
+/** Netlify → Lovable: load pin notes. */
+export async function fetchExportPinsViaLovableApi(
   jobId: string,
 ): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
-  const payload = await readExportJobPins(jobId);
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const url = `${EXPORTS_PINS_URL}?jobId=${encodeURIComponent(jobId)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (res.status === 404) {
+    throw new Error(
+      "Pin notes API missing (404). Publish once in Lovable so /api/public/exports-pins is live.",
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Exports pins read failed (${res.status})`);
+  }
+  const payload = (await res.json()) as OfficePinsPayload;
   return { ok: true, payload };
 }
 
-/** Blobs: write pin description edits back to pins.csv. */
-export async function fetchUpdateExportPinsFromLovable(
+/** Netlify → Lovable: write pin description edits. */
+export async function fetchUpdateExportPinsViaLovableApi(
   jobId: string,
   updates: PinDescriptionUpdate[],
 ): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
-  const payload = await updateExportJobPinDescriptions(jobId, updates);
+  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
+  if (!token) return { ok: false, unauthorized: true };
+
+  const res = await fetch(EXPORTS_PINS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jobId, updates }),
+    cache: "no-store",
+  });
+
+  if (res.status === 401) return { ok: false, unauthorized: true };
+  if (res.status === 404) {
+    throw new Error(
+      "Pin notes API missing (404). Publish once in Lovable so /api/public/exports-pins is live.",
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Exports pins update failed (${res.status})`);
+  }
+  const payload = (await res.json()) as OfficePinsPayload;
   return { ok: true, payload };
+}
+
+async function jobExistsInBlobs(jobId: string): Promise<boolean> {
+  try {
+    const files = await listJobFilesSafe(jobId);
+    return files > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function listJobFilesSafe(jobId: string): Promise<number> {
+  const { listJobFiles } = await import("@/server/office-blobs");
+  const files = await listJobFiles(jobId);
+  return files.length;
+}
+
+/**
+ * Delete — route by source. Never migrate; only remove from the locker that holds it.
+ * Prefer preferredSource; else Blobs if present, else Lovable API / Supabase.
+ */
+export async function fetchDeleteExportJobFromLovable(
+  jobId: string,
+  preferredSource?: OfficeJobSource | null,
+): Promise<{ ok: true; deleted: number } | { ok: false; unauthorized: boolean }> {
+  if (isLovableOfficeRuntime()) {
+    const result = await deleteExportJobFolderSupabase(jobId);
+    return { ok: true, deleted: result.deleted };
+  }
+
+  const preferBlobs =
+    preferredSource === "blobs" ||
+    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
+
+  if (preferBlobs) {
+    const result = await deleteExportJobFolderBlobs(jobId);
+    return { ok: true, deleted: result.deleted };
+  }
+
+  return fetchDeleteExportJobViaLovableApi(jobId);
+}
+
+export async function fetchSetExportFromFromLovable(
+  jobId: string,
+  syncedFrom: string,
+  preferredSource?: OfficeJobSource | null,
+): Promise<{ ok: true; syncedFrom: string } | { ok: false; unauthorized: boolean }> {
+  if (isLovableOfficeRuntime()) {
+    // Direct Supabase write via local public API path — reuse Lovable API self-call would need token.
+    // Import pre-cutover style: use supabase admin through a small inline (same as pre updateExportJobFrom).
+    const { updateExportJobFrom: updateSupa } = await import("@/server/office-mutate-supabase");
+    const result = await updateSupa(jobId, syncedFrom);
+    return { ok: true, syncedFrom: result.syncedFrom };
+  }
+
+  const preferBlobs =
+    preferredSource === "blobs" ||
+    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
+
+  if (preferBlobs) {
+    const result = await updateExportJobFromBlobs(jobId, syncedFrom);
+    return { ok: true, syncedFrom: result.syncedFrom };
+  }
+
+  return fetchSetExportFromViaLovableApi(jobId, syncedFrom);
+}
+
+export async function fetchSetExportNameFromLovable(
+  jobId: string,
+  folderName: string,
+  preferredSource?: OfficeJobSource | null,
+): Promise<
+  | { ok: true; folderName: string; officeNameEditedAt: string | null }
+  | { ok: false; unauthorized: boolean }
+> {
+  if (isLovableOfficeRuntime()) {
+    const { updateExportJobFolderName: updateSupa } =
+      await import("@/server/office-mutate-supabase");
+    const result = await updateSupa(jobId, folderName);
+    return {
+      ok: true,
+      folderName: result.folderName,
+      officeNameEditedAt: result.officeNameEditedAt,
+    };
+  }
+
+  const preferBlobs =
+    preferredSource === "blobs" ||
+    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
+
+  if (preferBlobs) {
+    const result = await updateExportJobFolderNameBlobs(jobId, folderName);
+    return {
+      ok: true,
+      folderName: result.folderName,
+      officeNameEditedAt: result.officeNameEditedAt,
+    };
+  }
+
+  return fetchSetExportNameViaLovableApi(jobId, folderName);
+}
+
+export async function fetchExportPinsFromLovable(
+  jobId: string,
+  preferredSource?: OfficeJobSource | null,
+): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
+  if (isLovableOfficeRuntime()) {
+    const { readExportJobPinsSupabase } = await import("@/server/office-pins-supabase");
+    const payload = await readExportJobPinsSupabase(jobId);
+    return { ok: true, payload };
+  }
+
+  const preferBlobs =
+    preferredSource === "blobs" ||
+    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
+
+  if (preferBlobs) {
+    const payload = await readBlobsPins(jobId);
+    return { ok: true, payload };
+  }
+
+  return fetchExportPinsViaLovableApi(jobId);
+}
+
+export async function fetchUpdateExportPinsFromLovable(
+  jobId: string,
+  updates: PinDescriptionUpdate[],
+  preferredSource?: OfficeJobSource | null,
+): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
+  if (isLovableOfficeRuntime()) {
+    const { updateExportJobPinDescriptionsSupabase } =
+      await import("@/server/office-pins-supabase");
+    const payload = await updateExportJobPinDescriptionsSupabase(jobId, updates);
+    return { ok: true, payload };
+  }
+
+  const preferBlobs =
+    preferredSource === "blobs" ||
+    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
+
+  if (preferBlobs) {
+    const payload = await updateBlobsPins(jobId, updates);
+    return { ok: true, payload };
+  }
+
+  return fetchUpdateExportPinsViaLovableApi(jobId, updates);
+}
+
+/** @deprecated Prefer deleteExportJobFolderBlobs / Supabase. */
+export async function deleteExportJobFolder(jobId: string): Promise<{ deleted: number }> {
+  if (isLovableOfficeRuntime()) return deleteExportJobFolderSupabase(jobId);
+  return deleteExportJobFolderBlobs(jobId);
+}
+
+/** @deprecated */
+export async function updateExportJobFrom(
+  jobId: string,
+  syncedFrom: string,
+): Promise<{ syncedFrom: string }> {
+  const r = await fetchSetExportFromFromLovable(jobId, syncedFrom);
+  if (!r.ok) throw new Error("Could not update From.");
+  return { syncedFrom: r.syncedFrom };
+}
+
+/** @deprecated */
+export async function updateExportJobFolderName(
+  jobId: string,
+  folderName: string,
+): Promise<{ folderName: string; officeNameEditedAt: string }> {
+  const r = await fetchSetExportNameFromLovable(jobId, folderName);
+  if (!r.ok) throw new Error("Could not update job name.");
+  return {
+    folderName: r.folderName,
+    officeNameEditedAt: r.officeNameEditedAt || new Date().toISOString(),
+  };
 }

@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
-  fetchExportJobListFromBlobs,
-  officeLockerConfigured,
+  fetchMergedOfficeJobList,
   type OfficeJobFolder,
   type OfficeLockerStats,
 } from "@/server/office-jobs";
@@ -22,16 +21,6 @@ export const officeListJobs = createServerFn({ method: "POST" }).handler(
       throw new Error("Sign in required.");
     }
 
-    if (!officeLockerConfigured()) {
-      return { listAvailable: false, jobs: [], locker: null };
-    }
-
-    try {
-      const result = await fetchExportJobListFromBlobs();
-      return { listAvailable: true, jobs: result.jobs, locker: result.locker };
-    } catch (e) {
-      console.error("[officeListJobs] blobs list failed", e);
-      return { listAvailable: false, jobs: [], locker: null };
-    }
+    return fetchMergedOfficeJobList();
   },
 );

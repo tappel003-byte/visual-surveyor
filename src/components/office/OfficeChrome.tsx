@@ -458,7 +458,9 @@ export function OfficeChrome({
     setLocalStatus("Deleting job…");
     setError(null);
     try {
-      await officeDeleteJob({ data: { jobId: selectedJobId } });
+      await officeDeleteJob({
+        data: { jobId: selectedJobId, source: selected?.source ?? null },
+      });
       onJobsChanged(jobs.filter((j) => j.id !== selectedJobId));
       setSidebarOpen(false);
       setLocalStatus("Deleted.");
@@ -489,7 +491,7 @@ export function OfficeChrome({
     setError(null);
     try {
       const result = await officeSetJobFrom({
-        data: { jobId: selectedJobId, syncedFrom: label },
+        data: { jobId: selectedJobId, syncedFrom: label, source: selected?.source ?? null },
       });
       onJobsChanged(
         jobs.map((j) => (j.id === selectedJobId ? { ...j, syncedFrom: result.syncedFrom } : j)),
@@ -521,7 +523,11 @@ export function OfficeChrome({
     setError(null);
     try {
       const result = await officeSetJobName({
-        data: { jobId: selectedJobId, folderName: label },
+        data: {
+          jobId: selectedJobId,
+          folderName: label,
+          source: selected?.source ?? null,
+        },
       });
       onJobsChanged(
         jobs.map((j) => (j.id === selectedJobId ? { ...j, displayName: result.folderName } : j)),

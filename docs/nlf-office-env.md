@@ -1,41 +1,45 @@
-# NLF office + Sync — Netlify environment
+# NLF office + Sync — dual host until 16 Dec 2026
 
-Password-gated **office File Explorer** at `/office` and field **Sync to office** on the same Netlify site. Temporary photo locker uses **Netlify Blobs** (site-wide store). www does **not** call Lovable or Supabase for Sync / list / Download / Delete.
+Password-gated **office File Explorer** at `/office` and field **Sync to office**.
 
-**For Tim:** set the three Netlify variables below. Do **not** add `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` on Netlify.
+## Dual-host (required through 16 Dec 2026)
 
-## Required
+| Host | Sync | /office list · Download · Delete |
+| --- | --- | --- |
+| **www.pggphotodocumentation.com** (Netlify) | Netlify Blobs + `NLF_FIELD_KEY` | **Both** Netlify Blobs (new Syncs) **and** the old Lovable locker via `EXPORTS_LIST_TOKEN` |
+| **\*.lovable.app** | Previous Supabase upload path | Supabase locker (service role on Lovable). Does **not** need `NLF_*`. |
 
-| Name | Purpose |
-| --- | --- |
-| `NLF_OFFICE_PASSWORD` | Shared company password for `/office` (not field users). |
-| `NLF_SESSION_SECRET` | Random secret (≥16 chars) for the office session cookie. |
-| `NLF_FIELD_KEY` | Must match the `PGG_FIELD_KEY` value baked into `public/survey.html`. Speed bump only — caps + daily upload limit are the real protection. |
-
-## Optional / retired
-
-| Name | Purpose |
-| --- | --- |
-| `EXPORTS_LIST_TOKEN` | **Retired after cutover.** Was only used to call Lovable. Safe to delete from Netlify once Sync → `/office` is proven. Leaving it unused does no harm. |
+Old ~15 Lovable jobs stay in the old locker — **not migrated, not deleted**. www reads them again through the shared list token.
 
 **Do not set on Netlify:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 
-## Caps (built into the app)
+## Netlify (www) — required
+
+| Name | Purpose |
+| --- | --- |
+| `NLF_OFFICE_PASSWORD` | Shared company password for `/office`. |
+| `NLF_SESSION_SECRET` | Random secret (≥16 chars) for the office session cookie. |
+| `NLF_FIELD_KEY` | Must match `PGG_FIELD_KEY` in `public/survey.html`. |
+| `EXPORTS_LIST_TOKEN` | **Keep until sunset.** Lets www list / Download / Delete jobs still in the old Lovable locker (Grace St and other prior Syncs). |
+
+## Lovable host — optional
+
+| Name | Purpose |
+| --- | --- |
+| `OFFICE_PASSWORD` | Optional. Same company password as www. If unset, `/office` still accepts sign-in (interim until sunset). |
+| `NLF_SESSION_SECRET` | Optional. If unset, session signing derives from the Lovable service role. |
+
+## Caps (www Blobs locker)
 
 - Locker about **1 GB** total
 - Per-file and per-job size caps
 - **Daily upload limit** across all phones
-- Incomplete Sync pieces older than a few days are cleaned when someone lists or uploads (no scheduled jobs)
-
-## Deploy
-
-Set variables in **Netlify → Site configuration → Environment variables** for Production. Redeploy after adding or changing them.
+- Incomplete Sync pieces older than a few days are cleaned when someone lists or uploads
 
 ## Verify
 
-1. Open `https://www.pggphotodocumentation.com/office` and sign in.
-2. From a phone: **Update app** → version shows `App 2026.10.19-nlf` → **Sync to office**.
-3. Desk: see the job → Download (per file) → Delete → confirm **Downloaded this month (estimate)** moved.
-4. Real bandwidth number: Netlify → **Usage** (the in-app counter is an estimate only).
+1. **www:** open `/office` → sign in → older Lovable jobs (e.g. Grace St) appear **and** any new Blobs Syncs appear → Download package → Delete works on each.
+2. **Phone on www:** Update app → version `App 2026.10.19-dual` → Sync → job shows under Blobs on www `/office`.
+3. **lovable.app:** Update app / Publish → Sync still works (Supabase path) → `/office` sign-in works without Netlify-only secrets → old jobs still listed.
 
 Field app (`/` → `survey.html`) stays passwordless. Capture UI is unchanged.

@@ -2,17 +2,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { hasValidOfficeSession } from "@/server/office-session";
 import {
-  buildOfficeJobDownload,
   isSafeExportJobId,
   isSafeExportRelativePath,
+  resolveOfficeJobDownload,
   signOfficeExportFile,
   type OfficeJobDownloadPayload,
 } from "@/server/office-download";
-import { officeLockerConfigured } from "@/server/office-jobs";
 
 export type OfficeJobDownloadResult = OfficeJobDownloadPayload & {
   storageLinksAvailable: boolean;
 };
+
+const sourceSchema = z.enum(["blobs", "lovable"]).optional().nullable();
 
 function emptyDownload(jobId: string): OfficeJobDownloadPayload {
   return {
@@ -29,56 +30,72 @@ function emptyDownload(jobId: string): OfficeJobDownloadPayload {
     storageObjectCount: 0,
     syncIncomplete: false,
     missingManifestPaths: 0,
+    source: "blobs",
   };
 }
 
 export const officeGetJobDownload = createServerFn({ method: "POST" })
-  .validator(z.object({ jobId: z.string().min(1).max(200) }))
+  .validator(
+    z.object({
+      jobId: z.string().min(1).max(200),
+      source: sourceSchema,
+    }),
+  )
   .handler(async ({ data }): Promise<OfficeJobDownloadResult> => {
     if (!hasValidOfficeSession()) {
       throw new Error("Sign in at /office with the company password, then try again.");
     }
     if (!isSafeExportJobId(data.jobId)) {
-      throw new Error("That job link looks wrong. Go back to the office list and open the job again.");
+      throw new Error(
+        "That job link looks wrong. Go back to the office list and open the job again.",
+      );
     }
 
     const jobId = data.jobId.trim();
-    if (!officeLockerConfigured()) {
+    try {
+      const payload = await resolveOfficeJobDownload(jobId, data.source ?? null);
+      return {
+        ...payload,
+        storageLinksAvailable: payload.files.length > 0 || payload.storageObjectCount > 0,
+      };
+    } catch (e) {
+      console.error("[officeGetJobDownload]", e);
       return { ...emptyDownload(jobId), storageLinksAvailable: false };
     }
-
-    const payload = await buildOfficeJobDownload(jobId);
-    return {
-      ...payload,
-      storageLinksAvailable: true,
-    };
   });
 
-/** Lazy access: same-origin chunk marker (session cookie authorizes Download). */
+/** Lazy access: Blobs chunk marker or Lovable signed HTTPS URL. */
 export const officeSignFile = createServerFn({ method: "POST" })
   .validator(
     z.object({
       jobId: z.string().min(1).max(200),
       path: z.string().min(1).max(500),
+      source: sourceSchema,
     }),
   )
   .handler(
     async ({
       data,
-    }): Promise<{ signedUrl: string; expiresIn: number; totalChunks: number; sizeBytes: number }> => {
+    }): Promise<{
+      signedUrl: string;
+      expiresIn: number;
+      totalChunks: number;
+      sizeBytes: number;
+      access: "chunk" | "signed";
+      source: "blobs" | "lovable";
+    }> => {
       if (!hasValidOfficeSession()) {
         throw new Error("Sign in at /office with the company password, then try Download again.");
       }
       if (!isSafeExportJobId(data.jobId) || !isSafeExportRelativePath(data.path)) {
         throw new Error("That file link looks wrong. Open the job again from the office list.");
       }
-      if (!officeLockerConfigured()) {
-        throw new Error(
-          "Download is not available right now. Tell whoever runs Netlify to check the site deploy.",
-        );
-      }
 
-      const result = await signOfficeExportFile(data.jobId.trim(), data.path.trim());
+      const result = await signOfficeExportFile(
+        data.jobId.trim(),
+        data.path.trim(),
+        data.source ?? null,
+      );
       if (!result) {
         throw new Error("Could not prepare that file. Refresh and try again.");
       }
