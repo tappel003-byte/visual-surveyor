@@ -425,7 +425,7 @@ export function OfficeChrome({
             : busyAction === "logout"
               ? "Signing out…"
               : busyAction === "download"
-                ? "Starting download…"
+                ? "Starting download to this computer…"
                 : busyAction === "back"
                   ? "Going back…"
                   : refreshing
