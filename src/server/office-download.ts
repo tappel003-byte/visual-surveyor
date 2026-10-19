@@ -394,50 +394,23 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
 }
 
 /**
- * Dual-source Open/Download payload.
- * Prefer preferredSource when provided (from list). Else try Blobs then Lovable.
+ * Open/Download payload — host-local locker only.
+ * Lovable → Supabase. www → Blobs only (never pull old Lovable jobs onto www).
  */
 export async function resolveOfficeJobDownload(
   jobId: string,
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<OfficeJobDownloadPayload> {
   if (isLovableOfficeRuntime()) {
     return buildOfficeJobDownloadFromSupabase(jobId);
   }
 
-  const tryBlobs = async () => {
-    try {
-      const payload = await buildOfficeJobDownloadFromBlobs(jobId);
-      if (payload.files.length > 0 || payload.storageObjectCount > 0) return payload;
-      return null;
-    } catch (e) {
-      console.error("[office-download] blobs resolve failed", jobId, e);
-      return null;
-    }
-  };
-
-  const tryLovable = async () => {
-    try {
-      const result = await fetchOfficeJobDownloadFromLovable(jobId);
-      if (!result.ok) return null;
-      if (result.payload.files.length > 0 || result.payload.storageObjectCount > 0) {
-        return result.payload;
-      }
-      return null;
-    } catch (e) {
-      console.error("[office-download] lovable resolve failed", jobId, e);
-      return null;
-    }
-  };
-
-  if (preferredSource === "lovable") {
-    return (await tryLovable()) || (await tryBlobs()) || emptyPayload(jobId, "lovable");
+  try {
+    return await buildOfficeJobDownloadFromBlobs(jobId);
+  } catch (e) {
+    console.error("[office-download] blobs resolve failed", jobId, e);
+    return emptyPayload(jobId, "blobs");
   }
-  if (preferredSource === "blobs") {
-    return (await tryBlobs()) || (await tryLovable()) || emptyPayload(jobId, "blobs");
-  }
-
-  return (await tryBlobs()) || (await tryLovable()) || emptyPayload(jobId, "blobs");
 }
 
 function emptyPayload(jobId: string, source: OfficeJobSource): OfficeJobDownloadPayload {
@@ -470,12 +443,14 @@ export type OfficeSignResult = {
 };
 
 /**
- * Desk “sign”: Blobs chunk marker or Lovable signed HTTPS URL.
+ * Desk “sign”: host-local only.
+ * Lovable → HTTPS signed storage URL (spaces OK, e.g. picture map.pdf).
+ * www → Blobs chunk marker (same-origin pieces).
  */
 export async function signOfficeExportFile(
   jobId: string,
   relativePath: string,
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<OfficeSignResult | null> {
   if (!isSafeExportJobId(jobId) || !isSafeExportRelativePath(relativePath)) return null;
   if (relativePath === "manifest.json") return null;
@@ -493,46 +468,19 @@ export async function signOfficeExportFile(
     };
   }
 
-  const tryBlobs = async (): Promise<OfficeSignResult | null> => {
-    try {
-      const files = await listJobFiles(jobId);
-      const hit = files.find((f) => f.relativePath === relativePath);
-      if (!hit) return null;
-      return {
-        signedUrl: officeFileAccessMarker(jobId, relativePath),
-        expiresIn: SIGNED_URL_TTL_SECONDS,
-        totalChunks: hit.totalChunks,
-        sizeBytes: hit.sizeBytes,
-        access: "chunk",
-        source: "blobs",
-      };
-    } catch {
-      return null;
-    }
-  };
-
-  const tryLovable = async (): Promise<OfficeSignResult | null> => {
-    try {
-      const result = await fetchOfficeSignedUrlFromLovable(jobId, relativePath);
-      if (!result.ok) return null;
-      return {
-        signedUrl: result.signedUrl,
-        expiresIn: result.expiresIn,
-        totalChunks: 1,
-        sizeBytes: 0,
-        access: "signed",
-        source: "lovable",
-      };
-    } catch {
-      return null;
-    }
-  };
-
-  if (preferredSource === "lovable") {
-    return (await tryLovable()) || (await tryBlobs());
+  try {
+    const files = await listJobFiles(jobId);
+    const hit = files.find((f) => f.relativePath === relativePath);
+    if (!hit) return null;
+    return {
+      signedUrl: officeFileAccessMarker(jobId, relativePath),
+      expiresIn: SIGNED_URL_TTL_SECONDS,
+      totalChunks: hit.totalChunks,
+      sizeBytes: hit.sizeBytes,
+      access: "chunk",
+      source: "blobs",
+    };
+  } catch {
+    return null;
   }
-  if (preferredSource === "blobs") {
-    return (await tryBlobs()) || (await tryLovable());
-  }
-  return (await tryBlobs()) || (await tryLovable());
 }

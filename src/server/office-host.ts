@@ -1,8 +1,9 @@
 /**
- * Dual-host office/Sync until Lovable sunset (16 Dec 2026).
+ * Host-split office/Sync until Lovable sunset (16 Dec 2026).
  *
- * - Lovable Cloud has SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.
- * - Netlify www must NEVER have those; it uses Blobs + EXPORTS_LIST_TOKEN for the old locker.
+ * - Lovable Cloud has SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (old jobs).
+ * - Netlify www must NEVER have those; www /office is Blobs-only (new Syncs).
+ *   Do not merge old Lovable jobs onto www.
  */
 
 export type OfficeJobSource = "blobs" | "lovable";

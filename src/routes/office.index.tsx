@@ -470,7 +470,7 @@ function OfficeExplorer() {
     setListError(null);
     try {
       await officeDeleteJob({ data: { jobId: job.id, source: job.source } });
-      // Drop cache, then re-fetch so dual-host leftovers cannot linger.
+      // Drop cache, then re-fetch so the list matches staging.
       clearJobsCache();
       setStatusMessage("Deleted — refreshing list…");
       try {
@@ -578,8 +578,9 @@ function OfficeExplorer() {
 
         {!listReady && (
           <p style={{ fontSize: 13, color: PGG.muted, lineHeight: 1.5 }}>
-            Job list unavailable — try Refresh. On www, keep the office password secrets and the
-            shared list token set so older synced jobs still show. New Syncs use the Netlify locker.
+            Job list unavailable — try Refresh. On www, check the latest Netlify deploy and the
+            office password secrets. Older jobs stay on the temporary lovable.app host through 16
+            Dec 2026 — not on www.
           </p>
         )}
 
@@ -596,7 +597,8 @@ function OfficeExplorer() {
               No jobs in staging yet
             </h2>
             <p style={{ fontSize: 13, margin: 0, lineHeight: 1.45 }}>
-              On the phone: Sync to office (or Auto-sync). Then Refresh.
+              www only shows new Syncs to this site. On the phone at www: Sync to office, then
+              Refresh. Older synced jobs stay on lovable.app through 16 Dec 2026.
             </p>
           </div>
         )}
