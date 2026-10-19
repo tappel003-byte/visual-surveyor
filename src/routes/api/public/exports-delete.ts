@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isSafeExportJobId } from "@/server/office-download";
-import { deleteExportJobFolder } from "@/server/office-mutate";
+import { deleteExportJobFolderSupabase } from "@/server/office-mutate";
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -35,7 +35,8 @@ export const Route = createFileRoute("/api/public/exports-delete")({
         }
 
         try {
-          const result = await deleteExportJobFolder(jobId);
+          // Lovable-only endpoint: always the Supabase exports locker (not Blobs).
+          const result = await deleteExportJobFolderSupabase(jobId);
           return Response.json(result, { headers: { "Cache-Control": "no-store" } });
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Delete failed";

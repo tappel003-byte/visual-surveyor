@@ -106,12 +106,20 @@ export function isSafeExportJobId(jobId: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(id);
 }
 
+/**
+ * Storage path under a job folder (e.g. `files/3498_2026-10-15/picture map.pdf`).
+ * Must allow spaces and common filename punctuation — field exports use them.
+ * Still blocks traversal, absolute paths, and control characters.
+ */
 export function isSafeExportRelativePath(relativePath: string): boolean {
   const p = relativePath.trim();
   if (!p || p.length > 500) return false;
   if (p.startsWith("/") || p.includes("\\") || p.includes("..")) return false;
   if (p.includes("//")) return false;
-  return /^[a-zA-Z0-9._/-]+$/.test(p);
+  if (/[\0-\x1f\x7f]/.test(p)) return false;
+  // Reject URL schemes sneaking in as a path segment.
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(p)) return false;
+  return true;
 }
 
 function utcDayKey(d = new Date()): string {

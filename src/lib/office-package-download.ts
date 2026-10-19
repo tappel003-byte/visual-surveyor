@@ -91,6 +91,9 @@ export function plainOfficeDownloadFailure(err: unknown): string {
   if (raw.includes("network") || raw.includes("fetch") || raw.includes("failed to fetch")) {
     return "Couldn’t download. Check your internet, then try Download package again.";
   }
+  if (raw.includes("could not prepare") || raw.includes("looks wrong")) {
+    return "Couldn’t open that file. Refresh the job, then try Open again.";
+  }
   return "Download package didn’t finish. Try Download package again. Photos stay in staging until Delete.";
 }
 
@@ -284,6 +287,7 @@ export async function downloadOfficeJobPackage(opts: {
   const rootName = folderName || "field-export";
   const zipFilename = safeZipFilename(rootName);
   const total = files.length;
+  const skipped: string[] = [];
 
   const zipEntries = () =>
     (async function* () {
@@ -292,25 +296,52 @@ export async function downloadOfficeJobPackage(opts: {
         const f = files[i]!;
         const current = i + 1;
         report(formatPackageDownloadProgress(current, total, saveAsName));
-        const blob = await fetchOfficeFileBlobResilient(
-          jobId,
-          f,
-          (done, chunkTotal) => {
-            if (chunkTotal > 1) {
-              report(
-                formatPackageDownloadProgress(current, total, saveAsName, {
-                  done,
-                  total: chunkTotal,
-                }),
-              );
-            }
-          },
-          opts.signal,
+        try {
+          const blob = await fetchOfficeFileBlobResilient(
+            jobId,
+            f,
+            (done, chunkTotal) => {
+              if (chunkTotal > 1) {
+                report(
+                  formatPackageDownloadProgress(current, total, saveAsName, {
+                    done,
+                    total: chunkTotal,
+                  }),
+                );
+              }
+            },
+            opts.signal,
+          );
+          yield {
+            name: safeZipPath(rootName, f.label),
+            lastModified: new Date(),
+            input: blob,
+          };
+        } catch (err) {
+          if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err) || opts.signal?.aborted) {
+            throw new OfficeSaveCancelledError();
+          }
+          // Keep going — one flaky photo must not kill a 100+ file Save As.
+          skipped.push(f.label || f.path);
+          console.warn("[office-package] skip file after retries", f.path, err);
+        }
+      }
+      if (skipped.length >= total) {
+        throw new Error(
+          "Download package didn’t finish — none of the files could be downloaded. Check your internet and try again.",
         );
+      }
+      if (skipped.length) {
+        const note =
+          `PGG Download package notes\n` +
+          `Saved ${total - skipped.length} of ${total} files.\n` +
+          `These files could not be downloaded (try Download package again for a full copy):\n` +
+          skipped.map((n) => `- ${n}`).join("\n") +
+          "\n";
         yield {
-          name: safeZipPath(rootName, f.label),
+          name: safeZipPath(rootName, "_download-notes.txt"),
           lastModified: new Date(),
-          input: blob,
+          input: new Blob([note], { type: "text/plain;charset=utf-8" }),
         };
       }
     })();
@@ -400,4 +431,36 @@ export async function officeFileObjectUrl(
 ): Promise<string> {
   const blob = await fetchOfficeFileBlob(jobId, path, { totalChunks, source });
   return URL.createObjectURL(blob);
+}
+
+/**
+ * Best URL for Open (lightbox / new tab).
+ * Lovable locker → HTTPS signed URL (browser can show PDF/CSV directly).
+ * Blobs locker → same-origin chunk fetch → blob: URL.
+ */
+export async function resolveOfficeOpenUrl(
+  jobId: string,
+  path: string,
+  opts?: {
+    totalChunks?: number;
+    source?: "blobs" | "lovable" | null;
+    signal?: AbortSignal;
+  },
+): Promise<{ url: string; access: "signed" | "blob" }> {
+  throwIfAborted(opts?.signal);
+  const access = await officeSignFile({
+    data: { jobId, path, source: opts?.source ?? null },
+  });
+  throwIfAborted(opts?.signal);
+
+  if (access.access === "signed" || /^https?:\/\//i.test(access.signedUrl)) {
+    return { url: access.signedUrl, access: "signed" };
+  }
+
+  const blob = await fetchOfficeFileBlob(jobId, path, {
+    totalChunks: opts?.totalChunks || access.totalChunks,
+    source: opts?.source ?? access.source,
+    signal: opts?.signal,
+  });
+  return { url: URL.createObjectURL(blob), access: "blob" };
 }

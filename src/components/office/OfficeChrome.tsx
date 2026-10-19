@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { OfficeJobFolder } from "@/lib/office-jobs.functions";
+import { clearJobsCache } from "@/lib/office-client-cache";
 import { officeDeleteJob, officeSetJobFrom, officeSetJobName } from "@/lib/office-mutate.functions";
 
 /** Shared class for office toolbar/row buttons — :active depress + busy/disabled. */
@@ -461,6 +462,7 @@ export function OfficeChrome({
       await officeDeleteJob({
         data: { jobId: selectedJobId, source: selected?.source ?? null },
       });
+      clearJobsCache();
       onJobsChanged(jobs.filter((j) => j.id !== selectedJobId));
       setSidebarOpen(false);
       setLocalStatus("Deleted.");

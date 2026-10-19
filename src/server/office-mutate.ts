@@ -296,28 +296,68 @@ async function listJobFilesSafe(jobId: string): Promise<number> {
 }
 
 /**
- * Delete — route by source. Never migrate; only remove from the locker that holds it.
- * Prefer preferredSource; else Blobs if present, else Lovable API / Supabase.
+ * Delete so the job stays gone from the merged /office list.
+ *
+ * - Lovable host: Supabase locker only (that host’s list).
+ * - www / Netlify: remove from **every** locker (Blobs + Lovable API when
+ *   token is set). Dual-host #46 lists both; deleting only one made jobs
+ *   like Christine reappear from the other store.
+ *
+ * `preferredSource` is kept for callers but does not limit www deletes.
  */
 export async function fetchDeleteExportJobFromLovable(
   jobId: string,
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<{ ok: true; deleted: number } | { ok: false; unauthorized: boolean }> {
   if (isLovableOfficeRuntime()) {
     const result = await deleteExportJobFolderSupabase(jobId);
     return { ok: true, deleted: result.deleted };
   }
 
-  const preferBlobs =
-    preferredSource === "blobs" ||
-    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
+  let deleted = 0;
+  let blobsOk = false;
+  let lovableOk = false;
+  let lovableUnauthorized = false;
+  const errors: string[] = [];
 
-  if (preferBlobs) {
+  // Idempotent — clears Blobs even when the list row was tagged "lovable".
+  try {
     const result = await deleteExportJobFolderBlobs(jobId);
-    return { ok: true, deleted: result.deleted };
+    deleted += result.deleted;
+    blobsOk = true;
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : "Blobs delete failed");
   }
 
-  return fetchDeleteExportJobViaLovableApi(jobId);
+  if (process.env.EXPORTS_LIST_TOKEN?.trim()) {
+    try {
+      const result = await fetchDeleteExportJobViaLovableApi(jobId);
+      if (!result.ok) {
+        lovableUnauthorized = true;
+      } else {
+        deleted += result.deleted;
+        lovableOk = true;
+      }
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : "Lovable delete failed");
+    }
+  } else {
+    // No Lovable token — Blobs-only site; Blobs result is enough.
+    lovableOk = true;
+  }
+
+  if (blobsOk || lovableOk) {
+    return { ok: true, deleted };
+  }
+
+  if (lovableUnauthorized) {
+    return { ok: false, unauthorized: true };
+  }
+
+  throw new Error(
+    errors[0] ||
+      "Could not delete this job from staging. Refresh and try Delete again.",
+  );
 }
 
 export async function fetchSetExportFromFromLovable(

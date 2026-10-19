@@ -4,6 +4,7 @@ import type { OfficeJobDownloadResult } from "@/lib/office-download.functions";
 import {
   fileTypeLabel,
   isImageFileName,
+  isPdfFileName,
   listDirectory,
   toExplorerEntries,
   type ExplorerEntry,
@@ -12,8 +13,8 @@ import {
   downloadOfficeJobPackage,
   fetchOfficeFileBlob,
   OfficeSaveCancelledError,
-  officeFileObjectUrl,
   plainOfficeDownloadFailure,
+  resolveOfficeOpenUrl,
   type OfficePackageProgress,
 } from "@/lib/office-package-download";
 import { saveBlobWithSaveAs } from "@/lib/office-save-file";
@@ -99,7 +100,11 @@ export function JobFileExplorer({
 }: Props) {
   const navigate = useNavigate();
   const [dirPath, setDirPath] = useState("");
-  const [preview, setPreview] = useState<{ entry: ExplorerEntry; url: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    entry: ExplorerEntry;
+    url: string;
+    kind: "image" | "pdf";
+  } | null>(null);
   const [urlCache, setUrlCache] = useState<Record<string, string>>(() =>
     loadSignedUrlMapForJob(jobId),
   );
@@ -224,21 +229,19 @@ export function JobFileExplorer({
         );
       }
       try {
-        // Chunked same-origin fetch → object URL (never a Lovable/Supabase link).
         const fileMeta = data.files.find((f) => f.path === entry.storagePath);
-        const objectUrl = await officeFileObjectUrl(
-          jobId,
-          entry.storagePath,
-          fileMeta?.totalChunks,
-          data.source ?? null,
-        );
-        writeSignedUrl(jobId, entry.storagePath, objectUrl, 60 * 60);
+        // Lovable: HTTPS signed URL. Blobs: blob: after chunk fetch.
+        const { url } = await resolveOfficeOpenUrl(jobId, entry.storagePath, {
+          totalChunks: fileMeta?.totalChunks,
+          source: data.source ?? null,
+        });
+        writeSignedUrl(jobId, entry.storagePath, url, 60 * 60);
         setUrlCache((prev) => {
-          const next = { ...prev, [entry.storagePath]: objectUrl };
+          const next = { ...prev, [entry.storagePath]: url };
           urlCacheRef.current = next;
           return next;
         });
-        return objectUrl;
+        return url;
       } catch (err) {
         setSignError(plainOfficeDownloadFailure(err));
         setStatus(null);
@@ -254,15 +257,54 @@ export function JobFileExplorer({
   };
 
   const onOpenFile = async (entry: ExplorerEntry) => {
+    // Open a blank tab synchronously while we still have the click gesture —
+    // async window.open after fetch is blocked and looks like Open “does nothing”.
+    const useLightbox = isImageFileName(entry.name) || isPdfFileName(entry.name);
+    const popup = useLightbox ? null : window.open("about:blank", "_blank");
+
     const url = await resolveUrl(entry, "open");
-    if (!url) return;
+    if (!url) {
+      try {
+        popup?.close();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
     if (isImageFileName(entry.name)) {
-      setPreview({ entry, url });
+      setPreview({ entry, url, kind: "image" });
       setStatus(null);
-    } else {
+      return;
+    }
+    if (isPdfFileName(entry.name)) {
+      setPreview({ entry, url, kind: "pdf" });
+      setStatus(null);
+      return;
+    }
+
+    try {
+      if (popup && !popup.closed) {
+        popup.location.href = url;
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
       setStatus(`Opened ${entry.name}`);
-      window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => setStatus(null), 1800);
+    } catch (err) {
+      try {
+        popup?.close();
+      } catch {
+        /* ignore */
+      }
+      setSignError(plainOfficeDownloadFailure(err));
+      setStatus(null);
     }
   };
 
@@ -382,7 +424,7 @@ export function JobFileExplorer({
   const showAdjacent = async (delta: number) => {
     const imgs = imageFilesRef.current;
     const cur = previewRef.current;
-    if (!cur || imgs.length === 0) return;
+    if (!cur || cur.kind !== "image" || imgs.length === 0) return;
     const idx = imgs.findIndex((f) => f.storagePath === cur.entry.storagePath);
     if (idx < 0) return;
     const next = imgs[(idx + delta + imgs.length) % imgs.length];
@@ -390,7 +432,7 @@ export function JobFileExplorer({
     setStatus(`Loading ${next.name}…`);
     const url = await resolveUrl(next, "open");
     if (!url) return;
-    setPreview({ entry: next, url });
+    setPreview({ entry: next, url, kind: "image" });
     setStatus(null);
   };
 
@@ -398,13 +440,15 @@ export function JobFileExplorer({
     if (!preview) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setPreview(null);
-      if (e.key === "ArrowRight") void showAdjacent(1);
-      if (e.key === "ArrowLeft") void showAdjacent(-1);
+      if (preview.kind === "image") {
+        if (e.key === "ArrowRight") void showAdjacent(1);
+        if (e.key === "ArrowLeft") void showAdjacent(-1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview?.entry.storagePath]);
+  }, [preview?.entry.storagePath, preview?.kind]);
 
   useEffect(() => () => setStatus(null), []);
 
@@ -982,7 +1026,7 @@ export function JobFileExplorer({
               }}
             >
               {preview.entry.name}
-              {imageFiles.length > 1 && previewIndex >= 0
+              {preview.kind === "image" && imageFiles.length > 1 && previewIndex >= 0
                 ? ` · ${previewIndex + 1} / ${imageFiles.length}`
                 : ""}
             </p>
@@ -996,7 +1040,7 @@ export function JobFileExplorer({
                 gap: 8,
               }}
             >
-              {imageFiles.length > 1 && (
+              {preview.kind === "image" && imageFiles.length > 1 && (
                 <button
                   type="button"
                   aria-label="Previous photo"
@@ -1015,18 +1059,32 @@ export function JobFileExplorer({
                   ‹
                 </button>
               )}
-              <img
-                src={preview.url}
-                alt={preview.entry.name}
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "72vh",
-                  objectFit: "contain",
-                  borderRadius: 12,
-                  background: "#111",
-                }}
-              />
-              {imageFiles.length > 1 && (
+              {preview.kind === "pdf" ? (
+                <iframe
+                  title={preview.entry.name}
+                  src={preview.url}
+                  style={{
+                    width: "100%",
+                    height: "72vh",
+                    border: 0,
+                    borderRadius: 8,
+                    background: "#fff",
+                  }}
+                />
+              ) : (
+                <img
+                  src={preview.url}
+                  alt={preview.entry.name}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "72vh",
+                    objectFit: "contain",
+                    borderRadius: 12,
+                    background: "#111",
+                  }}
+                />
+              )}
+              {preview.kind === "image" && imageFiles.length > 1 && (
                 <button
                   type="button"
                   aria-label="Next photo"
