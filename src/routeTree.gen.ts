@@ -13,6 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as GetRouteImport } from './routes/get'
 import { Route as OfficeRouteImport } from './routes/office'
 import { Route as OfficeIndexRouteImport } from './routes/office.index'
+import { Route as ApiFieldSyncChunkRouteImport } from './routes/api/field/sync-chunk'
+import { Route as ApiFieldSyncStatusRouteImport } from './routes/api/field/sync-status'
+import { Route as ApiOfficeFileChunkRouteImport } from './routes/api/office/file-chunk'
 import { Route as ApiPublicExportsDeleteRouteImport } from './routes/api/public/exports-delete'
 import { Route as ApiPublicExportsFromRouteImport } from './routes/api/public/exports-from'
 import { Route as ApiPublicExportsJobRouteImport } from './routes/api/public/exports-job'
@@ -41,6 +44,21 @@ const OfficeIndexRoute = OfficeIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => OfficeRoute,
+} as any)
+const ApiFieldSyncChunkRoute = ApiFieldSyncChunkRouteImport.update({
+  id: '/api/field/sync-chunk',
+  path: '/api/field/sync-chunk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFieldSyncStatusRoute = ApiFieldSyncStatusRouteImport.update({
+  id: '/api/field/sync-status',
+  path: '/api/field/sync-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOfficeFileChunkRoute = ApiOfficeFileChunkRouteImport.update({
+  id: '/api/office/file-chunk',
+  path: '/api/office/file-chunk',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicExportsDeleteRoute = ApiPublicExportsDeleteRouteImport.update({
   id: '/api/public/exports-delete',
@@ -88,6 +106,9 @@ export interface FileRoutesByFullPath {
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
   '/office/': typeof OfficeIndexRoute
+  '/api/field/sync-chunk': typeof ApiFieldSyncChunkRoute
+  '/api/field/sync-status': typeof ApiFieldSyncStatusRoute
+  '/api/office/file-chunk': typeof ApiOfficeFileChunkRoute
   '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
   '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
@@ -101,6 +122,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
   '/office': typeof OfficeIndexRoute
+  '/api/field/sync-chunk': typeof ApiFieldSyncChunkRoute
+  '/api/field/sync-status': typeof ApiFieldSyncStatusRoute
+  '/api/office/file-chunk': typeof ApiOfficeFileChunkRoute
   '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
   '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
@@ -116,6 +140,9 @@ export interface FileRoutesById {
   '/get': typeof GetRoute
   '/office': typeof OfficeRouteWithChildren
   '/office/': typeof OfficeIndexRoute
+  '/api/field/sync-chunk': typeof ApiFieldSyncChunkRoute
+  '/api/field/sync-status': typeof ApiFieldSyncStatusRoute
+  '/api/office/file-chunk': typeof ApiOfficeFileChunkRoute
   '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
   '/api/public/exports-from': typeof ApiPublicExportsFromRoute
   '/api/public/exports-job': typeof ApiPublicExportsJobRoute
@@ -132,6 +159,9 @@ export interface FileRouteTypes {
     | '/get'
     | '/office'
     | '/office/'
+    | '/api/field/sync-chunk'
+    | '/api/field/sync-status'
+    | '/api/office/file-chunk'
     | '/api/public/exports-delete'
     | '/api/public/exports-from'
     | '/api/public/exports-job'
@@ -145,6 +175,9 @@ export interface FileRouteTypes {
     | '/'
     | '/get'
     | '/office'
+    | '/api/field/sync-chunk'
+    | '/api/field/sync-status'
+    | '/api/office/file-chunk'
     | '/api/public/exports-delete'
     | '/api/public/exports-from'
     | '/api/public/exports-job'
@@ -159,6 +192,9 @@ export interface FileRouteTypes {
     | '/get'
     | '/office'
     | '/office/'
+    | '/api/field/sync-chunk'
+    | '/api/field/sync-status'
+    | '/api/office/file-chunk'
     | '/api/public/exports-delete'
     | '/api/public/exports-from'
     | '/api/public/exports-job'
@@ -173,6 +209,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GetRoute: typeof GetRoute
   OfficeRoute: typeof OfficeRouteWithChildren
+  ApiFieldSyncChunkRoute: typeof ApiFieldSyncChunkRoute
+  ApiFieldSyncStatusRoute: typeof ApiFieldSyncStatusRoute
+  ApiOfficeFileChunkRoute: typeof ApiOfficeFileChunkRoute
   ApiPublicExportsDeleteRoute: typeof ApiPublicExportsDeleteRoute
   ApiPublicExportsFromRoute: typeof ApiPublicExportsFromRoute
   ApiPublicExportsJobRoute: typeof ApiPublicExportsJobRoute
@@ -211,6 +250,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/office/'
       preLoaderRoute: typeof OfficeIndexRouteImport
       parentRoute: typeof OfficeRoute
+    }
+    '/api/field/sync-chunk': {
+      id: '/api/field/sync-chunk'
+      path: '/api/field/sync-chunk'
+      fullPath: '/api/field/sync-chunk'
+      preLoaderRoute: typeof ApiFieldSyncChunkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/field/sync-status': {
+      id: '/api/field/sync-status'
+      path: '/api/field/sync-status'
+      fullPath: '/api/field/sync-status'
+      preLoaderRoute: typeof ApiFieldSyncStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/office/file-chunk': {
+      id: '/api/office/file-chunk'
+      path: '/api/office/file-chunk'
+      fullPath: '/api/office/file-chunk'
+      preLoaderRoute: typeof ApiOfficeFileChunkRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/exports-delete': {
       id: '/api/public/exports-delete'
@@ -288,6 +348,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GetRoute: GetRoute,
   OfficeRoute: OfficeRouteWithChildren,
+  ApiFieldSyncChunkRoute: ApiFieldSyncChunkRoute,
+  ApiFieldSyncStatusRoute: ApiFieldSyncStatusRoute,
+  ApiOfficeFileChunkRoute: ApiOfficeFileChunkRoute,
   ApiPublicExportsDeleteRoute: ApiPublicExportsDeleteRoute,
   ApiPublicExportsFromRoute: ApiPublicExportsFromRoute,
   ApiPublicExportsJobRoute: ApiPublicExportsJobRoute,

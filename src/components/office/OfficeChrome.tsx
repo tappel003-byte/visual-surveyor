@@ -215,13 +215,28 @@ export function fromLabel(syncedFrom: string | null | undefined): string {
 /** NLF www office staging working set (~1 GB). */
 export const OFFICE_STAGING_BUDGET_BYTES = 1024 * 1024 * 1024;
 
+const DOWNLOAD_MONTH_WARN_BYTES = 10 * 1024 * 1024 * 1024;
+
+function formatStagingBytes(used: number, jobCount: number): string {
+  if (used <= 0 && jobCount > 0) return "size unknown";
+  if (used >= 1024 * 1024 * 1024) return `${(used / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (used >= 1024 * 1024) {
+    return `${(used / (1024 * 1024)).toFixed(used >= 100 * 1024 * 1024 ? 0 : 1)} MB`;
+  }
+  if (used > 0) return `${Math.max(1, Math.round(used / 1024))} KB`;
+  return "0 MB";
+}
+
 /** Compact staging used vs 1 GB — status-strip style, not marketing card. */
 export function OfficeStagingCapacity({
   usedBytes,
   jobCount,
+  downloadedMonthBytes = 0,
 }: {
   usedBytes: number;
   jobCount: number;
+  /** Estimate of bytes downloaded via /office this calendar month. */
+  downloadedMonthBytes?: number;
 }) {
   const budget = OFFICE_STAGING_BUDGET_BYTES;
   const used = Math.max(0, usedBytes);
@@ -229,21 +244,23 @@ export function OfficeStagingCapacity({
   const warn = pct >= 70;
   const critical = pct >= 90;
   const barColor = critical ? "#b45309" : warn ? "#c48a2a" : PGG.accent;
-  const usedLabel =
-    used <= 0 && jobCount > 0
-      ? "size unknown"
-      : used >= 1024 * 1024 * 1024
-        ? `${(used / (1024 * 1024 * 1024)).toFixed(2)} GB`
-        : used >= 1024 * 1024
-          ? `${(used / (1024 * 1024)).toFixed(used >= 100 * 1024 * 1024 ? 0 : 1)} MB`
-          : used > 0
-            ? `${Math.max(1, Math.round(used / 1024))} KB`
-            : "0 MB";
+  const usedLabel = formatStagingBytes(used, jobCount);
+  const dlBytes = Math.max(0, downloadedMonthBytes);
+  const dlWarn = dlBytes >= DOWNLOAD_MONTH_WARN_BYTES * 0.8;
+  const dlCritical = dlBytes >= DOWNLOAD_MONTH_WARN_BYTES;
+  const dlLabel =
+    dlBytes >= 1024 * 1024 * 1024
+      ? `${(dlBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+      : dlBytes >= 1024 * 1024
+        ? `${(dlBytes / (1024 * 1024)).toFixed(1)} MB`
+        : dlBytes > 0
+          ? `${Math.max(1, Math.round(dlBytes / 1024))} KB`
+          : "0 MB";
 
   return (
     <div
       role="status"
-      aria-label={`Office staging capacity: ${usedLabel} of 1 GB used`}
+      aria-label={`Office staging capacity: ${usedLabel} of 1 GB used. Downloaded this month (estimate): ${dlLabel}`}
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -252,7 +269,7 @@ export function OfficeStagingCapacity({
         padding: "6px 10px",
         marginBottom: 8,
         background: PGG.paper,
-        border: `1px solid ${critical || warn ? "#e8c9a8" : PGG.line}`,
+        border: `1px solid ${critical || warn || dlCritical ? "#e8c9a8" : PGG.line}`,
         fontSize: 12,
         color: PGG.muted,
       }}
@@ -285,8 +302,20 @@ export function OfficeStagingCapacity({
         {usedLabel} / 1 GB
         {used > 0 ? ` (${pct}%)` : ""}
       </span>
-      <span style={{ flex: "1 1 160px", minWidth: 0 }}>
-        Phone Sync lands here — Download to this computer, then Delete to free the 1 GB.
+      <span
+        style={{
+          fontWeight: 600,
+          color: dlCritical ? "#8a4500" : dlWarn ? "#8a5a10" : PGG.ink,
+          whiteSpace: "nowrap",
+        }}
+        title="Estimate from this site’s Download button. Netlify → Usage is the real number for billing credits."
+      >
+        Downloaded this month (estimate): {dlLabel}
+        {dlWarn || dlCritical ? " — nearing 10 GB" : ""}
+      </span>
+      <span style={{ flex: "1 1 200px", minWidth: 0 }}>
+        Phone Sync lands here — Download to this computer, then Delete to free the 1 GB. The
+        download figure is an estimate; check Netlify → Usage for the real bandwidth number.
         {used <= 0 && jobCount > 0 ? " Re-sync to report size." : ""}
       </span>
     </div>
@@ -838,7 +867,7 @@ export function OfficeChrome({
           <div style={sidebarSection}>Jobs ({jobs.length})</div>
           {!listAvailable && (
             <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.bad, margin: 0 }}>
-              List unavailable — check EXPORTS_LIST_TOKEN.
+              List unavailable — try Refresh. If it keeps failing, check the latest Netlify deploy.
             </p>
           )}
           {listAvailable && jobs.length === 0 && (

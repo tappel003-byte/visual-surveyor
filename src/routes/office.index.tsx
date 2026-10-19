@@ -40,7 +40,7 @@ export const Route = createFileRoute("/office/")({
       try {
         jobs = await officeListJobs();
       } catch {
-        jobs = { listAvailable: false, jobs: [] };
+        jobs = { listAvailable: false, jobs: [], locker: null };
       }
     }
     return { auth, jobs };
@@ -209,7 +209,7 @@ function OfficeExplorer() {
     return list;
   }, [jobList, sortKey, sortDir]);
 
-  // Seed session cache so Open job can skip a full Lovable list round-trip
+  // Seed session cache so Open job can reuse the latest list without an extra round-trip
   useEffect(() => {
     if (jobs?.listAvailable) writeJobsCache(jobs);
   }, [jobs]);
@@ -354,7 +354,7 @@ function OfficeExplorer() {
     setJobs((prev) => {
       const listAvailable = prev?.listAvailable ?? true;
       patchJobsCache(next, listAvailable);
-      return { listAvailable, jobs: next };
+      return { listAvailable, jobs: next, locker: prev?.locker ?? null };
     });
     if (selectedJobId && !next.some((j) => j.id === selectedJobId)) {
       setSelectedJobId(null);
@@ -536,15 +536,20 @@ function OfficeExplorer() {
         <OfficeDesktopReminder />
         {listReady && (
           <OfficeStagingCapacity
-            usedBytes={jobList.reduce((sum, j) => sum + (Number(j.totalBytes) || 0), 0)}
+            usedBytes={
+              jobs?.locker?.usedBytes ??
+              jobList.reduce((sum, j) => sum + (Number(j.totalBytes) || 0), 0)
+            }
             jobCount={jobList.length}
+            downloadedMonthBytes={jobs?.locker?.downloadedMonthBytes ?? 0}
           />
         )}
 
         {!listReady && (
           <p style={{ fontSize: 13, color: PGG.muted, lineHeight: 1.5 }}>
-            Job list unavailable — Netlify needs <code>EXPORTS_LIST_TOKEN</code>. Do not add{" "}
-            <code>SUPABASE_*</code> on Netlify.
+            Job list unavailable — try Refresh. Keep{" "}
+            <code>NLF_OFFICE_PASSWORD</code> and <code>NLF_SESSION_SECRET</code> set on Netlify.
+            Field Sync also needs <code>NLF_FIELD_KEY</code> (same value as in the phone app).
           </p>
         )}
 

@@ -1,11 +1,13 @@
 import { officeGetJobDownload, officeSignFile } from "@/lib/office-download.functions";
 
-/** List Download sets this before navigating to the job page (token/sign package ZIP). */
+/** List Download sets this before navigating to the job page. */
 export const OFFICE_AUTO_PACKAGE_KEY = "pgg_office_auto_package";
 
 export type OfficePackageFile = {
   path: string;
   label: string;
+  sizeBytes?: number | null;
+  totalChunks?: number;
 };
 
 /** Plain-English download failures for desk staff. */
@@ -14,16 +16,13 @@ export function plainOfficeDownloadFailure(err: unknown): string {
   if (raw.includes("sign in") || raw.includes("unauthorized") || raw.includes("session")) {
     return "Sign in at /office with the company password, then try Download again.";
   }
-  if (raw.includes("exports_list_token") || raw.includes("not configured") || raw.includes("unauthorized")) {
-    return (
-      "Download isn’t available right now. Tell whoever runs the Netlify site to check the shared office list token " +
-      "and Publish once in Lovable. Do not add storage service keys on Netlify."
-    );
+  if (raw.includes("not available") || raw.includes("not configured")) {
+    return "Download isn’t available right now. Tell whoever runs the Netlify site to check the latest deploy.";
   }
   if (raw.includes("network") || raw.includes("fetch") || raw.includes("failed to fetch")) {
     return "Couldn’t download. Check your internet, then try Download again.";
   }
-  return "Couldn’t download this job. Open the job, try Download package again, or download files one at a time. Photos stay in staging until Delete.";
+  return "Couldn’t download this job. Try downloading files one at a time. Photos stay in staging until Delete.";
 }
 
 function saveBlob(blob: Blob, filename: string) {
@@ -38,9 +37,57 @@ function saveBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+const CHUNK_FETCH_MAX_ATTEMPTS = 5;
+
 /**
- * Desk package download via Lovable token/sign path (EXPORTS_LIST_TOKEN).
- * Assembles a ZIP in the browser — Netlify never streams the job body.
+ * Fetch one file as a Blob via ≤4 MB same-origin chunks (session cookie).
+ * Releases each chunk after appending — never holds a whole job in memory.
+ */
+export async function fetchOfficeFileBlob(
+  jobId: string,
+  path: string,
+  opts?: {
+    totalChunks?: number;
+    /** When true, counts bytes toward the /office “Downloaded this month” estimate. */
+    meterDownload?: boolean;
+    onChunk?: (done: number, total: number) => void;
+  },
+): Promise<Blob> {
+  const access = await officeSignFile({ data: { jobId, path } });
+  const totalChunks = opts?.totalChunks || access.totalChunks || 1;
+  const parts: BlobPart[] = [];
+  let contentType = "application/octet-stream";
+
+  for (let index = 0; index < totalChunks; index++) {
+    let body: ArrayBuffer | null = null;
+    for (let attempt = 0; attempt < CHUNK_FETCH_MAX_ATTEMPTS && !body; attempt++) {
+      try {
+        const url =
+          `/api/office/file-chunk?jobId=${encodeURIComponent(jobId)}` +
+          `&path=${encodeURIComponent(path)}` +
+          `&index=${index}` +
+          (opts?.meterDownload ? "&meter=1" : "");
+        const res = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        contentType = res.headers.get("content-type") || contentType;
+        body = await res.arrayBuffer();
+      } catch (err) {
+        if (attempt === CHUNK_FETCH_MAX_ATTEMPTS - 1) throw err;
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      }
+    }
+    if (!body) throw new Error(`Could not download chunk ${index + 1} of ${path}`);
+    parts.push(body);
+    opts?.onChunk?.(index + 1, totalChunks);
+  }
+
+  return new Blob(parts, { type: contentType });
+}
+
+/**
+ * Per-file Download to disk (preferred over giant ZIP).
+ * Streams each file via chunks; saves one file at a time so the desk never
+ * holds the whole job in memory.
  */
 export async function downloadOfficeJobPackage(opts: {
   jobId: string;
@@ -58,53 +105,51 @@ export async function downloadOfficeJobPackage(opts: {
     opts.onProgress?.("Loading file list…");
     const payload = await officeGetJobDownload({ data: { jobId } });
     if (!payload.storageLinksAvailable) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
+      throw new Error("Download is not available right now.");
     }
     if (!payload.files.length) {
       throw new Error("No files found for this job yet.");
     }
-    files = payload.files.map((f) => ({ path: f.path, label: f.label }));
+    files = payload.files.map((f) => ({
+      path: f.path,
+      label: f.label,
+      sizeBytes: f.sizeBytes,
+      totalChunks: f.totalChunks,
+    }));
     folderName = payload.folderName || folderName;
   }
 
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
   const rootName = folderName || "field-export";
-  const root = zip.folder(rootName);
-  if (!root) throw new Error("Could not start the download package.");
 
   for (let i = 0; i < files.length; i++) {
     const f = files[i]!;
-    opts.onProgress?.(`Downloading ${i + 1} of ${files.length}…`);
-    let signedUrl: string | null = null;
-    for (let attempt = 0; attempt < 3 && !signedUrl; attempt++) {
-      try {
-        const signed = await officeSignFile({ data: { jobId, path: f.path } });
-        signedUrl = signed.signedUrl;
-      } catch (err) {
-        if (attempt === 2) throw err;
-        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
-      }
-    }
-    if (!signedUrl) throw new Error(`Could not prepare ${f.label}`);
-
-    let blob: Blob | null = null;
-    for (let attempt = 0; attempt < 4 && !blob; attempt++) {
-      try {
-        const res = await fetch(signedUrl, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        blob = await res.blob();
-      } catch {
-        if (attempt === 3) throw new Error(`Could not download ${f.label}`);
-        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
-      }
-    }
-    if (!blob) throw new Error(`Could not download ${f.label}`);
-    root.file(f.label, blob);
+    opts.onProgress?.(`Downloading file ${i + 1} of ${files.length}: ${f.label}…`);
+    const blob = await fetchOfficeFileBlob(jobId, f.path, {
+      totalChunks: f.totalChunks,
+      meterDownload: true,
+      onChunk: (done, total) => {
+        if (total > 1) {
+          opts.onProgress?.(
+            `Downloading file ${i + 1} of ${files.length}: ${f.label} (piece ${done}/${total})…`,
+          );
+        }
+      },
+    });
+    const safeName = f.label.replace(/[/\\]/g, "_");
+    saveBlob(blob, `${rootName}__${safeName}`);
+    // Brief gap so the browser can flush each download.
+    await new Promise((r) => setTimeout(r, 200));
   }
 
-  opts.onProgress?.("Building ZIP…");
-  const out = await zip.generateAsync({ type: "blob", compression: "STORE" });
-  saveBlob(out, `${rootName}.zip`);
-  opts.onProgress?.("Done — check your downloads folder.");
+  opts.onProgress?.(`Done — ${files.length} file${files.length === 1 ? "" : "s"} saved. Check your downloads folder.`);
+}
+
+/** Build an object URL for Open / lightbox (one file, chunked). */
+export async function officeFileObjectUrl(
+  jobId: string,
+  path: string,
+  totalChunks?: number,
+): Promise<string> {
+  const blob = await fetchOfficeFileBlob(jobId, path, { totalChunks });
+  return URL.createObjectURL(blob);
 }

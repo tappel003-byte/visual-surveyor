@@ -1,4 +1,11 @@
-import { isSafeExportJobId, officeDownloadStorageConfigured } from "@/server/office-download";
+import { isSafeExportJobId } from "@/server/office-blobs";
+import {
+  listJobFiles,
+  putCompleteSmallFile,
+  readCompleteTextFile,
+  readManifest,
+  writeManifest,
+} from "@/server/office-blobs";
 import {
   descriptionColumnIndex,
   detectPinsFormat,
@@ -20,50 +27,17 @@ function findPinsCsvRelativePath(objects: Array<{ relativePath: string }>): stri
   return null;
 }
 
-type ManifestJson = {
-  version?: number;
-  folderName?: string;
-  uploadKind?: string;
-  syncedAt?: string;
-  syncedFrom?: string;
-  deviceName?: string;
-  officeNotesEditedAt?: string;
-  files?: Array<{ path: string; zipPath: string; sizeBytes?: number }>;
-  createdAt?: string;
-  totalBytes?: number;
-};
-
-async function loadManifest(jobId: string): Promise<ManifestJson | null> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.storage
-    .from("exports")
-    .download(`${jobId}/manifest.json`);
-  if (error || !data) return null;
-  try {
-    return JSON.parse(await data.text()) as ManifestJson;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Read misc/pins.csv (or any *pins.csv) for a synced job — Lovable / service role only.
+ * Read misc/pins.csv (or any *pins.csv) for a synced job from Blobs.
  */
 export async function readExportJobPins(jobId: string): Promise<OfficePinsPayload> {
-  if (!officeDownloadStorageConfigured()) {
-    throw new Error("Storage not configured.");
-  }
   if (!isSafeExportJobId(jobId)) {
     throw new Error("Invalid job id.");
   }
 
-  const { listStoredObjectsForJob } = await import("@/server/export-storage-stats");
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const bucket = supabaseAdmin.storage.from("exports");
-
-  let objects: Awaited<ReturnType<typeof listStoredObjectsForJob>> = [];
+  let objects: Awaited<ReturnType<typeof listJobFiles>> = [];
   try {
-    objects = await listStoredObjectsForJob(bucket, jobId);
+    objects = await listJobFiles(jobId);
   } catch (e) {
     console.error("[office-pins] list failed", jobId, e);
     throw new Error("Could not list job files.");
@@ -80,15 +54,14 @@ export async function readExportJobPins(jobId: string): Promise<OfficePinsPayloa
     };
   }
 
-  const { data, error } = await bucket.download(`${jobId}/${csvPath}`);
-  if (error || !data) {
-    throw new Error(`Could not read pins.csv: ${error?.message || "missing"}`);
+  const text = await readCompleteTextFile(jobId, csvPath);
+  if (text == null) {
+    throw new Error("Could not read pins.csv: missing");
   }
 
-  const text = await data.text();
   const rows = parseCsvText(text);
   const { format, pins } = rowsToPins(rows);
-  const manifest = await loadManifest(jobId);
+  const manifest = await readManifest(jobId);
   const officeNotesEditedAt =
     typeof manifest?.officeNotesEditedAt === "string" && manifest.officeNotesEditedAt.trim()
       ? manifest.officeNotesEditedAt.trim()
@@ -99,15 +72,11 @@ export async function readExportJobPins(jobId: string): Promise<OfficePinsPayloa
 
 /**
  * Apply description edits to pins.csv and stamp manifest.officeNotesEditedAt.
- * Does not regenerate picture map PDF (Phase A) — Download still has updated CSV.
  */
 export async function updateExportJobPinDescriptions(
   jobId: string,
   updates: PinDescriptionUpdate[],
 ): Promise<OfficePinsPayload> {
-  if (!officeDownloadStorageConfigured()) {
-    throw new Error("Storage not configured.");
-  }
   if (!isSafeExportJobId(jobId)) {
     throw new Error("Invalid job id.");
   }
@@ -123,14 +92,11 @@ export async function updateExportJobPinDescriptions(
     throw new Error("This job has no pins.csv to edit.");
   }
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const bucket = supabaseAdmin.storage.from("exports");
-
-  const { data, error } = await bucket.download(`${jobId}/${current.csvPath}`);
-  if (error || !data) {
-    throw new Error(`Could not read pins.csv: ${error?.message || "missing"}`);
+  const text = await readCompleteTextFile(jobId, current.csvPath);
+  if (text == null) {
+    throw new Error("Could not read pins.csv: missing");
   }
-  const rows = parseCsvText(await data.text());
+  const rows = parseCsvText(text);
   if (!rows.length) {
     throw new Error("pins.csv is empty.");
   }
@@ -181,17 +147,9 @@ export async function updateExportJobPinDescriptions(
   }
 
   const csvText = serializePinsCsv(headers, ordered);
-  const blob = new Blob([csvText], { type: "text/csv" });
-  const { error: upErr } = await bucket.upload(`${jobId}/${current.csvPath}`, blob, {
-    contentType: "text/csv",
-    upsert: true,
-  });
-  if (upErr) {
-    console.error("[office-pins] upload failed", jobId, upErr.message);
-    throw new Error(`Could not save pins.csv: ${upErr.message}`);
-  }
+  await putCompleteSmallFile(jobId, current.csvPath, csvText, "text/csv");
 
-  const manifest = (await loadManifest(jobId)) || {
+  const manifest = (await readManifest(jobId)) || {
     version: 1,
     folderName: jobId,
     files: [],
@@ -201,18 +159,11 @@ export async function updateExportJobPinDescriptions(
   if (manifest.files?.length) {
     for (const f of manifest.files) {
       if (f.path === current.csvPath || f.zipPath?.endsWith("pins.csv")) {
-        f.sizeBytes = blob.size;
+        f.sizeBytes = new TextEncoder().encode(csvText).byteLength;
       }
     }
   }
-  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-  const { error: manErr } = await bucket.upload(`${jobId}/manifest.json`, manifestBlob, {
-    contentType: "application/json",
-    upsert: true,
-  });
-  if (manErr) {
-    console.warn("[office-pins] manifest stamp failed", jobId, manErr.message);
-  }
+  await writeManifest(jobId, manifest);
 
   return {
     jobId,

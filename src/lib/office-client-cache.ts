@@ -27,7 +27,7 @@ export function readJobsCache(): OfficeJobListResult | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as JobsCache;
     if (!parsed || !Array.isArray(parsed.jobs)) return null;
-    return { listAvailable: !!parsed.listAvailable, jobs: parsed.jobs };
+    return { listAvailable: !!parsed.listAvailable, jobs: parsed.jobs, locker: null };
   } catch {
     return null;
   }
@@ -66,7 +66,7 @@ export function writeJobsCache(result: OfficeJobListResult): void {
 }
 
 export function patchJobsCache(jobs: OfficeJobFolder[], listAvailable = true): void {
-  writeJobsCache({ listAvailable, jobs });
+  writeJobsCache({ listAvailable, jobs, locker: null });
 }
 
 export function clearJobsCache(): void {

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { OfficeJobDownloadResult } from "@/lib/office-download.functions";
-import { officeSignFile } from "@/lib/office-download.functions";
 import {
   fileTypeLabel,
   isImageFileName,
@@ -11,6 +10,8 @@ import {
 } from "@/lib/office-file-tree";
 import {
   downloadOfficeJobPackage,
+  fetchOfficeFileBlob,
+  officeFileObjectUrl,
   plainOfficeDownloadFailure,
 } from "@/lib/office-package-download";
 import {
@@ -20,7 +21,7 @@ import {
   PGG,
 } from "@/components/office/OfficeChrome";
 import { OfficePinNotesEditor } from "@/components/office/OfficePinNotesEditor";
-import { loadSignedUrlMapForJob, readSignedUrl, writeSignedUrl } from "@/lib/office-client-cache";
+import { loadSignedUrlMapForJob, writeSignedUrl } from "@/lib/office-client-cache";
 import { officeSetJobName } from "@/lib/office-mutate.functions";
 
 function formatFileSize(bytes: number | null): string {
@@ -188,19 +189,8 @@ export function JobFileExplorer({
     entry: ExplorerEntry,
     reason: "open" | "download" | "thumb" = "open",
   ): Promise<string | null> => {
-    if (entry.signedUrl) return entry.signedUrl;
-    const cached =
-      urlCacheRef.current[entry.storagePath] || readSignedUrl(jobId, entry.storagePath);
-    if (cached) {
-      if (!urlCacheRef.current[entry.storagePath]) {
-        setUrlCache((prev) => {
-          const next = { ...prev, [entry.storagePath]: cached };
-          urlCacheRef.current = next;
-          return next;
-        });
-      }
-      return cached;
-    }
+    const cached = urlCacheRef.current[entry.storagePath];
+    if (cached) return cached;
 
     const existing = inFlightRef.current[entry.storagePath];
     if (existing) return existing;
@@ -214,16 +204,20 @@ export function JobFileExplorer({
         );
       }
       try {
-        const result = await officeSignFile({
-          data: { jobId, path: entry.storagePath },
-        });
-        writeSignedUrl(jobId, entry.storagePath, result.signedUrl, result.expiresIn);
+        // Chunked same-origin fetch → object URL (never a Lovable/Supabase link).
+        const fileMeta = data.files.find((f) => f.path === entry.storagePath);
+        const objectUrl = await officeFileObjectUrl(
+          jobId,
+          entry.storagePath,
+          fileMeta?.totalChunks,
+        );
+        writeSignedUrl(jobId, entry.storagePath, objectUrl, 60 * 60);
         setUrlCache((prev) => {
-          const next = { ...prev, [entry.storagePath]: result.signedUrl };
+          const next = { ...prev, [entry.storagePath]: objectUrl };
           urlCacheRef.current = next;
           return next;
         });
-        return result.signedUrl;
+        return objectUrl;
       } catch (err) {
         setSignError(plainOfficeDownloadFailure(err));
         setStatus(null);
@@ -253,25 +247,35 @@ export function JobFileExplorer({
 
   const onDownloadFile = async (entry: ExplorerEntry) => {
     setStatus(`Starting download: ${entry.name}…`);
-    const url = await resolveUrl(entry, "download");
-    if (!url) return;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = entry.name;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setStatus(`Download started: ${entry.name}`);
-    window.setTimeout(() => setStatus(null), 2200);
+    setSignError(null);
+    try {
+      const fileMeta = data.files.find((f) => f.path === entry.storagePath);
+      const blob = await fetchOfficeFileBlob(jobId, entry.storagePath, {
+        totalChunks: fileMeta?.totalChunks,
+        meterDownload: true,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = entry.name;
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setStatus(`Download started: ${entry.name}`);
+      window.setTimeout(() => setStatus(null), 2200);
+    } catch (err) {
+      setSignError(plainOfficeDownloadFailure(err));
+      setStatus(null);
+    }
   };
 
   const onPackageDownload = async () => {
     if (packageBusy) return;
     if (!data.storageLinksAvailable) {
       setSignError(
-        "Download isn’t available right now. Tell whoever runs the Netlify site to check the shared office list token and Publish once in Lovable. Do not add storage service keys on Netlify.",
+        "Download isn’t available right now. Tell whoever runs the Netlify site to check the latest deploy.",
       );
       return;
     }
