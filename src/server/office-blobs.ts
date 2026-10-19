@@ -438,24 +438,30 @@ export async function acceptUploadChunk(opts: {
     };
   }
 
-  await cleanupStaleIncompleteUploads();
+  // Cap + stale cleanup are expensive (full locker list / per-meta reads).
+  // Run only on the first piece of a file so mid-file chunks stay cheap.
+  // Daily / locker / job caps still apply before any bytes of a new file land.
+  const isFirstPiece = index === 0 || !existing;
+  if (isFirstPiece) {
+    await cleanupStaleIncompleteUploads();
 
-  const daily = await getDailyUploadBytes();
-  if (daily.bytes + sizeBytes > DAILY_UPLOAD_BUDGET_BYTES) {
-    // Allow resume of an in-progress file (already counted later on complete only).
-    if (!existing) {
-      return { ok: false, status: 429, message: plainCapMessage("daily") };
+    const daily = await getDailyUploadBytes();
+    if (daily.bytes + sizeBytes > DAILY_UPLOAD_BUDGET_BYTES) {
+      // Allow resume of an in-progress file (already counted later on complete only).
+      if (!existing) {
+        return { ok: false, status: 429, message: plainCapMessage("daily") };
+      }
     }
-  }
 
-  const lockerUsed = await sumLockerBytes();
-  if (!existing && lockerUsed + sizeBytes > LOCKER_BUDGET_BYTES) {
-    return { ok: false, status: 507, message: plainCapMessage("locker") };
-  }
+    const lockerUsed = await sumLockerBytes();
+    if (!existing && lockerUsed + sizeBytes > LOCKER_BUDGET_BYTES) {
+      return { ok: false, status: 507, message: plainCapMessage("locker") };
+    }
 
-  const jobUsed = await sumJobBytes(jobId);
-  if (!existing && jobUsed + sizeBytes > MAX_JOB_BYTES) {
-    return { ok: false, status: 413, message: plainCapMessage("job") };
+    const jobUsed = await sumJobBytes(jobId);
+    if (!existing && jobUsed + sizeBytes > MAX_JOB_BYTES) {
+      return { ok: false, status: 413, message: plainCapMessage("job") };
+    }
   }
 
   const meta: FileMeta = existing || {
