@@ -14,6 +14,7 @@ import {
   OfficeSaveCancelledError,
   officeFileObjectUrl,
   plainOfficeDownloadFailure,
+  type OfficePackageProgress,
 } from "@/lib/office-package-download";
 import { saveBlobWithSaveAs } from "@/lib/office-save-file";
 import {
@@ -107,16 +108,31 @@ export function JobFileExplorer({
   const [signingPath, setSigningPath] = useState<string | null>(null);
   const [signError, setSignError] = useState<string | null>(null);
   const [packageBusy, setPackageBusy] = useState(false);
+  const [packageProgress, setPackageProgress] = useState<OfficePackageProgress | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const [nameBusy, setNameBusy] = useState(false);
   const [localTitle, setLocalTitle] = useState(title);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const inFlightRef = useRef<Record<string, Promise<string | null>>>({});
+  const packageAbortRef = useRef<AbortController | null>(null);
   const statusRef = useRef(onStatusChange);
   statusRef.current = onStatusChange;
 
   const setStatus = (msg: string | null) => {
     statusRef.current?.(msg);
+  };
+
+  const onCancelPackage = () => {
+    packageAbortRef.current?.abort();
+    setStatus("Cancelling download…");
+    setPackageProgress((prev) =>
+      prev
+        ? {
+            ...prev,
+            message: "Cancelling download to this computer…",
+          }
+        : prev,
+    );
   };
 
   useEffect(() => {
@@ -286,9 +302,20 @@ export function JobFileExplorer({
       setSignError("No files found for this job yet. Ask the field phone to Sync, then Refresh.");
       return;
     }
+    const abort = new AbortController();
+    packageAbortRef.current = abort;
     setPackageBusy(true);
     setSignError(null);
-    setStatus("Starting package download…");
+    const startProgress: OfficePackageProgress = {
+      phase: "picking",
+      current: 0,
+      total: data.files.length,
+      percent: 0,
+      message: "Starting download to this computer…",
+      saveAsName: null,
+    };
+    setPackageProgress(startProgress);
+    setStatus(startProgress.message);
     try {
       await downloadOfficeJobPackage({
         jobId,
@@ -301,21 +328,31 @@ export function JobFileExplorer({
           totalChunks: f.totalChunks,
           source: data.source ?? null,
         })),
-        onProgress: (msg) => setStatus(msg),
+        signal: abort.signal,
+        onProgress: (progress) => {
+          setPackageProgress(progress);
+          setStatus(progress.message);
+        },
       });
-      window.setTimeout(() => setStatus(null), 8000);
+      window.setTimeout(() => {
+        setStatus(null);
+        setPackageProgress(null);
+      }, 8000);
     } catch (err) {
       if (err instanceof OfficeSaveCancelledError) {
         setStatus("Download cancelled.");
         setSignError(null);
+        setPackageProgress(null);
         window.setTimeout(() => setStatus(null), 2200);
         return;
       }
       const msg = plainOfficeDownloadFailure(err);
       setSignError(msg);
       setStatus(null);
+      setPackageProgress(null);
     } finally {
       setPackageBusy(false);
+      packageAbortRef.current = null;
     }
   };
 
@@ -509,6 +546,139 @@ export function JobFileExplorer({
               </button>
             )}
           </div>
+
+          {packageProgress && (
+            <section
+              aria-live="polite"
+              aria-busy={packageBusy}
+              role="status"
+              style={{
+                marginBottom: 12,
+                padding: "12px 14px",
+                border: `1px solid ${PGG.selectBorder}`,
+                background: PGG.accentSoft,
+                boxShadow: PGG.shadow,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: PGG.ink,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {packageProgress.phase === "done"
+                      ? "Saved on this computer"
+                      : packageProgress.phase === "picking"
+                        ? "Save As — pick a folder on this computer"
+                        : packageProgress.phase === "loading"
+                          ? "Preparing download to this computer"
+                          : `Downloading to ${
+                              packageProgress.saveAsName?.trim() || "this computer"
+                            }`}
+                  </p>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: PGG.ink,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {packageProgress.phase === "downloading" && packageProgress.total > 0
+                      ? `${packageProgress.current} of ${packageProgress.total} (${packageProgress.percent}%)`
+                      : packageProgress.message}
+                  </p>
+                  {packageProgress.phase === "downloading" && packageProgress.saveAsName ? (
+                    <p
+                      style={{
+                        margin: "2px 0 0",
+                        fontSize: 12,
+                        color: PGG.muted,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      Writing ZIP to the file you chose — not uploading to the office server.
+                    </p>
+                  ) : packageBusy ? (
+                    <p
+                      style={{
+                        margin: "2px 0 0",
+                        fontSize: 12,
+                        color: PGG.muted,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      This is a download to your PC. It is not an upload to the office server.
+                    </p>
+                  ) : null}
+                </div>
+                {packageBusy && (
+                  <button
+                    type="button"
+                    className={OFFICE_BTN_CLASS}
+                    style={{ ...btnSecondary, flexShrink: 0 }}
+                    onClick={onCancelPackage}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+              <div
+                style={{
+                  height: 14,
+                  width: "100%",
+                  borderRadius: 2,
+                  background: PGG.paper,
+                  border: `1px solid ${PGG.line}`,
+                  overflow: "hidden",
+                  position: "relative",
+                }}
+                aria-hidden
+              >
+                {packageProgress.phase === "picking" || packageProgress.phase === "loading" ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "36%",
+                      background: PGG.accent,
+                      animation: "office-package-indeterminate 1.15s ease-in-out infinite",
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${Math.max(packageProgress.percent, packageBusy ? 2 : 0)}%`,
+                      background: PGG.accent,
+                      transition: "width .2s ease",
+                    }}
+                  />
+                )}
+              </div>
+              <style>{`
+                @keyframes office-package-indeterminate {
+                  0% { transform: translateX(-10%); }
+                  100% { transform: translateX(280%); }
+                }
+              `}</style>
+            </section>
+          )}
 
           {data.kind === "manifest" && (
             <nav

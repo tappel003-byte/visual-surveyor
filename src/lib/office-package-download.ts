@@ -28,6 +28,54 @@ export class OfficeSaveCancelledError extends Error {
   }
 }
 
+/** Structured progress for the /office Download package meter. */
+export type OfficePackageProgress = {
+  phase: "loading" | "picking" | "downloading" | "done";
+  /** Current file number (1-based while downloading), or 0 before start. */
+  current: number;
+  total: number;
+  /** 0–100 for the progress bar. */
+  percent: number;
+  /** Plain-English line for status + meter (always says download to this PC). */
+  message: string;
+  /** Save As filename once the user picked a place. */
+  saveAsName?: string | null;
+};
+
+function packageDestLabel(saveAsName?: string | null): string {
+  const name = saveAsName?.trim();
+  return name ? name : "this computer";
+}
+
+/** e.g. “Downloading to this computer: 3 of 108 (3%)” */
+export function formatPackageDownloadProgress(
+  current: number,
+  total: number,
+  saveAsName?: string | null,
+  piece?: { done: number; total: number },
+): OfficePackageProgress {
+  const safeTotal = Math.max(0, total);
+  const safeCurrent = Math.max(0, Math.min(current, safeTotal || current));
+  const percent = safeTotal <= 0 ? 0 : Math.min(100, Math.round((safeCurrent / safeTotal) * 100));
+  const dest = packageDestLabel(saveAsName);
+  let message = `Downloading to ${dest}: ${safeCurrent} of ${safeTotal} (${percent}%)`;
+  if (piece && piece.total > 1) {
+    message += ` — piece ${piece.done}/${piece.total}`;
+  }
+  return {
+    phase: "downloading",
+    current: safeCurrent,
+    total: safeTotal,
+    percent,
+    message,
+    saveAsName: saveAsName ?? null,
+  };
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new OfficeSaveCancelledError();
+}
+
 /** Plain-English download failures for desk staff. */
 export function plainOfficeDownloadFailure(err: unknown): string {
   if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err)) {
@@ -75,22 +123,30 @@ export async function fetchOfficeFileBlob(
     meterDownload?: boolean;
     onChunk?: (done: number, total: number) => void;
     source?: "blobs" | "lovable" | null;
+    signal?: AbortSignal;
   },
 ): Promise<Blob> {
+  throwIfAborted(opts?.signal);
   const access = await officeSignFile({
     data: { jobId, path, source: opts?.source ?? null },
   });
+  throwIfAborted(opts?.signal);
 
   // Old Lovable locker: direct signed HTTPS URL (not same-origin chunks).
   if (access.access === "signed" || /^https?:\/\//i.test(access.signedUrl)) {
     let lastErr: unknown;
     for (let attempt = 0; attempt < CHUNK_FETCH_MAX_ATTEMPTS; attempt++) {
+      throwIfAborted(opts?.signal);
       try {
-        const res = await fetch(access.signedUrl, { cache: "no-store" });
+        const res = await fetch(access.signedUrl, {
+          cache: "no-store",
+          signal: opts?.signal,
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         opts?.onChunk?.(1, 1);
         return await res.blob();
       } catch (err) {
+        if (isSaveCancelled(err) || opts?.signal?.aborted) throw new OfficeSaveCancelledError();
         lastErr = err;
         if (attempt === CHUNK_FETCH_MAX_ATTEMPTS - 1) break;
         await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
@@ -104,19 +160,26 @@ export async function fetchOfficeFileBlob(
   let contentType = "application/octet-stream";
 
   for (let index = 0; index < totalChunks; index++) {
+    throwIfAborted(opts?.signal);
     let body: ArrayBuffer | null = null;
     for (let attempt = 0; attempt < CHUNK_FETCH_MAX_ATTEMPTS && !body; attempt++) {
+      throwIfAborted(opts?.signal);
       try {
         const url =
           `/api/office/file-chunk?jobId=${encodeURIComponent(jobId)}` +
           `&path=${encodeURIComponent(path)}` +
           `&index=${index}` +
           (opts?.meterDownload ? "&meter=1" : "");
-        const res = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+        const res = await fetch(url, {
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: opts?.signal,
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         contentType = res.headers.get("content-type") || contentType;
         body = await res.arrayBuffer();
       } catch (err) {
+        if (isSaveCancelled(err) || opts?.signal?.aborted) throw new OfficeSaveCancelledError();
         if (attempt === CHUNK_FETCH_MAX_ATTEMPTS - 1) throw err;
         await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
       }
@@ -133,17 +196,23 @@ async function fetchOfficeFileBlobResilient(
   jobId: string,
   file: OfficePackageFile,
   onChunk?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<Blob> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < FILE_FETCH_MAX_ATTEMPTS; attempt++) {
+    throwIfAborted(signal);
     try {
       return await fetchOfficeFileBlob(jobId, file.path, {
         totalChunks: file.totalChunks,
         meterDownload: true,
         onChunk,
         source: file.source,
+        signal,
       });
     } catch (err) {
+      if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err) || signal?.aborted) {
+        throw new OfficeSaveCancelledError();
+      }
       lastErr = err;
       if (attempt === FILE_FETCH_MAX_ATTEMPTS - 1) break;
       await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
@@ -156,24 +225,43 @@ async function fetchOfficeFileBlobResilient(
  * Desk Download package: one ZIP for the whole job + Save As (Chromium).
  * Streams files into the ZIP as they arrive so the browser never holds the full
  * job as separate downloads, and Save As runs before bytes are committed.
+ *
+ * Progress wording is always “downloading to this computer / chosen file” —
+ * never upload-to-server language.
  */
 export async function downloadOfficeJobPackage(opts: {
   jobId: string;
   folderName?: string | null;
   files?: OfficePackageFile[];
   source?: "blobs" | "lovable" | null;
-  onProgress?: (message: string) => void;
+  onProgress?: (progress: OfficePackageProgress) => void;
+  /** Cancel mid-package (AbortController). */
+  signal?: AbortSignal;
 }): Promise<void> {
   const jobId = opts.jobId.trim();
   if (!jobId) throw new Error("No job selected.");
+  throwIfAborted(opts.signal);
 
   let files = opts.files?.filter((f) => f.path && f.label) ?? [];
   let folderName = opts.folderName?.trim() || null;
   let source = opts.source ?? null;
+  let saveAsName: string | null = null;
+
+  const report = (progress: OfficePackageProgress) => {
+    opts.onProgress?.(progress);
+  };
 
   if (!files.length) {
-    opts.onProgress?.("Loading file list…");
+    report({
+      phase: "loading",
+      current: 0,
+      total: 0,
+      percent: 0,
+      message: "Loading file list for download to this computer…",
+      saveAsName: null,
+    });
     const payload = await officeGetJobDownload({ data: { jobId, source } });
+    throwIfAborted(opts.signal);
     if (!payload.storageLinksAvailable) {
       throw new Error("Download is not available right now.");
     }
@@ -200,15 +288,25 @@ export async function downloadOfficeJobPackage(opts: {
   const zipEntries = () =>
     (async function* () {
       for (let i = 0; i < files.length; i++) {
+        throwIfAborted(opts.signal);
         const f = files[i]!;
-        opts.onProgress?.(`Downloading ${i + 1} of ${total}…`);
-        const blob = await fetchOfficeFileBlobResilient(jobId, f, (done, chunkTotal) => {
-          if (chunkTotal > 1) {
-            opts.onProgress?.(
-              `Downloading ${i + 1} of ${total} (piece ${done}/${chunkTotal})…`,
-            );
-          }
-        });
+        const current = i + 1;
+        report(formatPackageDownloadProgress(current, total, saveAsName));
+        const blob = await fetchOfficeFileBlobResilient(
+          jobId,
+          f,
+          (done, chunkTotal) => {
+            if (chunkTotal > 1) {
+              report(
+                formatPackageDownloadProgress(current, total, saveAsName, {
+                  done,
+                  total: chunkTotal,
+                }),
+              );
+            }
+          },
+          opts.signal,
+        );
         yield {
           name: safeZipPath(rootName, f.label),
           lastModified: new Date(),
@@ -219,13 +317,29 @@ export async function downloadOfficeJobPackage(opts: {
 
   // Prefer Save As first, then stream the ZIP straight into that file (harden large jobs).
   if (supportsSaveFilePicker()) {
-    opts.onProgress?.("Choose where to save the ZIP…");
+    report({
+      phase: "picking",
+      current: 0,
+      total,
+      percent: 0,
+      message: "Choose where to save the ZIP on this computer…",
+      saveAsName: null,
+    });
     try {
       const { filename, writable } = await openSaveWritable(zipFilename, "application/zip", ".zip");
+      throwIfAborted(opts.signal);
+      saveAsName = filename;
       try {
-        opts.onProgress?.(`Downloading 1 of ${total}…`);
-        await makeZip(zipEntries()).pipeTo(writable);
-        opts.onProgress?.(pickerSavedMessage(filename));
+        report(formatPackageDownloadProgress(1, total, saveAsName));
+        await makeZip(zipEntries()).pipeTo(writable, { signal: opts.signal });
+        report({
+          phase: "done",
+          current: total,
+          total,
+          percent: 100,
+          message: pickerSavedMessage(filename),
+          saveAsName: filename,
+        });
         return;
       } catch (err) {
         try {
@@ -233,11 +347,17 @@ export async function downloadOfficeJobPackage(opts: {
         } catch {
           /* ignore */
         }
-        if (isSaveCancelled(err)) throw new OfficeSaveCancelledError();
+        if (
+          err instanceof OfficeSaveCancelledError ||
+          isSaveCancelled(err) ||
+          opts.signal?.aborted
+        ) {
+          throw new OfficeSaveCancelledError();
+        }
         throw err;
       }
     } catch (err) {
-      if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err)) {
+      if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err) || opts.signal?.aborted) {
         throw new OfficeSaveCancelledError();
       }
       // No user gesture (auto-start) or picker blocked — fall through to build-then-save.
@@ -245,16 +365,30 @@ export async function downloadOfficeJobPackage(opts: {
   }
 
   // Anchor / late Save As path: stream files into one ZIP blob, then save.
+  throwIfAborted(opts.signal);
   const blob = await downloadZip(zipEntries()).blob();
-  opts.onProgress?.("Choose where to save the ZIP…");
+  throwIfAborted(opts.signal);
+  report({
+    phase: "picking",
+    current: total,
+    total,
+    percent: 100,
+    message: "Choose where to save the ZIP on this computer…",
+    saveAsName: null,
+  });
   const outcome = await saveBlobWithSaveAs(blob, zipFilename, {
     mimeType: "application/zip",
     extension: ".zip",
   });
   if (outcome.kind === "cancelled") throw new OfficeSaveCancelledError();
-  opts.onProgress?.(
-    outcome.mode === "fallback" ? fallbackSaveMessage(outcome.filename) : outcome.message,
-  );
+  report({
+    phase: "done",
+    current: total,
+    total,
+    percent: 100,
+    message: outcome.mode === "fallback" ? fallbackSaveMessage(outcome.filename) : outcome.message,
+    saveAsName: outcome.filename,
+  });
 }
 
 /** Build an object URL for Open / lightbox (one file, chunked or signed). */
