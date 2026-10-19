@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.19-split" />
+<meta name="pgg-app-version" content="2026.10.19-ocr-rooms" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -2447,6 +2447,210 @@ async function runOcrPass(worker, canvas, psm) {
   return data || {};
 }
 
+// ---- OCR room dedupe helpers (Read labels)
+// Same printed label is often harvested as a full line, as individual words, and
+// again on rotated passes. Line centers ≠ word centers, so a 0.05 cluster radius
+// leaves extras that then get numbered Garage 1/2/3. Merge same-name hits more
+// widely (and on overlapping boxes), pin on the matched word, and only number
+// duplicates that are real separate sightings.
+
+const OCR_SAME_NAME_MERGE_R = 0.14;
+const OCR_DUP_NUMBER_MIN_SEP = 0.15;
+
+function _ocrBBoxOverlapOrContain(a, b) {
+  if (!a || !b) return false;
+  return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+}
+
+function _ocrTransformPoint(x, y, rot, canvasW, canvasH) {
+  if (rot === 90) return { x: y, y: canvasW - x };
+  if (rot === -90) return { x: canvasH - y, y: x };
+  return { x, y };
+}
+
+function _ocrNormBBox(bb, W, H, rot, canvasW, canvasH) {
+  if (!bb || !isFinite(bb.x0) || !isFinite(bb.y0) || !isFinite(bb.x1) || !isFinite(bb.y1)) return null;
+  const c1 = _ocrTransformPoint(bb.x0, bb.y0, rot, canvasW, canvasH);
+  const c2 = _ocrTransformPoint(bb.x1, bb.y0, rot, canvasW, canvasH);
+  const c3 = _ocrTransformPoint(bb.x0, bb.y1, rot, canvasW, canvasH);
+  const c4 = _ocrTransformPoint(bb.x1, bb.y1, rot, canvasW, canvasH);
+  const xs = [c1.x, c2.x, c3.x, c4.x].map(v => v / W);
+  const ys = [c1.y, c2.y, c3.y, c4.y].map(v => v / H);
+  return {
+    x0: Math.min(...xs), y0: Math.min(...ys),
+    x1: Math.max(...xs), y1: Math.max(...ys)
+  };
+}
+
+// Prefer the matched room word's box (e.g. GARAGE inside "2 CAR GARAGE"), not the
+// whole line — strips dimensions/neighbors from the pin location.
+function _ocrPinBBoxForMatch(item, matched, passWords) {
+  const lineBb = item && item.bbox;
+  const fromItem = Array.isArray(item && item.words) ? item.words : null;
+  let tryWords = fromItem && fromItem.length ? fromItem.slice() : [];
+  if (!tryWords.length && Array.isArray(passWords) && lineBb) {
+    tryWords = passWords.filter(w => {
+      const wb = w && w.bbox;
+      if (!wb) return false;
+      const cx = (wb.x0 + wb.x1) / 2, cy = (wb.y0 + wb.y1) / 2;
+      return cx >= lineBb.x0 && cx <= lineBb.x1 && cy >= lineBb.y0 && cy <= lineBb.y1;
+    });
+  }
+  for (const w of tryWords) {
+    const t = String(w.text || '').replace(/\s+/g, ' ').trim();
+    if (!t) continue;
+    if (matchRoomKeyword(t) === matched || cleanRoomNumber(t) === matched) {
+      return w.bbox || lineBb;
+    }
+  }
+  for (let i = 0; i < tryWords.length - 1; i++) {
+    const a = String(tryWords[i].text || '').trim();
+    const b = String(tryWords[i + 1].text || '').trim();
+    if (!a || !b) continue;
+    const joined = a + ' ' + b;
+    if (matchRoomKeyword(joined) === matched) {
+      const ba = tryWords[i].bbox || {}, bb = tryWords[i + 1].bbox || {};
+      return {
+        x0: Math.min(ba.x0, bb.x0), y0: Math.min(ba.y0, bb.y0),
+        x1: Math.max(ba.x1, bb.x1), y1: Math.max(ba.y1, bb.y1)
+      };
+    }
+  }
+  return lineBb;
+}
+
+function _ocrMergeClusterHit(hit, c, kindRank) {
+  if (c.src) hit.passes.add(c.src);
+  if (c.passes) for (const p of c.passes) hit.passes.add(p);
+  hit.hits = (hit.hits || 0) + (c.hits || 1);
+  if (c.bbox) {
+    if (!hit.bbox) hit.bbox = c.bbox;
+    else {
+      hit.bbox = {
+        x0: Math.min(hit.bbox.x0, c.bbox.x0), y0: Math.min(hit.bbox.y0, c.bbox.y0),
+        x1: Math.max(hit.bbox.x1, c.bbox.x1), y1: Math.max(hit.bbox.y1, c.bbox.y1)
+      };
+    }
+  }
+  if (kindRank(c.kind) < kindRank(hit.kind) || (c.kind === hit.kind && c.conf > hit.conf)) {
+    hit.name = c.name; hit.kind = c.kind; hit.x = c.x; hit.y = c.y; hit.conf = c.conf;
+    if (c.bbox) hit.bbox = c.bbox;
+  }
+}
+
+// Spatial cluster (~5%), then collapse same-name extras within ~0.14 or overlapping boxes.
+function clusterOcrRoomCandidates(candidates) {
+  const kindRank = k => k === 'preset' ? 0 : (k === 'numeric' ? 1 : 2);
+  const sorted = candidates.slice().sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || (b.conf - a.conf));
+  const clusters = [];
+  for (const c of sorted) {
+    const hit = clusters.find(k => Math.hypot(k.x - c.x, k.y - c.y) < 0.05);
+    if (hit) _ocrMergeClusterHit(hit, c, kindRank);
+    else {
+      clusters.push({
+        name: c.name, x: c.x, y: c.y, conf: c.conf, kind: c.kind,
+        bbox: c.bbox || null,
+        passes: new Set(c.src ? [c.src] : (c.passes ? [...c.passes] : [])),
+        hits: c.hits || 1
+      });
+    }
+  }
+  // Same-name merge: one printed label → one room even when line vs word centers differ.
+  const merged = [];
+  for (const c of clusters) {
+    const hit = merged.find(k =>
+      k.name === c.name && (
+        Math.hypot(k.x - c.x, k.y - c.y) < OCR_SAME_NAME_MERGE_R ||
+        _ocrBBoxOverlapOrContain(k.bbox, c.bbox)
+      )
+    );
+    if (hit) _ocrMergeClusterHit(hit, c, kindRank);
+    else merged.push(c);
+  }
+  return merged;
+}
+
+function filterOcrRoomClusters(clusters) {
+  return clusters.filter(k => {
+    const votes = k.passes && k.passes.size != null ? k.passes.size : 0;
+    if (k.kind === 'raw') return votes >= 2;
+    if (k.kind === 'numeric') return votes >= 1;
+    return votes >= 2 || k.conf >= 68;
+  });
+}
+
+// Number Bedroom 2/3 only when each survivor is a separate sighting ≥0.15 apart
+// with 2+ passes. Weak same-name ghosts merge into the nearest durable hit.
+function numberOcrRoomClusters(kept) {
+  const byName = {};
+  for (const c of kept) {
+    if (!byName[c.name]) byName[c.name] = [];
+    byName[c.name].push(c);
+  }
+  const out = [];
+  for (const name of Object.keys(byName)) {
+    let group = byName[name].slice();
+    const durable = () => group.filter(c => (c.passes && c.passes.size >= 2));
+    // Fold single-pass (and close) extras into nearest durable / best same-name.
+    let changed = true;
+    while (changed && group.length > 1) {
+      changed = false;
+      const strong = durable();
+      const weakIdx = group.findIndex(c => !(c.passes && c.passes.size >= 2));
+      if (weakIdx >= 0 && (strong.length || group.length > 1)) {
+        const weak = group[weakIdx];
+        const targets = strong.length ? strong : group.filter((_, i) => i !== weakIdx);
+        let best = null, bestD = Infinity;
+        for (const t of targets) {
+          const d = Math.hypot(t.x - weak.x, t.y - weak.y);
+          if (d < bestD) { bestD = d; best = t; }
+        }
+        if (best) {
+          _ocrMergeClusterHit(best, weak, k => k === 'preset' ? 0 : (k === 'numeric' ? 1 : 2));
+          group.splice(weakIdx, 1);
+          changed = true;
+          continue;
+        }
+      }
+      // Merge durables that are still closer than the numbering separation.
+      const durs = durable();
+      outer: for (let i = 0; i < durs.length; i++) {
+        for (let j = i + 1; j < durs.length; j++) {
+          if (Math.hypot(durs[i].x - durs[j].x, durs[i].y - durs[j].y) < OCR_DUP_NUMBER_MIN_SEP ||
+              _ocrBBoxOverlapOrContain(durs[i].bbox, durs[j].bbox)) {
+            const keep = durs[i].conf >= durs[j].conf ? durs[i] : durs[j];
+            const drop = keep === durs[i] ? durs[j] : durs[i];
+            _ocrMergeClusterHit(keep, drop, k => k === 'preset' ? 0 : (k === 'numeric' ? 1 : 2));
+            group = group.filter(c => c !== drop);
+            changed = true;
+            break outer;
+          }
+        }
+      }
+    }
+    // Only number if every remaining hit is durable and pairwise ≥ min separation.
+    const canNumber = group.length > 1 && group.every(c => c.passes && c.passes.size >= 2);
+    if (!canNumber && group.length > 1) {
+      // Collapse to best single label.
+      group.sort((a, b) => (b.conf - a.conf) || ((b.passes.size || 0) - (a.passes.size || 0)));
+      const keep = group[0];
+      for (let i = 1; i < group.length; i++) {
+        _ocrMergeClusterHit(keep, group[i], k => k === 'preset' ? 0 : (k === 'numeric' ? 1 : 2));
+      }
+      group = [keep];
+    }
+    group.sort((a, b) => a.y - b.y || a.x - b.x);
+    for (let i = 0; i < group.length; i++) {
+      const c = group[i];
+      out.push({
+        name: group.length > 1 ? (name + ' ' + (i + 1)) : name,
+        x: c.x, y: c.y
+      });
+    }
+  }
+  return out;
+}
+
 async function ocrScanRoomsForSetup() {
   if (!_setupPlan || !_setupPlan.dataUrl) return;
   const token = ++_setupRoomsToken;
@@ -2502,7 +2706,7 @@ async function ocrScanRoomsForSetup() {
       const lines = Array.isArray(data.lines) ? data.lines : [];
       const words = Array.isArray(data.words) ? data.words : [];
 
-      const harvest = (item, minConf) => {
+      const harvest = (item, minConf, passWords) => {
         const text = (item.text || '').replace(/\s+/g, ' ').trim();
         if (!text) return;
         const conf = typeof item.confidence === 'number' ? item.confidence : 100;
@@ -2526,77 +2730,34 @@ async function ocrScanRoomsForSetup() {
           ? 45
           : (kind === 'preset' ? Math.max(58, minConf - 12) : minConf);
         if (conf < floor) return;
-        const bb = item.bbox || {};
-        let cx = (bb.x0 + bb.x1) / 2;
-        let cy = (bb.y0 + bb.y1) / 2;
-        if (p.rot === 90) {
-          const rw = p.canvas.width;
-          const nx = cy;
-          const ny = rw - cx;
-          cx = nx; cy = ny;
-        } else if (p.rot === -90) {
-          const rh = p.canvas.height;
-          const nx = rh - cy;
-          const ny = cx;
-          cx = nx; cy = ny;
-        }
+        // Pin on the matched word (GARAGE), not the whole line ("2 CAR GARAGE").
+        const pinBb = _ocrPinBBoxForMatch(item, matched, passWords) || item.bbox || {};
+        const normBb = _ocrNormBBox(pinBb, W, H, p.rot, p.canvas.width, p.canvas.height);
+        let cx = (pinBb.x0 + pinBb.x1) / 2;
+        let cy = (pinBb.y0 + pinBb.y1) / 2;
+        const pt = _ocrTransformPoint(cx, cy, p.rot, p.canvas.width, p.canvas.height);
+        cx = pt.x; cy = pt.y;
         const nxr = cx / W;
         const nyr = cy / H;
         if (!isFinite(nxr) || !isFinite(nyr)) return;
         if (nxr < 0 || nxr > 1 || nyr < 0 || nyr > 1) return;
-        candidates.push({ name: matched, x: nxr, y: nyr, conf, src: p.label, kind });
+        candidates.push({ name: matched, x: nxr, y: nyr, conf, src: p.label, kind, bbox: normBb });
       };
 
       // QA/QC pass A: confidence floors.
-      for (const ln of lines) harvest(ln, 70);
+      for (const ln of lines) harvest(ln, 70, words);
       for (const w of words) {
         const t = (w.text || '').trim();
         if (t.length < 2) continue; // allow short numeric tokens like "10"
-        harvest(w, 78);
+        harvest(w, 78, null);
       }
     }
 
     if (token !== _setupRoomsToken) return;
 
-    // Cluster candidates within ~5% of plan, tracking which passes contributed.
-    // Sort: preset > numeric > raw, then higher confidence first.
-    const kindRank = k => k === 'preset' ? 0 : (k === 'numeric' ? 1 : 2);
-    candidates.sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || (b.conf - a.conf));
-    const clusters = [];
-    for (const c of candidates) {
-      const hit = clusters.find(k => Math.hypot(k.x - c.x, k.y - c.y) < 0.05);
-      if (hit) {
-        hit.passes.add(c.src);
-        hit.hits++;
-        // Upgrade weaker kind to stronger if a better hit lands here.
-        if (kindRank(c.kind) < kindRank(hit.kind)) {
-          hit.name = c.name; hit.kind = c.kind; hit.x = c.x; hit.y = c.y; hit.conf = c.conf;
-        }
-      } else {
-        clusters.push({ name: c.name, x: c.x, y: c.y, conf: c.conf, kind: c.kind, passes: new Set([c.src]), hits: 1 });
-      }
-    }
-
-    // QA/QC pass B: cross-pass voting.
-    //  - Preset match: ≥1 pass at usable conf (≥68) OR ≥2 passes agree.
-    //  - Numeric room number: ≥1 pass at high conf (≥80) OR ≥2 passes agree (digits OCR cleanly).
-    //  - Raw OCR text: require ≥2 passes — single-pass raw hits are the ghost rooms.
-    const kept = clusters.filter(k => {
-      const votes = k.passes.size;
-      if (k.kind === 'raw') return votes >= 2;
-      if (k.kind === 'numeric') return votes >= 1; // digits OCR cleanly; floor already enforced
-      return votes >= 2 || k.conf >= 68;
-    });
-
-    // Number duplicates only when there's more than one of the same name
-    const totals = {};
-    for (const c of kept) totals[c.name] = (totals[c.name] || 0) + 1;
-    const seen = {};
-    const numbered = kept.map(c => {
-      seen[c.name] = (seen[c.name] || 0) + 1;
-      const name = totals[c.name] > 1 ? (c.name + ' ' + seen[c.name]) : c.name;
-      return { name, x: c.x, y: c.y };
-    });
+    const clusters = clusterOcrRoomCandidates(candidates);
+    const kept = filterOcrRoomClusters(clusters);
+    const numbered = numberOcrRoomClusters(kept);
 
     _setupRooms = numbered;
     renderSetupRooms();
