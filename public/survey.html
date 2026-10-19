@@ -1,21 +1,23 @@
 <!DOCTYPE html>
-<!-- build marker: update-link-visible-1 -->
+<!-- build marker: nlf-free-cutover-2026-10-19 -->
 
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
-<link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-6" />
+<!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
+<meta name="pgg-app-version" content="2026.10.19-split" />
+<link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="PGG" />
 <meta name="application-name" content="PGG" />
 <meta name="mobile-web-app-capable" content="yes" />
-<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=pgg-6" />
-<link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=pgg-6" />
-<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png?v=pgg-6" />
-<link rel="icon" type="image/png" sizes="512x512" href="/icon-pgg-v2-512.png?v=pgg-6" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=pgg-7" />
+<link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=pgg-7" />
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png?v=pgg-7" />
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-pgg-v2-512.png?v=pgg-7" />
 
 <script>
 (() => {
@@ -90,21 +92,67 @@
   }
 
   // No auto-activate / auto-reload. Updates happen only when the user taps
-  // the "Update app" link (see #updateAppLink logic further down).
+  // the "Update" control (see #updateAppLink logic further down).
+  // When a new SW is waiting, show a quiet urgent state + reopen hint.
 
+  /** Called from SW registration + Update app UI — keep in sync. */
+  window.__pggSetUpdateAppUrgent = function (urgent) {
+    const link = document.getElementById("updateAppLink");
+    const wrap = document.getElementById("updateAppWrap");
+    const hint = document.getElementById("updateAppHint");
+    if (!link) return;
+    if (urgent) {
+      link.classList.add("update-app-urgent");
+      if (wrap) wrap.classList.add("urgent");
+      if (hint) hint.hidden = false;
+      if (!link.dataset.busy) {
+        link.textContent = "Update";
+      }
+    } else {
+      link.classList.remove("update-app-urgent");
+      if (wrap) wrap.classList.remove("urgent");
+      if (hint) hint.hidden = true;
+      if (!link.dataset.busy) {
+        link.textContent = "Update app";
+      }
+    }
+  };
 
+  const syncUrgentFromReg = (registration) => {
+    const urgent = !!(registration && registration.waiting);
+    if (typeof window.__pggSetUpdateAppUrgent === "function") {
+      window.__pggSetUpdateAppUrgent(urgent);
+    }
+  };
 
+  const watchRegistration = (registration) => {
+    syncUrgentFromReg(registration);
+    registration.addEventListener("updatefound", () => {
+      const nw = registration.installing;
+      if (!nw) return;
+      nw.addEventListener("statechange", () => {
+        // Installed + existing controller ⇒ new version waiting (or about to wait)
+        if (nw.state === "installed") {
+          syncUrgentFromReg(registration);
+          if (navigator.serviceWorker.controller) {
+            window.__pggSetUpdateAppUrgent(true);
+          }
+        }
+      });
+    });
+  };
 
   let lastCheck = 0;
   const checkForUpdate = (registration) => {
     const now = Date.now();
     if (now - lastCheck < 10000) return;
     lastCheck = now;
-    registration.update().catch(() => {});
+    registration.update().then(() => syncUrgentFromReg(registration)).catch(() => {});
   };
 
   const register = () => {
     navigator.serviceWorker.register(SW_PATH, { scope: "/" }).then((registration) => {
+      watchRegistration(registration);
       checkForUpdate(registration);
       window.addEventListener("pageshow", () => checkForUpdate(registration));
       window.addEventListener("focus", () => checkForUpdate(registration));
@@ -123,7 +171,6 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
 <style>
   :root{
     --bg:#f7f5f2; --paper:#ffffff; --ink:#1f1b16; --muted:#6b6357;
@@ -152,16 +199,58 @@
   .home-head .brand{font-size:11px;letter-spacing:.18em;color:var(--muted);font-weight:600;text-transform:uppercase}
   .home-head h1{font-size:28px;margin:6px 0 0;font-weight:700;letter-spacing:-.02em}
   .home-head .sub{font-size:14px;color:var(--muted);margin-top:4px}
+  .home-jumps{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:center;align-items:center;margin-top:10px}
+  .home-jumps a{font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .home-app-version{font-size:12px;color:var(--muted);margin-top:8px;font-weight:600;letter-spacing:.02em;
+    font-variant-numeric:tabular-nums}
+  /* Quiet by default; soft PGG-green cue when a SW update is waiting (not yellow slab) */
+  .update-app-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:0;max-width:min(300px,92vw)}
+  .update-app-wrap.urgent{
+    gap:6px;padding:10px 14px;
+    background:#e9f1e9;border:1px solid #a8c4a7;border-radius:10px}
+  .home-jumps a#updateAppLink.update-app-urgent{
+    color:#467C45;font-weight:700;font-size:14px;text-decoration:none;
+    background:#fff;border:1.5px solid #467C45;padding:8px 18px;border-radius:10px;
+    box-shadow:0 1px 3px rgba(70,124,69,.14);letter-spacing:.01em}
+  .update-app-hint{margin:0;font-size:12px;line-height:1.4;color:#3d5a3c;font-weight:500;text-align:center;
+    max-width:18em}
+
+  /* Lovable-host sunset — clear but not the yellow Update slab */
+  .lovable-sunset-banner{
+    display:none;margin:0 0 16px;padding:14px 16px;border-radius:12px;
+    background:#eef4f8;border:1px solid #8aa4b8;color:#1a2a36;font-size:14px;line-height:1.45;
+    text-align:left}
+  .lovable-sunset-banner.visible{display:block}
+  .lovable-sunset-banner strong{font-weight:700}
+  .lovable-sunset-banner a{color:#0b4f6c;font-weight:700;text-decoration:underline}
+  .lovable-sunset-local{
+    display:none;margin:0 0 14px;padding:12px 14px;border-radius:12px;
+    background:#f7efe6;border:1px solid #c4a574;color:#3d2e18;font-size:13px;line-height:1.45;
+    text-align:left}
+  .lovable-sunset-local.visible{display:block}
+  .lovable-sunset-local strong{font-weight:700}
 
   .mode-btn{display:flex;align-items:center;gap:16px;width:100%;
     background:var(--paper);border:1px solid var(--line);border-radius:14px;
     padding:18px 18px;margin-bottom:12px;text-align:left;box-shadow:var(--shadow);
-    font-size:16px;font-weight:600;color:var(--ink)}
+    font-size:16px;font-weight:600;color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+    transition:background-color .08s ease,border-color .08s ease,transform .08s ease,box-shadow .08s ease,opacity .08s ease}
   .mode-btn .icon{font-size:28px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;
     background:var(--accent-soft);color:var(--accent);border-radius:10px;flex-shrink:0}
   .mode-btn .meta{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
   .mode-btn .meta small{font-weight:500;color:var(--muted);font-size:12px}
-  .mode-btn:active{transform:scale(.99)}
+  /* Match /office press: warm fill + depress (iOS needs .is-pressed via pointer events) */
+  .mode-btn:active:not(.is-busy),
+  .mode-btn.is-pressed:not(.is-busy){
+    background:#e2d4bf;border-color:var(--accent);
+    transform:translateY(1px) scale(.99);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.14)}
+  .mode-btn.is-busy{
+    opacity:.72;cursor:wait;pointer-events:none;
+    background:var(--accent-soft);border-color:var(--accent);
+    box-shadow:none;transform:none}
+  .mode-btn.is-busy .meta span{color:var(--accent)}
 
   .recent-head{display:flex;justify-content:space-between;align-items:center;
     margin:28px 4px 10px;font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:600}
@@ -176,7 +265,7 @@
     padding:2px 7px;border-radius:999px;letter-spacing:.05em;margin-right:6px;vertical-align:1px}
   .ri-tag.internal{background:#e2efe6;color:#2e7d4f}
   .ri-tag.external{background:#f3d8ce;color:var(--accent)}
-  .ri-actions{display:flex;gap:4px}
+  .ri-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
   .ri-btn{background:transparent;border:none;color:var(--muted);font-size:18px;
     width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center}
   .ri-btn:active{background:var(--line)}
@@ -186,6 +275,11 @@
   .ri-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
   .ri-badge.warn{background:#fdf4e0;color:#8a5a10}
   .ri-badge.ok{background:#e4efe4;color:#2f7d4f}
+  .ri-badge.sync-ok{background:#e2efe6;color:#2e7d4f;font-weight:700}
+  .ri-badge.sync-stale,.ri-badge.sync-none{background:#fdf4e0;color:#8a5a10;font-weight:700}
+  .ri-synced{display:inline-flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:700;color:#2e7d4f;padding:4px 6px;line-height:1}
+  .ri-title-pills{display:inline;white-space:normal}
   .export-reminder{display:flex;align-items:flex-start;gap:10px;background:#fdf4e0;border:1px solid #f0dfae;color:#5c4210;border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13px}
   .export-reminder button{margin-left:auto;background:transparent;border:none;color:var(--muted);font-size:18px;line-height:1;padding:0 2px}
   /* Photo documentation reminder — persistent handle (all screens) + bottom sheet */
@@ -205,15 +299,11 @@
   #reminderSheet .mm-body ul{margin:0;padding:0 0 0 1.15em}
   #reminderSheet .mm-body li{margin:0 0 6px}
   #reminderSheet .mm-body li:last-child{margin-bottom:0}
-  /* Trash FAB (bottom-right of home) */
-  .fab-trash{position:fixed;right:18px;bottom:calc(18px + var(--app-bottom-offset,0px));
-    width:56px;height:56px;border-radius:50%;border:1px solid var(--line);
-    background:var(--paper);color:var(--ink);font-size:24px;display:flex;align-items:center;
-    justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.15);cursor:pointer;z-index:30}
-  .fab-trash.empty{opacity:.35;cursor:default}
-  .fab-trash .fab-badge{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;
-    padding:0 5px;border-radius:10px;background:var(--accent);color:#fff;font-size:11px;
-    font-weight:700;display:flex;align-items:center;justify-content:center}
+  /* Quiet Trash link in Recent header (only when soft-trash has items) */
+  .trash-link{background:transparent;border:none;color:var(--muted);font-size:12px;
+    padding:4px 6px;border-radius:6px;cursor:pointer;text-decoration:underline;
+    letter-spacing:normal;text-transform:none;font-weight:600}
+  .trash-link:active{background:var(--line);color:var(--ink)}
   /* Trash screen */
   #screenTrash{padding:0;overflow-y:auto;align-items:stretch}
   #screenTrash.active{display:flex;flex-direction:column}
@@ -606,44 +696,49 @@
 
 <!-- ============ HOME ============ -->
 <div id="screenHome" class="screen active">
+  <div id="lovableSunsetBanner" class="lovable-sunset-banner" role="status" aria-live="polite"></div>
   <div class="home-head">
     <h1>PGG Photo Documentation</h1>
-    <a href="#" id="updateAppLink" style="display:inline-block;font-size:13px;color:var(--muted);text-decoration:underline;margin-top:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">Update app</a>
+    <div class="home-jumps">
+      <div id="updateAppWrap" class="update-app-wrap">
+        <a href="#" id="updateAppLink">Update app</a>
+        <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
+      </div>
+    </div>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.19-split</p>
   </div>
 
 
-  <button class="mode-btn" style="padding:10px 14px;margin-bottom:16px" onclick="triggerImportProject()">
-    <div class="icon" style="font-size:18px;width:32px;height:32px">📥</div>
-    <div class="meta"><span style="font-size:14px">Import project file</span></div>
-  </button>
   <input type="file" id="importFileInput" accept=".pgg,.zip,application/zip" style="display:none" onchange="_onImportFileChosen(event)">
 
-  <button class="mode-btn" onclick="startNewProject('internal')">
+  <a href="/office" id="homeOfficeLink" class="mode-btn" target="_top" rel="noopener" style="text-decoration:none;color:inherit;margin-bottom:16px">
+    <div class="icon">🗂️</div>
+    <div class="meta">
+      <span id="homeOfficeTitle">Download</span>
+      <small id="homeOfficeSub">Synced jobs · fix names in explorer if needed · get them on this computer</small>
+    </div>
+  </a>
+
+  <button type="button" id="homeCaptureBtn" class="mode-btn" onclick="startNewProject('internal')">
     <div class="icon">📷</div>
     <div class="meta">
       <span>PGG Photo Documentation</span>
-      <small>Interior survey · exports map + photos</small>
+      <small>Interior survey · floor plan pins + photos</small>
     </div>
   </button>
 
-  <button class="mode-btn" onclick="startNewProject('external')">
-    <div class="icon">🏘️</div>
-    <div class="meta">
-      <span>External Camera</span>
-      <small>Exterior survey · exports map only</small>
-    </div>
-  </button>
+  <!-- External Camera home entry removed (unused / map-only mode). Runtime for
+       mode==='external' kept so existing EXTERNAL Recent/Import projects still open. -->
 
 
 
   <div class="recent-head">
-    <span>Recent</span>
-    <span id="recentCount"></span>
+    <span><span>Recent</span> <span id="recentCount"></span></span>
+    <button type="button" id="trashLink" class="trash-link" onclick="openTrash()" style="display:none" aria-label="Open trash">Trash</button>
   </div>
+  <div id="lovableSunsetLocal" class="lovable-sunset-local" role="status"></div>
   <div id="exportReminder"></div>
   <div id="recentList"></div>
-
-  <button id="fabTrash" class="fab-trash empty" onclick="openTrash()" aria-label="Trash">🗑<span id="fabTrashBadge" class="fab-badge" style="display:none">0</span></button>
 </div>
 
 <!-- ============ TRASH ============ -->
@@ -773,19 +868,10 @@
     <button class="icon-btn" onclick="toggleMenu()" title="More">⋯</button>
   </div>
   <div class="menu" id="workMenu">
-    <button onclick="openExport()">📤 Export</button>
+    <button onclick="syncProjectToOffice()">☁️ Sync to office</button>
+    <button id="autoSyncMenuBtn" onclick="toggleAutoSyncPreference()">⟳ Auto-sync: …</button>
     <button onclick="editSetup()">⚙️ Edit setup</button>
-    <div class="sep"></div>
-    <button onclick="confirmQuickCapture()">📸 Quick Capture</button>
-    <div class="sep"></div>
-    <button onclick="clearDrawings()">✎ Clear all drawings</button>
-    <button onclick="shrinkPhotos()">🗜 Shrink photos</button>
-    
-    
-
-    
-    <div class="sep"></div>
-    <button class="danger" onclick="confirmDeleteProject()">🗑 Move to trash</button>
+    <button onclick="openExport()">📤 Export</button>
   </div>
 
   <div class="stage" id="stage">
@@ -966,6 +1052,9 @@
     <div>
       <div class="sheet-title">Export</div>
       <div class="sheet-sub" id="exportSub">Picture map + descriptions</div>
+      <div class="sheet-sub" id="exportLastResortNote" style="margin-top:6px;line-height:1.4">
+        Last resort if Sync or Download isn’t working.
+      </div>
     </div>
     <button class="ghost" onclick="closeSheets()">Cancel</button>
   </div>
@@ -977,12 +1066,13 @@
     </button>
     <div class="sheet-sub" id="exportSizeNote" style="margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
     <button class="ghost" id="exportShrinkBtn" onclick="exportShrinkFromSheet()" style="display:none;margin-top:6px">🗜 Shrink photos to fit one ZIP</button>
-    <button class="ghost" id="cloudUploadBtn" onclick="exportProjectCloud()" style="margin-top:8px">
+    <!-- Hidden: competed with Sync / office Download. Keep markup so exportProjectCloud() still works if reached from ZIP-too-big fallback. -->
+    <button class="ghost" id="cloudUploadBtn" onclick="exportProjectCloud()" style="display:none;margin-top:8px">
       ☁️ Upload &amp; get one link
     </button>
     <div class="sheet-sub" id="exportResumeNote" style="display:none;margin-top:8px;line-height:1.4;font-size:12px;font-weight:700"></div>
     <div class="sheet-sub" id="exportCloudNote" style="margin-top:8px;line-height:1.4;font-size:12px">
-      The ZIP saves straight to this device and works with no signal — from there it moves to a computer by cable, AirDrop, or a synced folder. Cloud upload is for jobs too big to fit in one ZIP, or for sending a job to someone else remotely.
+      Day-to-day path is Sync on the phone, then Download on the desk. This ZIP is for when those aren’t available.
     </div>
 
 
@@ -994,10 +1084,11 @@
       Opens the picture map in a new tab so you can review before saving. The same file is inside the ZIP.
     </div>
 
-    <button class="ghost" style="margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
+    <!-- Hidden: desk path is office Download, not .pgg project file. -->
+    <button class="ghost" id="exportProjectFileBtn" style="display:none;margin-top:18px;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px" onclick="exportProjectFile()">
       💾 Move to Desktop (project file)
     </button>
-    <div class="sheet-sub" style="margin-top:6px">
+    <div class="sheet-sub" id="exportProjectFileNote" style="display:none;margin-top:6px">
       Saves a file you can open on your desktop to keep working on this job there.
     </div>
   </div>
@@ -1082,6 +1173,10 @@ const STORAGE_KEY = 'pgg_survey_v1';
 const MAX_IMG_DIM = 2400;        // floor plan downscale cap
 const MAX_PHOTO_DIM = 3000;       // photo downscale cap
 const UNDO_LIMIT = 30;
+/** Fixed end of Lovable hosting for the field app (two months from 2026-10-16 → 16 Dec 2026). */
+const LOVABLE_SUNSET_END_ISO = '2026-12-16';
+const LOVABLE_SUNSET_END_LABEL = '16 December 2026';
+const WWW_FIELD_APP_URL = 'https://www.pggphotodocumentation.com';
 
 // ---- State ----
 let store = { projects: [] };     // persisted
@@ -1193,8 +1288,8 @@ function showSaveFailureBanner(err) {
           <br><br>
           <b>Things to try before continuing to edit:</b>
           <ul style="margin:8px 0 0 18px;padding:0;">
-            <li>Empty Trash on the Home screen</li>
-            <li>Delete old projects you've already exported</li>
+            <li>Open Trash under Recent and permanently delete old jobs</li>
+            <li>Delete old projects you've already synced to office</li>
           </ul>
         </div>
         <div id="saveFailErr" style="font-size:12px;color:#666;margin-top:10px;word-break:break-word;"></div>
@@ -1485,13 +1580,20 @@ function updateAppHeight() {
 }
 function goHome() {
   closeSheets();
-  if (project) { saveProject(); }
+  const leaving = project;
+  if (leaving) { saveProject(); }
   project = null;
   ui.selectedPinId = null;
   ui.undo = [];
   ui.redo = [];
   renderHome();
   showScreen('screenHome');
+  // Auto-sync after leaving a job (debounced; never-lose via resumable upload).
+  if (leaving && projectNeedsOfficeSync(leaving)) {
+    if (autoSyncPreference() == null) ensureAutoSyncPreferenceAsked();
+    // Re-attach leaving project briefly via schedule — maybeAutoSync finds it in store.
+    scheduleAutoSyncOffice('leave-job');
+  }
 }
 
 // ---------- HOME ----------
@@ -1502,48 +1604,132 @@ function exportStatus(p) {
   if (updated > exported + 1000) return { state: 'stale', label: 'Changes since export' };
   return { state: 'ok', label: 'Exported ' + relTime(exported) };
 }
+/**
+ * Sunset UI only on the Lovable-hosted field app — never on www Netlify.
+ * Localhost: ?sunsetPreview=1 for screenshots / QA only.
+ */
+function isLovableHostedFieldApp() {
+  const host = (location.hostname || '').toLowerCase();
+  if (!host) return false;
+  if (host === 'pggphotodocumentation.com' || host.endsWith('.pggphotodocumentation.com')) return false;
+  if (host === 'netlify.app' || host.endsWith('.netlify.app')) return false;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    try { return new URLSearchParams(location.search).get('sunsetPreview') === '1'; } catch { return false; }
+  }
+  const zones = [
+    'lovable.app',
+    'lovableproject.com',
+    'lovableproject-dev.com',
+    'lovable.dev',
+    'gpt-eng.com',
+    'gptengineer.run',
+  ];
+  return zones.some((z) => host === z || host.endsWith('.' + z));
+}
+
+
+/** www / Netlify field host — Sync uses Netlify Blobs (+ field key). */
+function isNetlifyFieldHost() {
+  const host = (location.hostname || '').toLowerCase();
+  if (!host) return false;
+  if (host === 'pggphotodocumentation.com' || host.endsWith('.pggphotodocumentation.com')) return true;
+  if (host === 'netlify.app' || host.endsWith('.netlify.app')) return true;
+  return false;
+}
+
+/** Lovable field Sync uses the previous Supabase upload path until Dec 16. */
+function useLovableSupabaseSync() {
+  if (isNetlifyFieldHost()) return false;
+  return isLovableHostedFieldApp();
+}
+
+function hasLocalOnPhoneData() {
+  const nProj = (store.projects || []).length;
+  const nTrash = (store.trash || []).length;
+  return nProj + nTrash > 0;
+}
+
+function renderLovableSunsetNotices() {
+  const banner = document.getElementById('lovableSunsetBanner');
+  const localEl = document.getElementById('lovableSunsetLocal');
+  const onLovable = isLovableHostedFieldApp();
+  if (banner) {
+    if (onLovable) {
+      banner.classList.add('visible');
+      banner.innerHTML =
+        'This app will no longer be hosted on this platform after <strong>' +
+        LOVABLE_SUNSET_END_LABEL +
+        '</strong> (two months from this notice). Please use <a href="' +
+        WWW_FIELD_APP_URL +
+        '" target="_top" rel="noopener">' +
+        'www.pggphotodocumentation.com</a> — create a home screen icon and start using that app.';
+    } else {
+      banner.classList.remove('visible');
+      banner.innerHTML = '';
+    }
+  }
+  if (localEl) {
+    if (onLovable && hasLocalOnPhoneData()) {
+      localEl.classList.add('visible');
+      localEl.innerHTML =
+        'Please save all data from this app to your working computer. ' +
+        'Support for this app ends <strong>' +
+        LOVABLE_SUNSET_END_LABEL +
+        '</strong>. On a desk computer use <strong>Download</strong>, or <strong>Sync</strong> to office — do not leave jobs only on the phone.';
+    } else {
+      localEl.classList.remove('visible');
+      localEl.innerHTML = '';
+    }
+  }
+}
+
 function renderHome() {
   const list = document.getElementById('recentList');
   const count = document.getElementById('recentCount');
   const reminder = document.getElementById('exportReminder');
   const projs = (store.projects || []).slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   count.textContent = projs.length ? projs.length + ' project' + (projs.length===1?'':'s') : '';
+  renderLovableSunsetNotices();
   if (!projs.length) {
     list.innerHTML = '<div class="recent-empty">No surveys yet. Start one above.</div>';
     if (reminder) reminder.innerHTML = '';
   } else {
     list.innerHTML = projs.map(p => {
       const pinCount = (p.pins||[]).length;
-      const status = exportStatus(p);
-      const badgeClass = status.state === 'ok' ? 'ri-badge ok' : 'ri-badge warn';
+      const sync = syncStatus(p);
+      const syncPillClass = sync.state === 'ok' ? 'ri-badge sync-ok' : (sync.state === 'stale' ? 'ri-badge sync-stale' : 'ri-badge sync-none');
+      const canTrash = isFullySyncedToOffice(p);
+      // Sync → ✓ when synced → Delete (never "Sync to delete"; delete only after sync).
+      const rowActions = canTrash
+        ? `<span class="ri-synced" title="Synced to office" aria-label="Synced">✓</span><button type="button" class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Delete</button>`
+        : `<button type="button" class="ri-move" onclick="event.stopPropagation();syncProjectFromHome('${p.id}')" title="Sync this job to office before you can delete it">Sync</button>`;
       return `
         <div class="recent-item">
           <div class="ri-body" onclick="openProject('${p.id}')">
-            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="${badgeClass}">${status.label}</span></div>
+            <div class="ri-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-title-pills"><span class="${syncPillClass}">${escapeHtml(sync.label)}</span></span></div>
             <div class="ri-sub">${p.jobNumber ? '#'+escapeHtml(p.jobNumber)+' · ' : ''}${pinCount} pin${pinCount===1?'':'s'} · ${relTime(p.updatedAt)}</div>
           </div>
           <div class="ri-actions">
-            <button class="ri-move" onclick="event.stopPropagation();moveProjectToTrash('${p.id}')">Move to trash</button>
+            ${rowActions}
           </div>
         </div>`;
     }).join('');
   }
-  // Dismissible reminder banner for projects not exported in 7+ days
+  // Dismissible reminder: jobs not Fully synced for 7+ days (Sync story, not Export).
   if (reminder) {
     const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
     const stale = projs.filter(p => {
-      const status = exportStatus(p);
-      if (status.state === 'ok') return false;
-      const exported = p.lastExportedAt || 0;
-      const sinceExport = exported ? (Date.now() - exported) : Infinity;
-      return sinceExport >= SEVEN_DAYS;
+      if (syncStatus(p).state === 'ok') return false;
+      const synced = p.lastSyncedAt || 0;
+      const sinceSync = synced ? (Date.now() - synced) : Infinity;
+      return sinceSync >= SEVEN_DAYS;
     });
     let dismissed = 0;
     try { dismissed = parseInt(localStorage.getItem('exportReminderDismissed') || '0', 10) || 0; } catch {}
     if (stale.length && (Date.now() - dismissed) >= THREE_DAYS) {
       reminder.innerHTML = `<div class="export-reminder">
-        <span>You have ${stale.length} project${stale.length===1?'':'s'} not yet backed up. Tap a project to export it.</span>
+        <span>You have ${stale.length} project${stale.length===1?'':'s'} not yet synced to office. Tap Sync on a project, or open it and use Sync to office.</span>
         <button onclick="dismissExportReminder(event)" aria-label="Dismiss">×</button>
       </div>`;
     } else {
@@ -1557,7 +1743,7 @@ function renderHome() {
       <button onclick="restoreFromBackup()" style="background:#8b5e34;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600">Restore backup</button>
     </div>`;
   }
-  renderTrashFab();
+  renderTrashLink();
 }
 
 function dismissExportReminder(e) {
@@ -1566,18 +1752,17 @@ function dismissExportReminder(e) {
   const reminder = document.getElementById('exportReminder');
   if (reminder) reminder.innerHTML = '';
 }
-function renderTrashFab() {
-  const fab = document.getElementById('fabTrash');
-  const badge = document.getElementById('fabTrashBadge');
-  if (!fab) return;
+/** Show a quiet "Trash (N)" in the Recent header only when soft-trash has items. */
+function renderTrashLink() {
+  const link = document.getElementById('trashLink');
+  if (!link) return;
   const n = (store.trash || []).length;
   if (n > 0) {
-    fab.classList.remove('empty');
-    badge.style.display = 'flex';
-    badge.textContent = String(n);
+    link.style.display = '';
+    link.textContent = 'Trash (' + n + ')';
   } else {
-    fab.classList.add('empty');
-    badge.style.display = 'none';
+    link.style.display = 'none';
+    link.textContent = 'Trash';
   }
 }
 function relTime(t) {
@@ -1590,9 +1775,25 @@ function relTime(t) {
   if (d<7) return d+' day'+(d===1?'':'s')+' ago';
   return new Date(t).toLocaleDateString();
 }
+/** Home Recent: Sync this job (opens sync UI). Delete stays locked until Fully synced. */
+async function syncProjectFromHome(id) {
+  const proj = (store.projects || []).find(p => p.id === id);
+  if (!proj) return;
+  if (isFullySyncedToOffice(proj)) {
+    renderHome();
+    return;
+  }
+  ensureAutoSyncPreferenceAsked();
+  await runOfficeSyncUpload({ silent: false, projectRef: proj });
+  renderHome();
+}
 function moveProjectToTrash(id) {
   const proj = (store.projects||[]).find(p => p.id === id);
   if (!proj) return;
+  if (!isFullySyncedToOffice(proj)) {
+    toast('Sync to office first — delete only when Fully synced');
+    return;
+  }
   if (!confirm('Move "' + (proj.address || 'this project') + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
   proj.deletedAt = Date.now();
   store.trash = store.trash || [];
@@ -1615,6 +1816,14 @@ function restoreProject(id) {
 function deleteProjectForever(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  // Never permanently delete work that was not fully synced to office staging.
+  if (!isFullySyncedToOffice(proj)) {
+    alert(
+      '"' + (proj.address || 'This project') + '" is not fully synced to office.\n\n' +
+      'Restore it, Sync to office, then delete. Unsynced work cannot be deleted.'
+    );
+    return;
+  }
   const status = exportStatus(proj);
   if (status.state !== 'ok') {
     const reason = status.state === 'none' ? 'has never been exported' : 'has changes since it was last exported';
@@ -1622,6 +1831,7 @@ function deleteProjectForever(id) {
       restoreProject(id);
       toast('Restored — export it, then trash it again when ready.');
     }, () => {
+      // Still blocked if somehow not synced — confirmPermanentDelete re-checks sync.
       confirmPermanentDelete(id);
     });
     return;
@@ -1631,6 +1841,10 @@ function deleteProjectForever(id) {
 function confirmPermanentDelete(id) {
   const proj = (store.trash||[]).find(p => p.id === id);
   if (!proj) return;
+  if (!isFullySyncedToOffice(proj)) {
+    toast('Cannot delete — job is not Fully synced');
+    return;
+  }
   if (!confirm('Permanently delete "' + (proj.address || 'this project') + '"?\n\nThis cannot be undone.')) return;
   for (const pin of (proj.pins||[])) {
     for (const entry of (pin.photos||[])) {
@@ -1666,6 +1880,11 @@ function purgeOldTrash() {
   let purged = 0;
   for (const proj of trash) {
     if ((proj.deletedAt || 0) < cutoff) {
+      // Never auto-purge unsynced work — keep until Fully synced (or restored).
+      if (!isFullySyncedToOffice(proj)) {
+        keep.push(proj);
+        continue;
+      }
       for (const pin of (proj.pins||[])) {
         for (const entry of (pin.photos||[])) {
           if (isPhotoId(entry)) idbDel(entry).catch(()=>{});
@@ -1682,6 +1901,7 @@ function purgeOldTrash() {
 function openTrash() {
   if (!(store.trash||[]).length) { toast('Trash is empty'); return; }
   renderTrash();
+  renderTrashLink();
   showScreen('screenTrash');
 }
 function closeTrash() { showScreen('screenHome'); }
@@ -1696,14 +1916,19 @@ function renderTrash() {
   body.innerHTML = items.map(p => {
     const daysLeft = Math.max(0, Math.ceil(30 - (Date.now() - (p.deletedAt||0))/DAY));
     const pinCount = (p.pins||[]).length;
+    const canDelete = isFullySyncedToOffice(p);
+    const sync = syncStatus(p);
+    const foreverBtn = canDelete
+      ? `<button class="ti-forever" onclick="deleteProjectForever('${p.id}')">Delete forever</button>`
+      : `<button class="ti-forever" disabled title="Not fully synced — restore and Sync to office first" style="opacity:.4;cursor:not-allowed">Delete locked</button>`;
     return `
       <div class="trash-item">
         <div class="ti-body">
-          <div class="ti-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}</div>
-          <div class="ti-sub">${pinCount} pin${pinCount===1?'':'s'} · deletes in ${daysLeft} day${daysLeft===1?'':'s'}</div>
+          <div class="ti-title"><span class="ri-tag ${p.mode}">${p.mode}</span>${escapeHtml(p.address||'(no address)')}<span class="ri-badge ${canDelete ? 'sync-ok' : 'sync-stale'}">${escapeHtml(sync.label)}</span></div>
+          <div class="ti-sub">${pinCount} pin${pinCount===1?'':'s'} · ${canDelete ? ('deletes in ' + daysLeft + ' day' + (daysLeft===1?'':'s')) : 'kept until Fully synced'}</div>
         </div>
         <button class="ti-restore" onclick="restoreProject('${p.id}')">Restore</button>
-        <button class="ti-forever" onclick="deleteProjectForever('${p.id}')">Delete forever</button>
+        ${foreverBtn}
       </div>`;
   }).join('');
 }
@@ -3542,6 +3767,10 @@ document.addEventListener('fullscreenchange', () => {
 function confirmDeleteProject() {
   closeMenu();
   if (!project) return;
+  if (!isFullySyncedToOffice(project)) {
+    toast('Sync to office first — delete only when Fully synced');
+    return;
+  }
   if (!confirm('Move "' + project.address + '" to trash?\n\nIt will be deleted forever after 30 days. You can restore it before then.')) return;
   project.deletedAt = Date.now();
   store.trash = store.trash || [];
@@ -5987,8 +6216,8 @@ function openExport() {
   _refreshExportSizeNote();
 }
 
-// Shows how big this job is before you tap, and only frames cloud upload as
-// relevant once the job is actually near or over the one-ZIP limit.
+// Shows how big this job is before you tap. Cloud “one link” stays hidden —
+// Sync → desk Download is the normal path; ZIP is last resort.
 async function _refreshExportSizeNote() {
   const sizeNote = document.getElementById('exportSizeNote');
   const cloudBtn = document.getElementById('cloudUploadBtn');
@@ -6010,7 +6239,7 @@ async function _refreshExportSizeNote() {
   } catch (e) {
     console.warn('size readout failed', e);
     sizeNote.textContent = '';
-    if (cloudBtn) cloudBtn.style.display = '';
+    if (cloudBtn) cloudBtn.style.display = 'none';
     return;
   }
 
@@ -6019,7 +6248,7 @@ async function _refreshExportSizeNote() {
   const near = bytes > SINGLE_ZIP_LIMIT * 0.8;
   const over = bytes > SINGLE_ZIP_LIMIT;
   let txt = 'This job is about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB of photos' +
-    (over ? ' — too big for one ZIP, so it will be split or uploaded.'
+    (over ? ' — too big for one ZIP, so it will be split.'
           : near ? ' — close to the one-ZIP limit.'
                  : ' — fits in one ZIP.');
   try {
@@ -6028,33 +6257,35 @@ async function _refreshExportSizeNote() {
   } catch (e) {}
   sizeNote.style.whiteSpace = 'pre-line';
   sizeNote.textContent = txt;
-  if (cloudBtn) cloudBtn.style.display = '';
+  if (cloudBtn) cloudBtn.style.display = 'none';
   if (shrinkBtn) shrinkBtn.style.display = (near || over) ? '' : 'none';
   if (cloudNote) {
     cloudNote.textContent = (near || over)
-      ? 'This job is at the edge of what one ZIP can hold on the phone. Cloud upload is the reliable path here — it needs signal, but it resumes if it drops.'
-      : 'The ZIP saves straight to this device and works with no signal — from there it moves to a computer by cable, AirDrop, or a synced folder. Cloud upload is for jobs too big to fit in one ZIP, or for sending a job to someone else remotely.';
+      ? 'This job is at the edge of what one ZIP can hold on the phone. Prefer Sync → Download on the desk when you can; Shrink photos may still fit one ZIP here.'
+      : 'Day-to-day path is Sync on the phone, then Download on the desk. This ZIP is for when those aren’t available.';
   }
 }
 
 
-// Pin radius for map.png / picture-map PDF. Base size matches the old
-// fixed fraction, then shrinks with pin count and nearest-neighbor density
-// so a ~100k sq ft overview stays readable when the walk has many findings.
-// opts.baseFrac / opts.minFrac override the fractions; opts.forceR pins a size.
+// Pin radius for map.png / picture-map PDF. Default fractions suit ZIP map.png;
+// picture-map PDF passes larger opts so overview numbers stay readable.
+// opts.baseFrac / opts.minFrac / opts.comfortN / opts.densFloor override;
+// opts.forceR pins a size.
 function exportPinRadius(W, H, pins, opts) {
   const o = opts || {};
   if (o.forceR != null && isFinite(o.forceR) && o.forceR > 0) return o.forceR;
   const baseFrac = o.baseFrac != null ? o.baseFrac : 0.00875;
   const minFrac = o.minFrac != null ? o.minFrac : 0.0032;
+  const comfortN = o.comfortN != null ? o.comfortN : 12;
+  const densFloor = o.densFloor != null ? o.densFloor : 0.38;
   const maxDim = Math.max(W, H) || 1;
   let R = maxDim * baseFrac;
   const list = pins || [];
   const n = list.length;
   if (n <= 1) return R;
 
-  // Comfortable at ~12 pins on a full-building overview; shrink with sqrt(n).
-  const countScale = Math.min(1, Math.sqrt(12 / n));
+  // Comfortable near comfortN pins on a full overview; shrink with sqrt(n).
+  const countScale = Math.min(1, Math.sqrt(comfortN / n));
 
   // Nearest-neighbor: ignore exact stacks (handled by ×N badge); if distinct
   // pins sit closer than ~3R, shrink so markers don't blot each other out.
@@ -6069,7 +6300,7 @@ function exportPinRadius(W, H, pins, opts) {
   }
   let densScale = 1;
   if (isFinite(minD) && minD < R * 3) {
-    densScale = Math.max(0.38, minD / (R * 3));
+    densScale = Math.max(densFloor, minD / (R * 3));
   }
 
   R = R * Math.min(countScale, densScale);
@@ -6078,8 +6309,8 @@ function exportPinRadius(W, H, pins, opts) {
   return Math.max(minR, Math.min(maxR, R));
 }
 
-// Split the plan into labeled zone crops that each contain pins. Used for
-// picture-map detail pages after the full-building overview.
+// Split the plan into labeled zone crops that each contain pins.
+// Kept for reference; picture-map PDF no longer emits NW/NE/SW/SE detail sheets.
 function exportPinZones(pins, W, H) {
   const list = (pins || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
   if (list.length < 16 || !W || !H) return [];
@@ -6374,8 +6605,13 @@ function _downloadBlob(blob, filename) {
   return ok;
 }
 
-// Local YYYY-MM-DD so folders sort correctly.
+// Local YYYY-MM-DD so folders sort correctly. Never emit NaN-NaN-NaN when the
+// Date is missing/invalid (bad photo-id timestamps, corrupt createdAt, etc.).
+function _isValidDate(d) {
+  return d instanceof Date && !isNaN(d.getTime());
+}
 function _ymd(d) {
+  if (!_isValidDate(d)) return 'unknown-date';
   const p = (n) => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
@@ -6383,9 +6619,14 @@ function _ymd(d) {
 // Day the survey was walked: earliest photo capture time. Photo ids are
 // 'ph_' + base36(Date.now()), so the timestamp is recoverable. Falls back to
 // quick-capture timestamps, then the day the job was created.
+// Rejects timestamps outside a sane Date range (Invalid Date → NaN folder names).
 function _surveyDate(proj) {
+  const MAX_MS = 8.64e15; // JS Date limit
   let best = Infinity;
-  const consider = (t) => { if (typeof t === 'number' && isFinite(t) && t > 0 && t < best) best = t; };
+  const consider = (t) => {
+    if (typeof t !== 'number' || !isFinite(t) || t <= 0 || t > MAX_MS) return;
+    if (t < best) best = t;
+  };
   for (const p of (proj.pins || [])) {
     for (const entry of (p.photos || [])) {
       if (!isPhotoId(entry)) continue;
@@ -6394,8 +6635,16 @@ function _surveyDate(proj) {
     }
   }
   for (const e of (proj.quickCapture || [])) consider(e && e.ts);
-  if (best === Infinity) consider(proj.createdAt);
-  return new Date(best === Infinity ? Date.now() : best);
+  if (best === Infinity) {
+    const created = proj.createdAt;
+    if (typeof created === 'number') consider(created);
+    else if (typeof created === 'string' && created.trim()) {
+      const parsed = Date.parse(created);
+      if (!isNaN(parsed)) consider(parsed);
+    }
+  }
+  const d = new Date(best === Infinity ? Date.now() : best);
+  return _isValidDate(d) ? d : new Date();
 }
 
 // Capture time of a single photo entry, decoded from its 'ph_<base36>' id.
@@ -6403,9 +6652,12 @@ function _surveyDate(proj) {
 function _entryDate(entry, fallback) {
   if (isPhotoId(entry)) {
     const t = parseInt(String(entry).slice(3), 36);
-    if (!isNaN(t) && t > 0) return new Date(t);
+    if (!isNaN(t) && t > 0 && t <= 8.64e15) {
+      const d = new Date(t);
+      if (_isValidDate(d)) return d;
+    }
   }
-  return fallback;
+  return _isValidDate(fallback) ? fallback : new Date();
 }
 
 // Builds everything except the photo bytes: metadata files + an ordered photo manifest.
@@ -6421,6 +6673,7 @@ async function collectExportItems() {
   // falling back to quick-capture timestamps, then the day the job was created.
   const surveyDate = _surveyDate(project);
   const jobNum = (project.jobNumber || '').trim();
+  // jobNumber_YYYY-MM-DD (or jobNumber_unknown-date) — never …_NaN-NaN-NaN
   const photoDir = (jobNum ? sanitizeFilename(jobNum) + '_' : '') + _ymd(surveyDate);
 
   // misc/map.png
@@ -6584,20 +6837,22 @@ function _addMetaToZip(root, meta) {
 
 // Persistent progress panel used by the parts export.
 const exportPanel = {
-  el: null, msgEl: null, actEl: null,
-  open() {
+  el: null, msgEl: null, actEl: null, titleEl: null,
+  open(title) {
     if (this.el) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:24px';
     wrap.innerHTML = '<div style="background:var(--card,#fff);color:var(--ink,#222);border-radius:14px;max-width:340px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.35)">' +
-      '<div style="font-weight:700;font-size:16px;margin-bottom:6px">Exporting</div>' +
+      '<div id="_expTitle" style="font-weight:700;font-size:16px;margin-bottom:6px">Exporting</div>' +
       '<div id="_expMsg" style="font-size:13px;line-height:1.5;color:var(--muted,#666)">Preparing…</div>' +
       '<div id="_expAct" style="margin-top:14px"></div>' +
       '</div>';
     document.body.appendChild(wrap);
     this.el = wrap;
+    this.titleEl = wrap.querySelector('#_expTitle');
     this.msgEl = wrap.querySelector('#_expMsg');
     this.actEl = wrap.querySelector('#_expAct');
+    if (title && this.titleEl) this.titleEl.textContent = title;
   },
   msg(t) { if (this.msgEl) this.msgEl.textContent = t; },
   // Renders buttons and resolves with the chosen value.
@@ -6617,8 +6872,11 @@ const exportPanel = {
     });
   },
   clearActions() { if (this.actEl) this.actEl.innerHTML = ''; },
-  close() { if (this.el) { this.el.remove(); this.el = null; this.msgEl = null; this.actEl = null; } }
+  close() { if (this.el) { this.el.remove(); this.el = null; this.titleEl = null; this.msgEl = null; this.actEl = null; } }
 };
+
+// Office staging budget (Supabase free tier discipline).
+const OFFICE_STAGING_LIMIT = 1024 * 1024 * 1024;
 
 const PARTS_README =
   'This export was split into numbered ZIP parts so a phone could build it safely.\n\n' +
@@ -6626,14 +6884,90 @@ const PARTS_README =
   'unzip them all there. Each part contains the same top-level folder, so the\n' +
   'original structure (the dated photo folder and misc) is rebuilt exactly.\n';
 
-// Cloud transfer: parts upload to Lovable Cloud storage, one link downloads all.
+// Cloud transfer / Sync — dual-host until Lovable sunset (16 Dec 2026):
+// - www / Netlify → Netlify Blobs via same-origin ≤4 MB chunks + field key
+// - *.lovable.app → previous Supabase storage upload (tus / raw POST)
 const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
 const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
+// Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
+const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
+/** Bump when shipping a field shell Tim must verify on every phone. */
+const PGG_APP_VERSION = '2026.10.19-split';
+const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
+
+/** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
+function _isAlreadyExistsUploadDetail(status, detail) {
+  if (status === 409) return true;
+  const d = String(detail || '').toLowerCase();
+  if (!d) return false;
+  return (
+    d.indexOf('already exists') !== -1 ||
+    d.indexOf('duplicate') !== -1 ||
+    d.indexOf('resource already') !== -1 ||
+    d.indexOf('409') !== -1
+  );
+}
+
+function _isAlreadyExistsUploadError(err) {
+  if (!err) return false;
+  const msg = String(err.message || err || '');
+  const statusMatch = /^HTTP (\d{3})/.exec(msg);
+  const status = statusMatch ? Number(statusMatch[1]) : 0;
+  return _isAlreadyExistsUploadDetail(status, msg);
+}
+
+/** Plain-English Sync / upload failures for field staff (never storage jargon). */
+function _plainSyncFailureMessage(err) {
+  const raw = String((err && err.message) || err || '').toLowerCase();
+  if (
+    raw.indexOf('row-level security') !== -1 ||
+    raw.indexOf('rls') !== -1 ||
+    raw.indexOf('permission') !== -1 ||
+    raw.indexOf('not authorized') !== -1 ||
+    raw.indexOf('jwt') !== -1 ||
+    raw.indexOf('field-key') !== -1 ||
+    raw.indexOf('field key') !== -1 ||
+    /\bHTTP 40[13]\b/i.test(String((err && err.message) || err || ''))
+  ) {
+    return (
+      'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
+      'First: tap Update app on the home screen, swipe this app out, and open it again. ' +
+      'Check the version under the title matches what the office said to use, then Sync again.\n\n' +
+      'If it still fails after updating, tell the office — staging may be locked for maintenance.'
+    );
+  }
+  if (
+    raw.indexOf('quota') !== -1 ||
+    raw.indexOf('payload too large') !== -1 ||
+    raw.indexOf('insufficient') !== -1 ||
+    raw.indexOf('staging is full') !== -1 ||
+    raw.indexOf('office staging is full') !== -1 ||
+    (raw.indexOf('daily') !== -1 && raw.indexOf('limit') !== -1)
+  ) {
+    return (
+      'Office staging looks full. Photos are still on this phone.\n\n' +
+      'Ask the office to Download jobs to a computer, then Delete them from staging, and try Sync again.'
+    );
+  }
+  if (raw.indexOf('network') !== -1 || raw.indexOf('fetch') !== -1 || raw.indexOf('abort') !== -1 || raw.indexOf('offline') !== -1) {
+    return (
+      'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
+      'Try Sync again when you have a stronger signal.'
+    );
+  }
+  // Prefer server plain-English message when present
+  const serverMsg = String((err && err.message) || '').trim();
+  if (serverMsg && serverMsg.length < 400 && serverMsg.indexOf('HTTP ') !== 0) {
+    return serverMsg;
+  }
+  return (
+    'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
+    'Try Sync again when you have a signal. If it keeps failing, tell the office — staging may be locked for maintenance.'
+  );
+}
 
 async function _uploadPart(jobId, part, onProgress) {
   const objectName = jobId + '/' + part.name;
-  // Large mobile uploads use TUS: 6 MB chunks, automatic backoff, and resume
-  // from the last accepted chunk after a Wi-Fi/cellular interruption.
   if (window.tus && window.tus.Upload) {
     return new Promise(async (resolve, reject) => {
       const upload = new window.tus.Upload(part.blob, {
@@ -6644,8 +6978,7 @@ async function _uploadPart(jobId, part, onProgress) {
         removeFingerprintOnSuccess: true,
         headers: {
           'apikey': PGG_SUPA_KEY,
-          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-          'x-upsert': 'true'
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY
         },
         metadata: {
           bucketName: 'exports',
@@ -6657,19 +6990,22 @@ async function _uploadPart(jobId, part, onProgress) {
           if (onProgress) onProgress(bytesUploaded, bytesTotal);
         },
         onSuccess() { resolve(); },
-        onError(error) { reject(error); }
+        onError(error) {
+          if (_isAlreadyExistsUploadError(error)) resolve();
+          else reject(error);
+        }
       });
       try {
         const previous = await upload.findPreviousUploads();
         if (previous && previous.length) upload.resumeFromPreviousUpload(previous[0]);
         upload.start();
       } catch (error) {
-        reject(error);
+        if (_isAlreadyExistsUploadError(error)) resolve();
+        else reject(error);
       }
     });
   }
 
-  // CDN unavailable fallback. Retry transient failures without requiring a tap.
   let lastError = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const controller = new AbortController();
@@ -6680,18 +7016,19 @@ async function _uploadPart(jobId, part, onProgress) {
         headers: {
           'apikey': PGG_SUPA_KEY,
           'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-          'Content-Type': 'application/zip',
-          'x-upsert': 'true'
+          'Content-Type': 'application/zip'
         },
         body: part.blob,
         signal: controller.signal
       });
       if (res.ok) return;
       const detail = (await res.text()).slice(0, 200);
+      if (_isAlreadyExistsUploadDetail(res.status, detail)) return;
       lastError = new Error('HTTP ' + res.status + ': ' + detail);
       if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
     } catch (error) {
       lastError = error;
+      if (_isAlreadyExistsUploadError(error)) return;
       if (error && error.message && error.message.startsWith('HTTP 4') && !error.message.startsWith('HTTP 408') && !error.message.startsWith('HTTP 429')) throw error;
     } finally {
       clearTimeout(timer);
@@ -6702,9 +7039,6 @@ async function _uploadPart(jobId, part, onProgress) {
 }
 
 // ================= Raw asset transfer =================
-// The phone never builds a ZIP for large jobs. Every photo and metadata file is
-// uploaded on its own (one blob in memory at a time, 3 in flight), then the
-// computer assembles a single ZIP from the manifest. No parts, no giant blobs.
 const RAW_PROGRESS_KEY = 'pgg_raw_upload_v1';
 
 function _readRawProgress(signature) {
@@ -6722,7 +7056,6 @@ function _clearRawProgress() {
   try { localStorage.removeItem(RAW_PROGRESS_KEY); } catch (e) { /* ignore */ }
 }
 
-// Resolves ONE export photo to a Blob (with annotations composited if present).
 async function _photoBlobForExport(item) {
   if (item.strokes && item.strokes.length) {
     const d = await resolvePhoto(item.entry);
@@ -6735,9 +7068,8 @@ async function _photoBlobForExport(item) {
   return resolvePhotoBlob(item.entry);
 }
 
-// Single-object upload with automatic retry/backoff. Objects are small
-// (one photo), so a plain request is both faster and safer than chunking.
-async function _uploadRawObject(jobId, path, blob, contentType) {
+/** Lovable host: single-object Supabase upload. */
+async function _uploadRawObjectSupabase(jobId, path, blob, contentType) {
   const url = PGG_SUPA_URL + '/storage/v1/object/exports/' +
     (jobId + '/' + path).split('/').map(encodeURIComponent).join('/');
   let lastError = null;
@@ -6750,76 +7082,122 @@ async function _uploadRawObject(jobId, path, blob, contentType) {
         headers: {
           'apikey': PGG_SUPA_KEY,
           'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-          'Content-Type': contentType || 'application/octet-stream',
-          'x-upsert': 'true'
+          'Content-Type': contentType || 'application/octet-stream'
         },
         body: blob,
         signal: controller.signal
       });
       if (res.ok) return;
       const detail = (await res.text()).slice(0, 160);
+      if (_isAlreadyExistsUploadDetail(res.status, detail)) return;
       lastError = new Error('HTTP ' + res.status + ': ' + detail);
       if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
     } catch (error) {
       lastError = error;
-      if (error && /^HTTP 4(0[0-79]|1[0-9]|2[0-8])/.test(error.message || '')) throw error;
+      if (_isAlreadyExistsUploadError(error)) return;
+      if (error && error.message && error.message.startsWith('HTTP 4') && !error.message.startsWith('HTTP 408') && !error.message.startsWith('HTTP 429')) throw error;
     } finally {
       clearTimeout(timer);
     }
-    await new Promise(r => setTimeout(r, Math.min(10000, 800 * Math.pow(2, attempt))));
+    await new Promise(function (r) { setTimeout(r, Math.min(10000, 800 * Math.pow(2, attempt))); });
   }
-  throw lastError || new Error('Upload failed after automatic retries');
+  if (lastError) throw lastError || new Error('Upload failed after automatic retries');
 }
 
-// Asks the bucket which files already exist for this job so a resume never
-// re-sends anything that made it up on an earlier attempt.
-async function _listUploadedPaths(jobId) {
-  const found = new Set();
-  const url = PGG_SUPA_URL + '/storage/v1/object/list/exports';
-  for (const prefix of [jobId + '/files', jobId]) {
-    let offset = 0;
-    for (;;) {
-      let page = null;
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'apikey': PGG_SUPA_KEY,
-            'Authorization': 'Bearer ' + PGG_SUPA_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ prefix: prefix, limit: 1000, offset: offset })
-        });
-        if (!res.ok) return found;
-        page = await res.json();
-      } catch (e) { console.warn('remote list failed', e); return found; }
-      if (!Array.isArray(page) || !page.length) break;
-      for (const row of page) {
-        if (!row || !row.name || !row.id) continue;
-        const rel = (prefix + '/' + row.name).slice(jobId.length + 1);
-        found.add(rel);
+/** www / Netlify: chunked Blobs upload. */
+async function _uploadRawObjectNetlify(jobId, path, blob, contentType) {
+
+  const size = Number(blob.size) || 0;
+  const total = Math.max(1, Math.ceil(size / PGG_SYNC_CHUNK_BYTES) || 1);
+  const type = contentType || blob.type || 'application/octet-stream';
+
+  // Ask server which pieces it already has (resume after bad signal).
+  let received = new Set();
+  try {
+    const st = await fetch(
+      '/api/field/sync-status?jobId=' + encodeURIComponent(jobId) +
+      '&path=' + encodeURIComponent(path),
+      { headers: { 'X-PGG-Field-Key': PGG_FIELD_KEY }, cache: 'no-store' }
+    );
+    if (st.ok) {
+      const body = await st.json();
+      if (body && body.complete) return;
+      if (body && Array.isArray(body.received)) {
+        body.received.forEach(function (i) { received.add(Number(i)); });
       }
-      if (page.length < 1000) break;
-      offset += page.length;
     }
+  } catch (e) { /* continue; upload will retry */ }
+
+  for (let index = 0; index < total; index++) {
+    if (received.has(index)) continue;
+    const start = index * PGG_SYNC_CHUNK_BYTES;
+    const piece = blob.slice(start, Math.min(size, start + PGG_SYNC_CHUNK_BYTES));
+    let lastError = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(function () { controller.abort(); }, 90 * 1000);
+      try {
+        const url =
+          '/api/field/sync-chunk?jobId=' + encodeURIComponent(jobId) +
+          '&path=' + encodeURIComponent(path) +
+          '&index=' + index +
+          '&total=' + total +
+          '&size=' + size;
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'X-PGG-Field-Key': PGG_FIELD_KEY,
+            'Content-Type': type
+          },
+          body: piece,
+          signal: controller.signal,
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const body = await res.json().catch(function () { return {}; });
+          if (body && body.complete) return;
+          received.add(index);
+          lastError = null;
+          break;
+        }
+        const detail = (await res.text()).slice(0, 400);
+        let message = detail;
+        try {
+          const j = JSON.parse(detail);
+          if (j && j.error) message = j.error;
+        } catch (e) { /* keep text */ }
+        lastError = new Error('HTTP ' + res.status + ': ' + message);
+        if (res.status === 401 || res.status === 413 || res.status === 429 || res.status === 507) throw lastError;
+        if (res.status < 500 && res.status !== 408) throw lastError;
+      } catch (error) {
+        lastError = error;
+        if (error && /^HTTP (401|413|429|507)/.test(error.message || '')) throw error;
+        if (error && /^HTTP 4(0[0-79]|1[0-9]|2[0-8])/.test(error.message || '')) throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+      await new Promise(function (r) { setTimeout(r, Math.min(10000, 800 * Math.pow(2, attempt))); });
+    }
+    if (lastError) throw lastError || new Error('Upload failed after automatic retries');
   }
-  return found;
+
 }
 
-// Uploads every metadata file + photo individually. Resumable: completed paths
-// are remembered, so a retry picks up exactly where it stopped.
-async function _uploadRawAssets(items, onStatus) {
+async function _uploadRawObject(jobId, path, blob, contentType) {
+  if (useLovableSupabaseSync()) {
+    return _uploadRawObjectSupabase(jobId, path, blob, contentType);
+  }
+  return _uploadRawObjectNetlify(jobId, path, blob, contentType);
+}
+
+async function _uploadRawAssets(items, onStatus, manifestExtra) {
   const signature = _partsExportSignature(items);
   const prior = _readRawProgress(signature);
   const jobId = (prior && prior.jobId) ||
     (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
   const done = (prior && prior.done) || new Set();
-  if (prior) {
-    try {
-      const remote = await _listUploadedPaths(jobId);
-      remote.forEach(p => done.add(p));
-      if (remote.size) _writeRawProgress(signature, jobId, done);
-    } catch (e) { console.warn('resume check failed', e); }
+  if (prior && prior.jobId) {
+    _writeRawProgress(signature, jobId, done);
   }
 
 
@@ -6840,6 +7218,7 @@ async function _uploadRawAssets(items, onStatus) {
 
   const total = tasks.length;
   let completed = 0, next = 0, failure = null;
+  let totalBytesAcc = 0;
   const manifestFiles = [];
   const tick = () => onStatus && onStatus(completed, total);
 
@@ -6859,7 +7238,9 @@ async function _uploadRawAssets(items, onStatus) {
       if (!blob) { completed++; tick(); continue; }
       const path = t.path || ('files/' + t.photo.folder + '/' + t.photo.base + '.' + mimeExt(blob.type));
       const type = t.type || blob.type || 'image/jpeg';
-      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, '') });
+      const sizeBytes = Number(blob.size) || 0;
+      totalBytesAcc += sizeBytes;
+      manifestFiles.push({ path: path, zipPath: path.replace(/^files\//, ''), sizeBytes: sizeBytes });
       if (done.has(path)) { completed++; blob = null; tick(); continue; }
       try {
         await _uploadRawObject(jobId, path, blob, type);
@@ -6885,7 +7266,10 @@ async function _uploadRawAssets(items, onStatus) {
     version: 1,
     folderName: items.folderName,
     createdAt: new Date().toISOString(),
-    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath))
+    /** Staging capacity meter — office list sums this without a storage walk. */
+    totalBytes: totalBytesAcc,
+    files: manifestFiles.sort((a, b) => a.zipPath.localeCompare(b.zipPath)),
+    ...(manifestExtra || {})
   };
   await _uploadRawObject(jobId, 'manifest.json', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'application/json');
   _clearRawProgress();
@@ -6952,7 +7336,7 @@ async function exportProjectZip() {
       await _runPartsExport(items, setLabel, {
         intro: items.photos.length + ' photos · about ' + totalMb + ' MB (avg ' + avgMb + ' MB each) — over the ' +
           Math.round(SINGLE_ZIP_LIMIT / 1024 / 1024) + ' MB one-ZIP limit for this phone.\n\n' +
-          'If that average looks high, these are full-resolution photos taken before the size fix — run 🗜 Shrink photos from the ⋯ menu and the job will fit in one ZIP.'
+          'If that average looks high, these are full-resolution photos taken before the size fix — use Shrink photos on the Export sheet and the job will fit in one ZIP.'
       });
 
     } else {
@@ -7023,6 +7407,330 @@ async function exportProjectCloud() {
   }
 }
 
+// ---------- Office Sync (Stage C) + Auto-sync ----------
+// Same raw-asset upload path as cloud Export, but aimed at /office staging — no ZIP on phone.
+const DEVICE_NICKNAME_KEY = 'pgg_device_nickname';
+const AUTO_SYNC_KEY = 'pgg_auto_sync_office'; // 'on' | 'off' | unset
+let _officeSyncBusy = false;
+let _autoSyncQueued = false;
+let _autoSyncTimer = null;
+
+/** One-time phone nickname → written to manifest as syncedFrom / deviceName for /office From column. */
+function getOrAskDeviceNickname() {
+  let nick = '';
+  try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
+  if (nick) return nick;
+  const asked = window.prompt(
+    "Name this phone (user and device you're using this on).\n\n" +
+    'Shown as From in the office File Explorer after Sync. Set once on this device.',
+    ''
+  );
+  nick = (asked || '').trim();
+  if (!nick) nick = 'Unknown phone';
+  try { localStorage.setItem(DEVICE_NICKNAME_KEY, nick); } catch (e) {}
+  return nick;
+}
+
+/** Ask on field home first use — don't wait for Sync. Home paints first, then prompt. */
+function ensureDeviceNicknameOnHome() {
+  let nick = '';
+  try { nick = (localStorage.getItem(DEVICE_NICKNAME_KEY) || '').trim(); } catch (e) {}
+  if (nick) return;
+  // Defer so home cards paint before the blocking prompt
+  window.setTimeout(function () {
+    try {
+      if (document.getElementById('screenHome')?.classList.contains('active')) {
+        getOrAskDeviceNickname();
+      }
+    } catch (e) {}
+  }, 350);
+}
+
+function autoSyncPreference() {
+  try { return localStorage.getItem(AUTO_SYNC_KEY); } catch (e) { return null; }
+}
+
+function isAutoSyncOn() {
+  return autoSyncPreference() === 'on';
+}
+
+/** Prompt once: OK = enable auto-sync, Cancel = leave manual-only. */
+function ensureAutoSyncPreferenceAsked() {
+  const cur = autoSyncPreference();
+  if (cur === 'on' || cur === 'off') return cur;
+  const ok = confirm(
+    'Turn on Auto-sync to office?\n\n' +
+    'When you leave a job, the app goes to the background, or connectivity returns, ' +
+    'this phone uploads changes to office staging (only when needed — not constant spam).\n\n' +
+    'Manual Sync and Export still work. Files already uploaded stay safe if a sync pauses.\n\n' +
+    'OK = enable Auto-sync\nCancel = keep manual Sync only'
+  );
+  const v = ok ? 'on' : 'off';
+  try { localStorage.setItem(AUTO_SYNC_KEY, v); } catch (e) {}
+  refreshAutoSyncMenuLabel();
+  return v;
+}
+
+function toggleAutoSyncPreference() {
+  closeMenu();
+  const cur = autoSyncPreference();
+  let next;
+  if (cur === 'on') {
+    next = 'off';
+    toast('Auto-sync off');
+  } else {
+    next = 'on';
+    toast('Auto-sync on');
+    // ensure nickname exists before first background run
+    getOrAskDeviceNickname();
+  }
+  try { localStorage.setItem(AUTO_SYNC_KEY, next); } catch (e) {}
+  refreshAutoSyncMenuLabel();
+  if (next === 'on') scheduleAutoSyncOffice('menu-enable');
+}
+
+function refreshAutoSyncMenuLabel() {
+  const btn = document.getElementById('autoSyncMenuBtn');
+  if (!btn) return;
+  const cur = autoSyncPreference();
+  btn.textContent = cur === 'on' ? '⟳ Auto-sync: On' : (cur === 'off' ? '⟳ Auto-sync: Off' : '⟳ Auto-sync: Ask…');
+}
+
+/** Offline-safe office sync status from local lastSyncedAt vs updatedAt. */
+function syncStatus(p) {
+  const updated = p.updatedAt || 0;
+  const synced = p.lastSyncedAt || 0;
+  if (!synced) return { state: 'none', label: 'Not synced' };
+  if (updated > synced + 1000) return { state: 'stale', label: 'Changes since sync' };
+  return { state: 'ok', label: 'Fully synced' };
+}
+
+/** Delete (trash / forever) only when Fully synced to office staging. */
+function isFullySyncedToOffice(p) {
+  return !!(p && syncStatus(p).state === 'ok');
+}
+
+function projectNeedsOfficeSync(p) {
+  if (!p) return false;
+  const updated = p.updatedAt || 0;
+  const synced = p.lastSyncedAt || 0;
+  if (!synced) return !!(p.pins && p.pins.length);
+  return updated > synced + 1000;
+}
+
+function _showSyncComplete(folderName, jobId, deviceName) {
+  const fromLine = deviceName
+    ? 'From: ' + deviceName + ' (shown in the office File Explorer).\n\n'
+    : '';
+  exportPanel.msg(
+    '"' + folderName + '" is in office staging.\n\n' +
+    fromLine +
+    'On a desk computer: open /office → Download package → then Delete on staging to free space. ' +
+    'Original photos and picture map — full size, same package as Export.'
+  );
+  return new Promise(resolve => {
+    const act = exportPanel.actEl;
+    if (!act) return resolve();
+    act.innerHTML = '';
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:11px;color:var(--muted,#666);margin-bottom:10px;word-break:break-all;line-height:1.4';
+    hint.textContent = 'Job id: ' + jobId;
+    act.appendChild(hint);
+    const done = document.createElement('button');
+    done.textContent = 'Done';
+    done.style.cssText = 'width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#7a4b2a);color:#fff;font-weight:700;font-size:15px';
+    done.onclick = () => { act.innerHTML = ''; resolve(); };
+    act.appendChild(done);
+  });
+}
+
+/**
+ * Core office sync upload. opts.silent = auto-sync (no modal UI; toast only).
+ * opts.projectRef = project object to update (defaults to current `project`).
+ * Never deletes local files. Resumes via existing raw upload progress.
+ */
+async function runOfficeSyncUpload(opts) {
+  opts = opts || {};
+  const silent = !!opts.silent;
+  const target = opts.projectRef || project;
+  if (!target) return { ok: false, reason: 'no-project' };
+  if (_officeSyncBusy) return { ok: false, reason: 'busy' };
+  if (exportPanel.el && !silent) {
+    /* manual sync owns the panel */
+  } else if (exportPanel.el && silent) {
+    return { ok: false, reason: 'export-busy' };
+  }
+
+  _officeSyncBusy = true;
+  const prevProject = project;
+  try {
+    // collectExportItems / upload use global `project`
+    project = target;
+    if (!silent) {
+      exportPanel.open('Sync to office');
+      exportPanel.msg('Preparing job package…');
+    }
+
+    const items = await collectExportItems();
+    let totalBytes = await _totalPhotoBytes(items.photos);
+    for (const f of items.meta) {
+      const blob = typeof f.data === 'string' ? new Blob([f.data]) : f.data;
+      if (blob && blob.size) totalBytes += blob.size;
+    }
+    const totalMb = Math.round(totalBytes / 1024 / 1024);
+    if (totalBytes > OFFICE_STAGING_LIMIT) {
+      if (!silent) {
+        exportPanel.close();
+        alert(
+          'This job is about ' + totalMb + ' MB — over the 1 GB office staging limit.\n\n' +
+          'Finish a smaller job first, or ask the office to clear confirmed downloads from staging. ' +
+          'Export to this phone still works with no size cap.'
+        );
+      } else {
+        console.warn('[auto-sync] skipped — over staging limit', totalMb);
+      }
+      return { ok: false, reason: 'too-large' };
+    }
+
+    for (;;) {
+      if (!navigator.onLine) {
+        if (silent) return { ok: false, reason: 'offline' };
+        exportPanel.msg('No internet — Sync needs a connection.');
+        const c = await exportPanel.ask([
+          { label: 'Try again', value: 'retry' },
+          { label: 'Cancel', value: 'cancel' }
+        ]);
+        if (c === 'retry') continue;
+        exportPanel.close();
+        return { ok: false, reason: 'offline' };
+      }
+      try {
+        const deviceName = getOrAskDeviceNickname();
+        if (!silent) exportPanel.msg('Uploading picture map + photos…');
+        const jobId = await _uploadRawAssets(items, (n, t) => {
+          if (!silent) exportPanel.msg('Uploading ' + n + ' of ' + t + ' files…');
+        }, {
+          uploadKind: 'office-sync',
+          syncedAt: new Date().toISOString(),
+          syncedFrom: deviceName,
+          deviceName: deviceName,
+          totalBytes: totalBytes
+        });
+        target.lastSyncedAt = Date.now();
+        target.syncJobId = jobId;
+        save();
+        if (silent) {
+          toast('Auto-synced to office');
+        } else {
+          await _showSyncComplete(items.folderName, jobId, deviceName);
+          exportPanel.close();
+        }
+        return { ok: true, jobId: jobId };
+      } catch (err) {
+        console.error(err);
+        if (silent) {
+          // Progress key keeps partial uploads — resume on next auto/manual sync.
+          toast('Auto-sync paused — will retry');
+          return { ok: false, reason: 'error', error: err };
+        }
+        exportPanel.msg(
+          _plainSyncFailureMessage(err) +
+          '\n\nAlready-uploaded files stay on staging. Tap Resume to continue from this phone’s progress.'
+        );
+        const c = await exportPanel.ask([
+          { label: 'Resume sync', value: 'retry' },
+          { label: 'Cancel', value: 'cancel' }
+        ]);
+        if (c === 'retry') continue;
+        exportPanel.close();
+        return { ok: false, reason: 'cancelled' };
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    if (!silent) {
+      exportPanel.close();
+      alert(_plainSyncFailureMessage(err));
+    }
+    return { ok: false, reason: 'error', error: err };
+  } finally {
+    project = prevProject;
+    _officeSyncBusy = false;
+    if (_autoSyncQueued) {
+      _autoSyncQueued = false;
+      scheduleAutoSyncOffice('queued');
+    }
+  }
+}
+
+async function syncProjectToOffice() {
+  if (!project) return;
+  closeMenu();
+  closeSheets();
+  if (!project.pins || !project.pins.length) {
+    if (!confirm('No pins yet — sync anyway?')) return;
+  }
+  ensureAutoSyncPreferenceAsked();
+  await runOfficeSyncUpload({ silent: false, projectRef: project });
+}
+
+/** Debounced auto-sync trigger — background / online / leave job. */
+function scheduleAutoSyncOffice(reason) {
+  if (!isAutoSyncOn()) return;
+  if (_autoSyncTimer) clearTimeout(_autoSyncTimer);
+  _autoSyncTimer = setTimeout(function () {
+    _autoSyncTimer = null;
+    maybeAutoSyncOffice(reason);
+  }, reason === 'online' ? 1500 : 800);
+}
+
+async function maybeAutoSyncOffice(reason) {
+  if (!isAutoSyncOn()) return;
+  if (!navigator.onLine) return;
+  if (_officeSyncBusy) { _autoSyncQueued = true; return; }
+  if (exportPanel.el) return; // don't interrupt Export / manual Sync UI
+
+  // Prefer the open job; else first stale job in store (one at a time).
+  let target = null;
+  if (project && projectNeedsOfficeSync(project)) {
+    target = project;
+  } else if (!project) {
+    const list = (store && store.projects) || [];
+    for (let i = 0; i < list.length; i++) {
+      if (projectNeedsOfficeSync(list[i])) { target = list[i]; break; }
+    }
+  }
+  if (!target) return;
+
+  console.log('[auto-sync]', reason || 'tick', target.address || target.id);
+  await runOfficeSyncUpload({ silent: true, projectRef: target });
+}
+
+function _wireOfficeAutoSync() {
+  refreshAutoSyncMenuLabel();
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'hidden') return;
+    if (project) {
+      try { saveProject(); } catch (e) {}
+    }
+    if (autoSyncPreference() == null) {
+      // First background: ask once, then maybe sync.
+      ensureAutoSyncPreferenceAsked();
+    }
+    scheduleAutoSyncOffice('background');
+  });
+  window.addEventListener('online', function () {
+    if (isAutoSyncOn()) scheduleAutoSyncOffice('online');
+  });
+}
+try {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _wireOfficeAutoSync, { once: true });
+  } else {
+    _wireOfficeAutoSync();
+  }
+} catch (e) { console.warn('auto-sync wire failed', e); }
+
 // Big jobs: never build one giant file. Metadata rides in part 1; photos batch
 // out. All parts are BUILT first (one at a time, so peak memory stays small),
 // then delivered together through the iOS share sheet — one email, one Mail Drop.
@@ -7030,51 +7738,24 @@ async function _runPartsExport(items, setLabel, opts) {
   opts = opts || {};
   exportPanel.open();
   closeSheets();
-  let cloudFirst = 'cloud';
-  if (!opts.forceCloud) {
-    exportPanel.msg(opts.intro || 'This job is too big to build on the phone as one file. Cloud transfer sends each photo on its own — nothing large is built here — and gives you one link that downloads everything as a single ZIP on your computer.');
-    cloudFirst = await exportPanel.ask([
-      { label: '☁️ Upload & get one link', value: 'cloud' },
-      { label: 'Use phone sharing instead', value: 'other' }
+  // Upload & get one link (old cloud storage) removed — use Sync to office, or phone sharing below.
+  if (opts.forceCloud) {
+    exportPanel.msg('Use Sync to office from the job menu to send this job to the desk. Or save parts on this phone below.');
+    const c = await exportPanel.ask([
+      { label: 'Save to this phone in parts', value: 'parts' },
+      { label: 'Cancel', value: 'cancel' }
     ]);
-  }
-  if (cloudFirst === 'cloud') {
-
-    for (;;) {
-      if (!navigator.onLine) {
-        exportPanel.msg('No internet connection — uploading needs one.');
-        const c = await exportPanel.ask([{ label: 'Try again', value: 'retry' }, { label: 'Choose another way', value: 'back' }]);
-        if (c === 'retry') continue;
-        break;
-      }
-      try {
-        exportPanel.msg('Uploading…');
-        setLabel('Uploading…');
-        const jobId = await _uploadRawAssets(items, (n, t) => {
-          const line = 'Uploading ' + n + ' of ' + t + ' files…';
-          exportPanel.msg(line); setLabel(line);
-        });
-        project.lastExportedAt = Date.now();
-        save();
-        _clearPartsProgress();
-        await _showTransferLink(window.location.origin + '/get?job=' + encodeURIComponent(jobId), items.folderName);
-        exportPanel.close();
-        closeSheets();
-        return;
-      } catch (err) {
-        console.error(err);
-        exportPanel.msg('Upload paused: ' + (err && err.message ? err.message : String(err)) + '\nFiles already uploaded are safe — resuming continues from there.');
-        const c = await exportPanel.ask([
-          { label: 'Resume upload', value: 'retry' },
-          { label: 'Save to this phone in parts', value: 'back' }
-        ]);
-        if (c === 'retry') continue;
-        break;
-      }
+    if (c !== 'parts') {
+      exportPanel.close();
+      closeSheets();
+      return;
     }
+  } else {
+    exportPanel.msg(opts.intro || 'This job is too big to build on the phone as one file. Save numbered parts on this phone, then move them to a computer — or use Sync to office from the job menu.');
   }
 
   exportPanel.msg('Measuring ' + items.photos.length + ' photos…');
+
 
   const batches = await _sizeBatches(items.photos, (n, t) => {
     exportPanel.msg('Measuring photos… ' + n + ' of ' + t);
@@ -7213,8 +7894,7 @@ function sanitizeFilename(s) {
 
 // Shared PDF builder — single source of truth for the standalone PDF button
 // AND the picture map.pdf embedded in the ZIP export.
-// Overview uses density-aware pin sizing; jobs with many pins also get
-// zoomed zone sheets so markers stay readable on ~100k sq ft plans.
+// Single-style overview only: map-majority 11×17 + side pin log (no zone sheets).
 async function buildPinLogPdf() {
   if (!project) throw new Error('No project loaded');
 
@@ -7225,21 +7905,30 @@ async function buildPinLogPdf() {
     r.readAsDataURL(blob);
   });
 
-  // Composed full-building plan with numbered pins (density-aware radius)
-  const pngBlob = await composeMapImage('png-blob');
+  // Composed full-building plan with numbered pins — PDF uses larger markers
+  // than ZIP map.png / on-screen so house-plan numbers stay readable on tabloid.
+  // Explicit opts only on this path; ZIP map.png keeps exportPinRadius defaults.
+  // Sized for residential overviews: Tim's Grace-style plans need ~½″ markers
+  // on the 11×17 sheet; PR #7 (0.018) was still too small to read in the field.
+  const pngBlob = await composeMapImage('png-blob', {
+    baseFrac: 0.030,
+    minFrac: 0.015,
+    comfortN: 120,
+    densFloor: 0.85
+  });
   const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
 
-  // 11x17 tabloid, landscape: plan on left, pin log table on right
+  // 11x17 tabloid, landscape: large plan on left, thinner pin log on right
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: 'in', format: [11, 17], orientation: 'landscape' });
   const pageW = pdf.internal.pageSize.getWidth();   // 17
   const pageH = pdf.internal.pageSize.getHeight();  // 11
-  const margin = 0.35;
+  const margin = 0.3;
 
-  // Layout: plan takes ~60% width on the left, table takes rest on the right
-  const gutter = 0.25;
-  const planBoxW = 9.6;
+  // Map-majority layout: ~12.5" plan box, ~3.7" table (readable map first).
+  const gutter = 0.18;
+  const planBoxW = 12.5;
   const planBoxX = margin;
   const planBoxY = margin;
   const planBoxH = pageH - margin*2;
@@ -7248,10 +7937,10 @@ async function buildPinLogPdf() {
   const tableY = margin;
   const tableH = pageH - margin*2;
 
-  // Table column layout
-  const colPhoto = 0.75;
-  const colNum = 0.45;
-  const colLoc = 1.35;
+  // Thinner table columns to fund the wider plan
+  const colPhoto = 0.52;
+  const colNum = 0.36;
+  const colLoc = 0.95;
   const colNotes = tableW - (colPhoto + colNum + colLoc);
   const colX = [
     tableX,
@@ -7325,54 +8014,8 @@ async function buildPinLogPdf() {
     if (pageRows.length || !overviewPages.length) overviewPages.push(pageRows);
   }
 
-  // Zone detail sheets for dense full-building walks.
-  const zones = exportPinZones(pins, planW, planH);
-  const zoneSheets = [];
-  for (const z of zones) {
-    const zBlob = await composeMapImage('png-blob', {
-      crop: { x: z.x, y: z.y, w: z.w, h: z.h },
-      pins: z.pins,
-      baseFrac: 0.014,
-      minFrac: 0.006
-    });
-    const zRows = buildRows(z.pins.slice().sort((a,b) => a.num - b.num));
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(9);
-    zRows.forEach(row => {
-      const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
-      row._noteLines = noteLines;
-      const shown = Math.min(maxNoteLines, Math.max(1, noteLines.length || 1));
-      row._shown = shown;
-      row._rowH = Math.max(minRowH, 0.10 + shown * lineH);
-    });
-    const zPages = [];
-    let pageRows = [];
-    let used = 0;
-    const bodyH = tableH - headerH;
-    zRows.forEach(row => {
-      if (pageRows.length && used + row._rowH > bodyH) {
-        zPages.push(pageRows);
-        pageRows = [];
-        used = 0;
-      }
-      if (!pageRows.length && row._rowH > bodyH) {
-        zPages.push([row]);
-        return;
-      }
-      pageRows.push(row);
-      used += row._rowH;
-    });
-    if (pageRows.length || !zPages.length) zPages.push(pageRows);
-    zoneSheets.push({
-      label: z.label,
-      dataUrl: await blobToDataUrl(zBlob),
-      imgW: z.w,
-      imgH: z.h,
-      pages: zPages
-    });
-  }
-
-  const totalPages = overviewPages.length + zoneSheets.reduce((n, z) => n + z.pages.length, 0);
+  // No NW/NE/SW/SE zone detail sheets — overview-only picture map.
+  const totalPages = overviewPages.length;
 
   // North arrow anchored to a FIXED spot: right edge of plan box area,
   // vertically aligned with the top of the pin-log table (not tied to
@@ -7515,27 +8158,14 @@ async function buildPinLogPdf() {
 
   let pageIdx = 0;
   const overviewFit = fitPlan(planW, planH);
-  overviewPages.forEach((pageRows, i) => {
+  overviewPages.forEach((pageRows) => {
     if (pageIdx > 0) pdf.addPage([11, 17], 'landscape');
     pdf.addImage(planDataUrl, 'PNG', overviewFit.planDrawX, overviewFit.planDrawY, overviewFit.planDrawW, overviewFit.planDrawH, undefined, 'FAST');
     drawNorthArrow();
-    drawTableChrome(zones.length ? 'Overview · detail sheets follow' : null);
+    drawTableChrome(null);
     drawRows(pageRows);
     drawFooter(pageIdx);
     pageIdx++;
-  });
-
-  zoneSheets.forEach(sheet => {
-    const fit = fitPlan(sheet.imgW, sheet.imgH);
-    sheet.pages.forEach((pageRows) => {
-      pdf.addPage([11, 17], 'landscape');
-      pdf.addImage(sheet.dataUrl, 'PNG', fit.planDrawX, fit.planDrawY, fit.planDrawW, fit.planDrawH, undefined, 'FAST');
-      drawNorthArrow();
-      drawTableChrome('Detail · ' + sheet.label);
-      drawRows(pageRows);
-      drawFooter(pageIdx);
-      pageIdx++;
-    });
   });
 
   return pdf;
@@ -7934,10 +8564,51 @@ document.addEventListener('click', (e) => {
 
 
 
+// ---------- Home card press + office navigate busy ----------
+/** iOS often skips :active; mirror office .is-pressed via pointer events. */
+function wireHomeModeBtnPress() {
+  const home = document.getElementById('screenHome');
+  if (!home) return;
+  home.querySelectorAll('.mode-btn').forEach((el) => {
+    const pressOn = (e) => {
+      if (el.classList.contains('is-busy')) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      el.classList.add('is-pressed');
+    };
+    const clearPressed = () => {
+      if (!el.classList.contains('is-busy')) el.classList.remove('is-pressed');
+    };
+    // Defer pointerup clear so office click can escalate to busy first.
+    const pressOffDeferred = () => { setTimeout(clearPressed, 0); };
+    el.addEventListener('pointerdown', pressOn);
+    el.addEventListener('pointerup', pressOffDeferred);
+    el.addEventListener('pointercancel', clearPressed);
+    el.addEventListener('pointerleave', clearPressed);
+    el.addEventListener('lostpointercapture', clearPressed);
+  });
+
+  const office = document.getElementById('homeOfficeLink');
+  if (!office || office.dataset.busyWired === '1') return;
+  office.dataset.busyWired = '1';
+  const title = document.getElementById('homeOfficeTitle');
+  const sub = document.getElementById('homeOfficeSub');
+  const markBusy = () => {
+    if (office.classList.contains('is-busy')) return;
+    office.classList.add('is-busy', 'is-pressed');
+    office.setAttribute('aria-busy', 'true');
+    if (title) title.textContent = 'Opening…';
+    if (sub) sub.textContent = 'Loading File Explorer…';
+  };
+  // Click = committed navigation; keep busy until /office paints or unload.
+  office.addEventListener('click', markBusy);
+}
+
 // ---------- Boot ----------
 load();
 renderHome();
 showScreen('screenHome');
+wireHomeModeBtnPress();
+ensureDeviceNicknameOnHome();
 _initRoomVerifyGestures();
 pvSetupGestures();
 </script>
@@ -7966,14 +8637,35 @@ pvSetupGestures();
 </div>
 
 <script>
-// Update app link — shown by default; hidden only when we confirm we're offline.
+// Update app link — quiet when current; soft urgent bar + reopen hint when waiting.
 (function(){
   var link = document.getElementById("updateAppLink");
   if (!link) return;
+  var wrap = document.getElementById("updateAppWrap");
+  var hint = document.getElementById("updateAppHint");
   var STATE_IDLE = "Update app";
+  var STATE_READY = "Update";
   var STATE_BUSY = "Fetching latest…";
   var STATE_ERR  = "Couldn't update — tap to retry";
   var busy = false;
+
+  function setUrgent(urgent){
+    if (typeof window.__pggSetUpdateAppUrgent === "function") {
+      window.__pggSetUpdateAppUrgent(urgent);
+      return;
+    }
+    if (urgent) {
+      link.classList.add("update-app-urgent");
+      if (wrap) wrap.classList.add("urgent");
+      if (hint) hint.hidden = false;
+      if (!busy) link.textContent = STATE_READY;
+    } else {
+      link.classList.remove("update-app-urgent");
+      if (wrap) wrap.classList.remove("urgent");
+      if (hint) hint.hidden = true;
+      if (!busy) link.textContent = STATE_IDLE;
+    }
+  }
 
   function probe(){
     return new Promise(function(resolve){
@@ -7989,45 +8681,76 @@ pvSetupGestures();
 
   function setVisibility(v){
     if (busy) return;
-    link.style.display = v ? "inline-block" : "none";
+    if (wrap) wrap.style.display = v ? "" : "none";
+    else link.style.display = v ? "inline-block" : "none";
+  }
+
+  async function refreshWaitingState(){
+    if (!("serviceWorker" in navigator)) { setUrgent(false); return; }
+    try {
+      var regs = await navigator.serviceWorker.getRegistrations();
+      var waiting = regs.some(function(reg){
+        var url = (reg.active && reg.active.scriptURL) || (reg.waiting && reg.waiting.scriptURL) || (reg.installing && reg.installing.scriptURL) || "";
+        return url.indexOf("/sw.js") !== -1 && !!reg.waiting;
+      });
+      setUrgent(waiting);
+    } catch(_){ /* keep current */ }
   }
 
   function refreshVisibility(){
     if (!navigator.onLine) { setVisibility(false); return; }
-    probe().then(setVisibility);
+    probe().then(function(ok){
+      setVisibility(ok);
+      if (ok) refreshWaitingState();
+    });
   }
 
   window.addEventListener("online", refreshVisibility);
   window.addEventListener("offline", function(){ if(!busy) setVisibility(false); });
   refreshVisibility();
 
+  // Re-check when a SW claims or a waiting worker appears
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("controllerchange", function(){
+      setUrgent(false);
+    });
+  }
+
   link.addEventListener("click", function(e){
     e.preventDefault();
     if (busy) return;
     busy = true;
+    link.dataset.busy = "1";
     link.textContent = STATE_BUSY;
-    link.style.display = "inline-block";
+    if (wrap) wrap.style.display = "";
+    else link.style.display = "inline-block";
 
     var reloaded = false;
     function doReload(){ if (reloaded) return; reloaded = true; window.location.reload(true); }
+
+    function showError(){
+      busy = false;
+      delete link.dataset.busy;
+      link.textContent = STATE_ERR;
+      link.classList.add("update-app-urgent");
+      if (wrap) { wrap.classList.add("urgent"); wrap.style.display = ""; }
+      else link.style.display = "inline-block";
+      if (hint) hint.hidden = false;
+    }
 
     // 6s failsafe reload
     var reloadTimer = setTimeout(doReload, 6000);
     // 10s failsafe error
     var errTimer = setTimeout(function(){
       if (reloaded) return;
-      busy = false;
-      link.textContent = STATE_ERR;
-      link.style.display = "inline-block";
+      showError();
     }, 10000);
 
     probe().then(function(ok){
       if (!ok) {
         clearTimeout(reloadTimer);
         clearTimeout(errTimer);
-        busy = false;
-        link.textContent = STATE_ERR;
-        link.style.display = "inline-block";
+        showError();
         return;
       }
 

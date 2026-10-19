@@ -6,6 +6,7 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
@@ -33,7 +34,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
 
@@ -92,11 +93,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "manifest", href: "/manifest-pgg.webmanifest?v=pgg-6" },
-      { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png?v=pgg-6" },
-      { rel: "apple-touch-icon-precomposed", href: "/apple-touch-icon-precomposed.png?v=pgg-6" },
-      { rel: "icon", type: "image/png", sizes: "192x192", href: "/favicon.png?v=pgg-6" },
-      { rel: "icon", type: "image/png", sizes: "512x512", href: "/icon-pgg-v2-512.png?v=pgg-6" },
+      { rel: "manifest", href: "/manifest-pgg.webmanifest?v=pgg-7" },
+      { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png?v=pgg-7" },
+      { rel: "apple-touch-icon-precomposed", href: "/apple-touch-icon-precomposed.png?v=pgg-7" },
+      { rel: "icon", type: "image/png", sizes: "192x192", href: "/favicon.png?v=pgg-7" },
+      { rel: "icon", type: "image/png", sizes: "512x512", href: "/icon-pgg-v2-512.png?v=pgg-7" },
     ],
   }),
   shellComponent: RootShell,

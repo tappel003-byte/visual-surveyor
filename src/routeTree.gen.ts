@@ -11,6 +11,19 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GetRouteImport } from './routes/get'
+import { Route as OfficeRouteImport } from './routes/office'
+import { Route as OfficeIndexRouteImport } from './routes/office.index'
+import { Route as ApiFieldSyncChunkRouteImport } from './routes/api/field/sync-chunk'
+import { Route as ApiFieldSyncStatusRouteImport } from './routes/api/field/sync-status'
+import { Route as ApiOfficeFileChunkRouteImport } from './routes/api/office/file-chunk'
+import { Route as ApiPublicExportsDeleteRouteImport } from './routes/api/public/exports-delete'
+import { Route as ApiPublicExportsFromRouteImport } from './routes/api/public/exports-from'
+import { Route as ApiPublicExportsJobRouteImport } from './routes/api/public/exports-job'
+import { Route as ApiPublicExportsListRouteImport } from './routes/api/public/exports-list'
+import { Route as ApiPublicExportsNameRouteImport } from './routes/api/public/exports-name'
+import { Route as ApiPublicExportsPinsRouteImport } from './routes/api/public/exports-pins'
+import { Route as ApiPublicExportsSignRouteImport } from './routes/api/public/exports-sign'
+import { Route as OfficeJobsJobIdRouteImport } from './routes/office.jobs.$jobId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +35,190 @@ const GetRoute = GetRouteImport.update({
   path: '/get',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OfficeRoute = OfficeRouteImport.update({
+  id: '/office',
+  path: '/office',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OfficeIndexRoute = OfficeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OfficeRoute,
+} as any)
+const ApiFieldSyncChunkRoute = ApiFieldSyncChunkRouteImport.update({
+  id: '/api/field/sync-chunk',
+  path: '/api/field/sync-chunk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFieldSyncStatusRoute = ApiFieldSyncStatusRouteImport.update({
+  id: '/api/field/sync-status',
+  path: '/api/field/sync-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOfficeFileChunkRoute = ApiOfficeFileChunkRouteImport.update({
+  id: '/api/office/file-chunk',
+  path: '/api/office/file-chunk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsDeleteRoute = ApiPublicExportsDeleteRouteImport.update({
+  id: '/api/public/exports-delete',
+  path: '/api/public/exports-delete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsFromRoute = ApiPublicExportsFromRouteImport.update({
+  id: '/api/public/exports-from',
+  path: '/api/public/exports-from',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsJobRoute = ApiPublicExportsJobRouteImport.update({
+  id: '/api/public/exports-job',
+  path: '/api/public/exports-job',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsListRoute = ApiPublicExportsListRouteImport.update({
+  id: '/api/public/exports-list',
+  path: '/api/public/exports-list',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsNameRoute = ApiPublicExportsNameRouteImport.update({
+  id: '/api/public/exports-name',
+  path: '/api/public/exports-name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsPinsRoute = ApiPublicExportsPinsRouteImport.update({
+  id: '/api/public/exports-pins',
+  path: '/api/public/exports-pins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicExportsSignRoute = ApiPublicExportsSignRouteImport.update({
+  id: '/api/public/exports-sign',
+  path: '/api/public/exports-sign',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OfficeJobsJobIdRoute = OfficeJobsJobIdRouteImport.update({
+  id: '/jobs/$jobId',
+  path: '/jobs/$jobId',
+  getParentRoute: () => OfficeRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
+  '/office': typeof OfficeRouteWithChildren
+  '/office/': typeof OfficeIndexRoute
+  '/api/field/sync-chunk': typeof ApiFieldSyncChunkRoute
+  '/api/field/sync-status': typeof ApiFieldSyncStatusRoute
+  '/api/office/file-chunk': typeof ApiOfficeFileChunkRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
+  '/api/public/exports-job': typeof ApiPublicExportsJobRoute
+  '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-name': typeof ApiPublicExportsNameRoute
+  '/api/public/exports-pins': typeof ApiPublicExportsPinsRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
+  '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/get': typeof GetRoute
+  '/office': typeof OfficeIndexRoute
+  '/api/field/sync-chunk': typeof ApiFieldSyncChunkRoute
+  '/api/field/sync-status': typeof ApiFieldSyncStatusRoute
+  '/api/office/file-chunk': typeof ApiOfficeFileChunkRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
+  '/api/public/exports-job': typeof ApiPublicExportsJobRoute
+  '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-name': typeof ApiPublicExportsNameRoute
+  '/api/public/exports-pins': typeof ApiPublicExportsPinsRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
+  '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/get': typeof GetRoute
+  '/office': typeof OfficeRouteWithChildren
+  '/office/': typeof OfficeIndexRoute
+  '/api/field/sync-chunk': typeof ApiFieldSyncChunkRoute
+  '/api/field/sync-status': typeof ApiFieldSyncStatusRoute
+  '/api/office/file-chunk': typeof ApiOfficeFileChunkRoute
+  '/api/public/exports-delete': typeof ApiPublicExportsDeleteRoute
+  '/api/public/exports-from': typeof ApiPublicExportsFromRoute
+  '/api/public/exports-job': typeof ApiPublicExportsJobRoute
+  '/api/public/exports-list': typeof ApiPublicExportsListRoute
+  '/api/public/exports-name': typeof ApiPublicExportsNameRoute
+  '/api/public/exports-pins': typeof ApiPublicExportsPinsRoute
+  '/api/public/exports-sign': typeof ApiPublicExportsSignRoute
+  '/office/jobs/$jobId': typeof OfficeJobsJobIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/get'
+  fullPaths:
+    | '/'
+    | '/get'
+    | '/office'
+    | '/office/'
+    | '/api/field/sync-chunk'
+    | '/api/field/sync-status'
+    | '/api/office/file-chunk'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
+    | '/api/public/exports-job'
+    | '/api/public/exports-list'
+    | '/api/public/exports-name'
+    | '/api/public/exports-pins'
+    | '/api/public/exports-sign'
+    | '/office/jobs/$jobId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/get'
-  id: '__root__' | '/' | '/get'
+  to:
+    | '/'
+    | '/get'
+    | '/office'
+    | '/api/field/sync-chunk'
+    | '/api/field/sync-status'
+    | '/api/office/file-chunk'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
+    | '/api/public/exports-job'
+    | '/api/public/exports-list'
+    | '/api/public/exports-name'
+    | '/api/public/exports-pins'
+    | '/api/public/exports-sign'
+    | '/office/jobs/$jobId'
+  id:
+    | '__root__'
+    | '/'
+    | '/get'
+    | '/office'
+    | '/office/'
+    | '/api/field/sync-chunk'
+    | '/api/field/sync-status'
+    | '/api/office/file-chunk'
+    | '/api/public/exports-delete'
+    | '/api/public/exports-from'
+    | '/api/public/exports-job'
+    | '/api/public/exports-list'
+    | '/api/public/exports-name'
+    | '/api/public/exports-pins'
+    | '/api/public/exports-sign'
+    | '/office/jobs/$jobId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GetRoute: typeof GetRoute
+  OfficeRoute: typeof OfficeRouteWithChildren
+  ApiFieldSyncChunkRoute: typeof ApiFieldSyncChunkRoute
+  ApiFieldSyncStatusRoute: typeof ApiFieldSyncStatusRoute
+  ApiOfficeFileChunkRoute: typeof ApiOfficeFileChunkRoute
+  ApiPublicExportsDeleteRoute: typeof ApiPublicExportsDeleteRoute
+  ApiPublicExportsFromRoute: typeof ApiPublicExportsFromRoute
+  ApiPublicExportsJobRoute: typeof ApiPublicExportsJobRoute
+  ApiPublicExportsListRoute: typeof ApiPublicExportsListRoute
+  ApiPublicExportsNameRoute: typeof ApiPublicExportsNameRoute
+  ApiPublicExportsPinsRoute: typeof ApiPublicExportsPinsRoute
+  ApiPublicExportsSignRoute: typeof ApiPublicExportsSignRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +237,127 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GetRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/office': {
+      id: '/office'
+      path: '/office'
+      fullPath: '/office'
+      preLoaderRoute: typeof OfficeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/office/': {
+      id: '/office/'
+      path: '/'
+      fullPath: '/office/'
+      preLoaderRoute: typeof OfficeIndexRouteImport
+      parentRoute: typeof OfficeRoute
+    }
+    '/api/field/sync-chunk': {
+      id: '/api/field/sync-chunk'
+      path: '/api/field/sync-chunk'
+      fullPath: '/api/field/sync-chunk'
+      preLoaderRoute: typeof ApiFieldSyncChunkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/field/sync-status': {
+      id: '/api/field/sync-status'
+      path: '/api/field/sync-status'
+      fullPath: '/api/field/sync-status'
+      preLoaderRoute: typeof ApiFieldSyncStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/office/file-chunk': {
+      id: '/api/office/file-chunk'
+      path: '/api/office/file-chunk'
+      fullPath: '/api/office/file-chunk'
+      preLoaderRoute: typeof ApiOfficeFileChunkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-delete': {
+      id: '/api/public/exports-delete'
+      path: '/api/public/exports-delete'
+      fullPath: '/api/public/exports-delete'
+      preLoaderRoute: typeof ApiPublicExportsDeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-from': {
+      id: '/api/public/exports-from'
+      path: '/api/public/exports-from'
+      fullPath: '/api/public/exports-from'
+      preLoaderRoute: typeof ApiPublicExportsFromRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-job': {
+      id: '/api/public/exports-job'
+      path: '/api/public/exports-job'
+      fullPath: '/api/public/exports-job'
+      preLoaderRoute: typeof ApiPublicExportsJobRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-list': {
+      id: '/api/public/exports-list'
+      path: '/api/public/exports-list'
+      fullPath: '/api/public/exports-list'
+      preLoaderRoute: typeof ApiPublicExportsListRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-name': {
+      id: '/api/public/exports-name'
+      path: '/api/public/exports-name'
+      fullPath: '/api/public/exports-name'
+      preLoaderRoute: typeof ApiPublicExportsNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-pins': {
+      id: '/api/public/exports-pins'
+      path: '/api/public/exports-pins'
+      fullPath: '/api/public/exports-pins'
+      preLoaderRoute: typeof ApiPublicExportsPinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/exports-sign': {
+      id: '/api/public/exports-sign'
+      path: '/api/public/exports-sign'
+      fullPath: '/api/public/exports-sign'
+      preLoaderRoute: typeof ApiPublicExportsSignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/office/jobs/$jobId': {
+      id: '/office/jobs/$jobId'
+      path: '/jobs/$jobId'
+      fullPath: '/office/jobs/$jobId'
+      preLoaderRoute: typeof OfficeJobsJobIdRouteImport
+      parentRoute: typeof OfficeRoute
+    }
   }
 }
+
+interface OfficeRouteChildren {
+  OfficeIndexRoute: typeof OfficeIndexRoute
+  OfficeJobsJobIdRoute: typeof OfficeJobsJobIdRoute
+}
+
+const OfficeRouteChildren: OfficeRouteChildren = {
+  OfficeIndexRoute: OfficeIndexRoute,
+  OfficeJobsJobIdRoute: OfficeJobsJobIdRoute,
+}
+
+const OfficeRouteWithChildren =
+  OfficeRoute._addFileChildren(OfficeRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GetRoute: GetRoute,
+  OfficeRoute: OfficeRouteWithChildren,
+  ApiFieldSyncChunkRoute: ApiFieldSyncChunkRoute,
+  ApiFieldSyncStatusRoute: ApiFieldSyncStatusRoute,
+  ApiOfficeFileChunkRoute: ApiOfficeFileChunkRoute,
+  ApiPublicExportsDeleteRoute: ApiPublicExportsDeleteRoute,
+  ApiPublicExportsFromRoute: ApiPublicExportsFromRoute,
+  ApiPublicExportsJobRoute: ApiPublicExportsJobRoute,
+  ApiPublicExportsListRoute: ApiPublicExportsListRoute,
+  ApiPublicExportsNameRoute: ApiPublicExportsNameRoute,
+  ApiPublicExportsPinsRoute: ApiPublicExportsPinsRoute,
+  ApiPublicExportsSignRoute: ApiPublicExportsSignRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
