@@ -215,6 +215,7 @@ function OfficeExplorer() {
   }, [jobs]);
 
   if (!auth.configured) {
+    const onLovable = auth.hostKind === "lovable";
     return (
       <div style={shell}>
         <p
@@ -231,9 +232,19 @@ function OfficeExplorer() {
         </p>
         <h1 style={{ fontSize: 24, marginBottom: 8, fontWeight: 700 }}>Office staging</h1>
         <p style={{ fontSize: 14, color: PGG.muted, lineHeight: 1.5 }}>
-          Office credentials are not set on this Netlify site yet. Add{" "}
-          <code>NLF_OFFICE_PASSWORD</code> and <code>NLF_SESSION_SECRET</code>, then redeploy. See{" "}
-          <code>docs/nlf-office-env.md</code>.
+          {onLovable ? (
+            <>
+              Office sign-in isn’t set on this temporary host yet. Ask whoever runs the project to set{" "}
+              <code>OFFICE_PASSWORD</code> in Lovable secrets to the same company password used on{" "}
+              <a href="https://www.pggphotodocumentation.com/office">www</a>, then Publish once.
+            </>
+          ) : (
+            <>
+              Office credentials are not set on this Netlify site yet. Add{" "}
+              <code>NLF_OFFICE_PASSWORD</code> and <code>NLF_SESSION_SECRET</code>, then redeploy. See{" "}
+              <code>docs/nlf-office-env.md</code>.
+            </>
+          )}
         </p>
         <a
           href="/"
@@ -395,7 +406,9 @@ function OfficeExplorer() {
     setStatusMessage(`Saving From for ${job.displayName || job.id}…`);
     setListError(null);
     try {
-      const result = await officeSetJobFrom({ data: { jobId: job.id, syncedFrom: label } });
+      const result = await officeSetJobFrom({
+        data: { jobId: job.id, syncedFrom: label, source: job.source },
+      });
       setJobList(
         jobList.map((j) => (j.id === job.id ? { ...j, syncedFrom: result.syncedFrom } : j)),
       );
@@ -424,7 +437,9 @@ function OfficeExplorer() {
     setStatusMessage(`Saving name for ${job.displayName || job.id}…`);
     setListError(null);
     try {
-      const result = await officeSetJobName({ data: { jobId: job.id, folderName: label } });
+      const result = await officeSetJobName({
+        data: { jobId: job.id, folderName: label, source: job.source },
+      });
       setJobList(
         jobList.map((j) => (j.id === job.id ? { ...j, displayName: result.folderName } : j)),
       );
@@ -454,7 +469,7 @@ function OfficeExplorer() {
     setStatusMessage(`Deleting ${name}…`);
     setListError(null);
     try {
-      await officeDeleteJob({ data: { jobId: job.id } });
+      await officeDeleteJob({ data: { jobId: job.id, source: job.source } });
       setJobList(jobList.filter((j) => j.id !== job.id));
       setStatusMessage("Deleted.");
       window.setTimeout(() => setStatusMessage(null), 1800);
@@ -547,9 +562,8 @@ function OfficeExplorer() {
 
         {!listReady && (
           <p style={{ fontSize: 13, color: PGG.muted, lineHeight: 1.5 }}>
-            Job list unavailable — try Refresh. Keep{" "}
-            <code>NLF_OFFICE_PASSWORD</code> and <code>NLF_SESSION_SECRET</code> set on Netlify.
-            Field Sync also needs <code>NLF_FIELD_KEY</code> (same value as in the phone app).
+            Job list unavailable — try Refresh. On www, keep the office password secrets and the
+            shared list token set so older synced jobs still show. New Syncs use the Netlify locker.
           </p>
         )}
 

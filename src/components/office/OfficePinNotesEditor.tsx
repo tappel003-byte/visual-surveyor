@@ -5,6 +5,7 @@ import { OFFICE_BTN_CLASS, PGG } from "@/components/office/OfficeChrome";
 
 type Props = {
   jobId: string;
+  source?: "blobs" | "lovable" | null;
   open: boolean;
   onClose: () => void;
   onStatusChange?: (message: string | null) => void;
@@ -26,7 +27,13 @@ function formatEditedAt(iso: string | null): string | null {
  * Phase A — edit pin descriptions / notes for a synced job.
  * Full-screen editor with browser spellcheck; saves pins.csv via Lovable exports-pins.
  */
-export function OfficePinNotesEditor({ jobId, open, onClose, onStatusChange }: Props) {
+export function OfficePinNotesEditor({
+  jobId,
+  source = null,
+  open,
+  onClose,
+  onStatusChange,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +65,7 @@ export function OfficePinNotesEditor({ jobId, open, onClose, onStatusChange }: P
     setError(null);
     setStatus("Loading pin notes…");
     try {
-      const payload = await officeGetJobPins({ data: { jobId } });
+      const payload = await officeGetJobPins({ data: { jobId, source } });
       setPins(payload.pins);
       setEditedAt(payload.officeNotesEditedAt);
       setCsvMissing(!payload.csvPath || payload.pins.length === 0);
@@ -141,7 +148,7 @@ export function OfficePinNotesEditor({ jobId, open, onClose, onStatusChange }: P
             description: drafts[key] ?? p.description,
           };
         });
-      const payload = await officeUpdateJobPins({ data: { jobId, updates } });
+      const payload = await officeUpdateJobPins({ data: { jobId, source, updates } });
       setPins(payload.pins);
       setEditedAt(payload.officeNotesEditedAt);
       const next: Record<string, string> = {};

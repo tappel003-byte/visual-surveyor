@@ -36,7 +36,9 @@ export const Route = createFileRoute("/office/jobs/$jobId")({
     if (!isSafeExportJobId(jobId)) {
       throw new Error("Invalid job id.");
     }
-    const download = await officeGetJobDownload({ data: { jobId } });
+    const cached = readJobsCache();
+    const source = cached?.jobs.find((j) => j.id === jobId)?.source ?? null;
+    const download = await officeGetJobDownload({ data: { jobId, source } });
     const title = download.folderName || "Field export";
     return { jobId, title, download };
   },

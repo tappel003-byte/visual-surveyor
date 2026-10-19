@@ -17,6 +17,7 @@ export type OfficePackageFile = {
   label: string;
   sizeBytes?: number | null;
   totalChunks?: number;
+  source?: "blobs" | "lovable" | null;
 };
 
 /** User closed Save As — do not treat as a failed package. */
@@ -61,8 +62,9 @@ function safeZipFilename(rootName: string): string {
 }
 
 /**
- * Fetch one file as a Blob via ≤4 MB same-origin chunks (session cookie).
- * Releases each chunk after appending — never holds a whole job in memory.
+ * Fetch one file as a Blob.
+ * - Blobs jobs: ≤4 MB same-origin chunks (session cookie).
+ * - Lovable locker jobs: one HTTPS signed URL fetch.
  */
 export async function fetchOfficeFileBlob(
   jobId: string,
@@ -72,9 +74,31 @@ export async function fetchOfficeFileBlob(
     /** When true, counts bytes toward the /office “Downloaded this month” estimate. */
     meterDownload?: boolean;
     onChunk?: (done: number, total: number) => void;
+    source?: "blobs" | "lovable" | null;
   },
 ): Promise<Blob> {
-  const access = await officeSignFile({ data: { jobId, path } });
+  const access = await officeSignFile({
+    data: { jobId, path, source: opts?.source ?? null },
+  });
+
+  // Old Lovable locker: direct signed HTTPS URL (not same-origin chunks).
+  if (access.access === "signed" || /^https?:\/\//i.test(access.signedUrl)) {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < CHUNK_FETCH_MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(access.signedUrl, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        opts?.onChunk?.(1, 1);
+        return await res.blob();
+      } catch (err) {
+        lastErr = err;
+        if (attempt === CHUNK_FETCH_MAX_ATTEMPTS - 1) break;
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(`Could not download ${path}`);
+  }
+
   const totalChunks = opts?.totalChunks || access.totalChunks || 1;
   const parts: BlobPart[] = [];
   let contentType = "application/octet-stream";
@@ -117,6 +141,7 @@ async function fetchOfficeFileBlobResilient(
         totalChunks: file.totalChunks,
         meterDownload: true,
         onChunk,
+        source: file.source,
       });
     } catch (err) {
       lastErr = err;
@@ -136,6 +161,7 @@ export async function downloadOfficeJobPackage(opts: {
   jobId: string;
   folderName?: string | null;
   files?: OfficePackageFile[];
+  source?: "blobs" | "lovable" | null;
   onProgress?: (message: string) => void;
 }): Promise<void> {
   const jobId = opts.jobId.trim();
@@ -143,23 +169,28 @@ export async function downloadOfficeJobPackage(opts: {
 
   let files = opts.files?.filter((f) => f.path && f.label) ?? [];
   let folderName = opts.folderName?.trim() || null;
+  let source = opts.source ?? null;
 
   if (!files.length) {
     opts.onProgress?.("Loading file list…");
-    const payload = await officeGetJobDownload({ data: { jobId } });
+    const payload = await officeGetJobDownload({ data: { jobId, source } });
     if (!payload.storageLinksAvailable) {
       throw new Error("Download is not available right now.");
     }
     if (!payload.files.length) {
       throw new Error("No files found for this job yet.");
     }
+    source = payload.source || source;
     files = payload.files.map((f) => ({
       path: f.path,
       label: f.label,
       sizeBytes: f.sizeBytes,
       totalChunks: f.totalChunks,
+      source,
     }));
     folderName = payload.folderName || folderName;
+  } else if (source) {
+    files = files.map((f) => ({ ...f, source: f.source ?? source }));
   }
 
   const rootName = folderName || "field-export";
@@ -226,12 +257,13 @@ export async function downloadOfficeJobPackage(opts: {
   );
 }
 
-/** Build an object URL for Open / lightbox (one file, chunked). */
+/** Build an object URL for Open / lightbox (one file, chunked or signed). */
 export async function officeFileObjectUrl(
   jobId: string,
   path: string,
   totalChunks?: number,
+  source?: "blobs" | "lovable" | null,
 ): Promise<string> {
-  const blob = await fetchOfficeFileBlob(jobId, path, { totalChunks });
+  const blob = await fetchOfficeFileBlob(jobId, path, { totalChunks, source });
   return URL.createObjectURL(blob);
 }

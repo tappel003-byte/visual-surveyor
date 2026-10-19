@@ -141,7 +141,9 @@ export function JobFileExplorer({
     setSignError(null);
     setStatus("Saving job name…");
     try {
-      const result = await officeSetJobName({ data: { jobId, folderName: label } });
+      const result = await officeSetJobName({
+        data: { jobId, folderName: label, source: data.source ?? null },
+      });
       setLocalTitle(result.folderName);
       onDisplayNameChange?.(result.folderName);
       setStatus("Job name saved.");
@@ -212,6 +214,7 @@ export function JobFileExplorer({
           jobId,
           entry.storagePath,
           fileMeta?.totalChunks,
+          data.source ?? null,
         );
         writeSignedUrl(jobId, entry.storagePath, objectUrl, 60 * 60);
         setUrlCache((prev) => {
@@ -255,6 +258,7 @@ export function JobFileExplorer({
       const blob = await fetchOfficeFileBlob(jobId, entry.storagePath, {
         totalChunks: fileMeta?.totalChunks,
         meterDownload: true,
+        source: data.source ?? null,
       });
       const outcome = await saveBlobWithSaveAs(blob, entry.name);
       if (outcome.kind === "cancelled") {
@@ -289,11 +293,13 @@ export function JobFileExplorer({
       await downloadOfficeJobPackage({
         jobId,
         folderName: displayTitle || data.folderName || title,
+        source: data.source ?? null,
         files: data.files.map((f) => ({
           path: f.path,
           label: f.label,
           sizeBytes: f.sizeBytes,
           totalChunks: f.totalChunks,
+          source: data.source ?? null,
         })),
         onProgress: (msg) => setStatus(msg),
       });
@@ -760,6 +766,7 @@ export function JobFileExplorer({
 
       <OfficePinNotesEditor
         jobId={jobId}
+        source={data.source ?? null}
         open={notesOpen}
         onClose={() => setNotesOpen(false)}
         onStatusChange={setStatus}

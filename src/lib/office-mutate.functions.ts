@@ -11,8 +11,15 @@ import {
 } from "@/server/office-mutate";
 import type { OfficePinsPayload } from "@/lib/office-pins";
 
+const sourceSchema = z.enum(["blobs", "lovable"]).optional().nullable();
+
 export const officeDeleteJob = createServerFn({ method: "POST" })
-  .validator(z.object({ jobId: z.string().min(1).max(200) }))
+  .validator(
+    z.object({
+      jobId: z.string().min(1).max(200),
+      source: sourceSchema,
+    }),
+  )
   .handler(async ({ data }): Promise<{ deleted: number }> => {
     if (!hasValidOfficeSession()) {
       throw new Error("Sign in required.");
@@ -21,7 +28,7 @@ export const officeDeleteJob = createServerFn({ method: "POST" })
       throw new Error("Invalid job id.");
     }
 
-    const result = await fetchDeleteExportJobFromLovable(data.jobId.trim());
+    const result = await fetchDeleteExportJobFromLovable(data.jobId.trim(), data.source ?? null);
     if (!result.ok) {
       throw new Error("Could not delete job.");
     }
@@ -33,6 +40,7 @@ export const officeSetJobFrom = createServerFn({ method: "POST" })
     z.object({
       jobId: z.string().min(1).max(200),
       syncedFrom: z.string().min(1).max(80),
+      source: sourceSchema,
     }),
   )
   .handler(async ({ data }): Promise<{ syncedFrom: string }> => {
@@ -43,7 +51,11 @@ export const officeSetJobFrom = createServerFn({ method: "POST" })
       throw new Error("Invalid job id.");
     }
 
-    const result = await fetchSetExportFromFromLovable(data.jobId.trim(), data.syncedFrom.trim());
+    const result = await fetchSetExportFromFromLovable(
+      data.jobId.trim(),
+      data.syncedFrom.trim(),
+      data.source ?? null,
+    );
     if (!result.ok) {
       throw new Error("Could not update From.");
     }
@@ -55,6 +67,7 @@ export const officeSetJobName = createServerFn({ method: "POST" })
     z.object({
       jobId: z.string().min(1).max(200),
       folderName: z.string().min(1).max(120),
+      source: sourceSchema,
     }),
   )
   .handler(async ({ data }): Promise<{ folderName: string }> => {
@@ -65,7 +78,11 @@ export const officeSetJobName = createServerFn({ method: "POST" })
       throw new Error("Invalid job id.");
     }
 
-    const result = await fetchSetExportNameFromLovable(data.jobId.trim(), data.folderName.trim());
+    const result = await fetchSetExportNameFromLovable(
+      data.jobId.trim(),
+      data.folderName.trim(),
+      data.source ?? null,
+    );
     if (!result.ok) {
       throw new Error("Could not update job name.");
     }
@@ -73,7 +90,12 @@ export const officeSetJobName = createServerFn({ method: "POST" })
   });
 
 export const officeGetJobPins = createServerFn({ method: "POST" })
-  .validator(z.object({ jobId: z.string().min(1).max(200) }))
+  .validator(
+    z.object({
+      jobId: z.string().min(1).max(200),
+      source: sourceSchema,
+    }),
+  )
   .handler(async ({ data }): Promise<OfficePinsPayload> => {
     if (!hasValidOfficeSession()) {
       throw new Error("Sign in required.");
@@ -82,7 +104,7 @@ export const officeGetJobPins = createServerFn({ method: "POST" })
       throw new Error("Invalid job id.");
     }
 
-    const result = await fetchExportPinsFromLovable(data.jobId.trim());
+    const result = await fetchExportPinsFromLovable(data.jobId.trim(), data.source ?? null);
     if (!result.ok) {
       throw new Error("Could not load pin notes.");
     }
@@ -93,6 +115,7 @@ export const officeUpdateJobPins = createServerFn({ method: "POST" })
   .validator(
     z.object({
       jobId: z.string().min(1).max(200),
+      source: sourceSchema,
       updates: z
         .array(
           z.object({
@@ -113,7 +136,11 @@ export const officeUpdateJobPins = createServerFn({ method: "POST" })
       throw new Error("Invalid job id.");
     }
 
-    const result = await fetchUpdateExportPinsFromLovable(data.jobId.trim(), data.updates);
+    const result = await fetchUpdateExportPinsFromLovable(
+      data.jobId.trim(),
+      data.updates,
+      data.source ?? null,
+    );
     if (!result.ok) {
       throw new Error("Could not save pin notes.");
     }

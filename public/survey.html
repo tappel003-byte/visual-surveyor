@@ -1550,6 +1550,22 @@ function isLovableHostedFieldApp() {
   return zones.some((z) => host === z || host.endsWith('.' + z));
 }
 
+
+/** www / Netlify field host — Sync uses Netlify Blobs (+ field key). */
+function isNetlifyFieldHost() {
+  const host = (location.hostname || '').toLowerCase();
+  if (!host) return false;
+  if (host === 'pggphotodocumentation.com' || host.endsWith('.pggphotodocumentation.com')) return true;
+  if (host === 'netlify.app' || host.endsWith('.netlify.app')) return true;
+  return false;
+}
+
+/** Lovable field Sync uses the previous Supabase upload path until Dec 16. */
+function useLovableSupabaseSync() {
+  if (isNetlifyFieldHost()) return false;
+  return isLovableHostedFieldApp();
+}
+
 function hasLocalOnPhoneData() {
   const nProj = (store.projects || []).length;
   const nTrash = (store.trash || []).length;
@@ -6781,14 +6797,17 @@ const PARTS_README =
   'unzip them all there. Each part contains the same top-level folder, so the\n' +
   'original structure (the dated photo folder and misc) is rebuilt exactly.\n';
 
-// Cloud transfer / Sync: Netlify Blobs via same-origin chunked upload (raw binary ≤4 MB).
+// Cloud transfer / Sync — dual-host until Lovable sunset (16 Dec 2026):
+// - www / Netlify → Netlify Blobs via same-origin ≤4 MB chunks + field key
+// - *.lovable.app → previous Supabase storage upload (tus / raw POST)
+const PGG_SUPA_URL = 'https://ihmfznxrperkpvtuymmq.supabase.co';
+const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 // Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
 const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
 /** Bump when shipping a field shell Tim must verify on every phone. */
-const PGG_APP_VERSION = '2026.10.19-nlf';
-const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
+const PGG_APP_VERSION = '2026.10.19-dual';
 
-/** True when staging says the object is already there (resume). */
+/** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
 function _isAlreadyExistsUploadDetail(status, detail) {
   if (status === 409) return true;
   const d = String(detail || '').toLowerCase();
@@ -6797,8 +6816,7 @@ function _isAlreadyExistsUploadDetail(status, detail) {
     d.indexOf('already exists') !== -1 ||
     d.indexOf('duplicate') !== -1 ||
     d.indexOf('resource already') !== -1 ||
-    d.indexOf('409') !== -1 ||
-    d.indexOf('"complete":true') !== -1
+    d.indexOf('409') !== -1
   );
 }
 
@@ -6812,23 +6830,16 @@ function _isAlreadyExistsUploadError(err) {
 
 /** Plain-English Sync / upload failures for field staff (never storage jargon). */
 function _plainSyncFailureMessage(err) {
-  const rawMsg = String((err && err.message) || err || '');
-  const raw = rawMsg.toLowerCase();
-  // Server may return plain text body in Error message after "HTTP nnn: "
-  const bodyMatch = /^HTTP \d{3}:\s*([\s\S]+)/.exec(rawMsg);
-  if (bodyMatch && bodyMatch[1] && bodyMatch[1].length > 20 && bodyMatch[1].indexOf('{') !== 0) {
-    return bodyMatch[1].trim();
-  }
-  try {
-    const j = JSON.parse((bodyMatch && bodyMatch[1]) || '');
-    if (j && j.error) return String(j.error);
-  } catch (e) { /* ignore */ }
+  const raw = String((err && err.message) || err || '').toLowerCase();
   if (
-    raw.indexOf('field-key') !== -1 ||
-    raw.indexOf('update app') !== -1 ||
+    raw.indexOf('row-level security') !== -1 ||
+    raw.indexOf('rls') !== -1 ||
+    raw.indexOf('permission') !== -1 ||
     raw.indexOf('not authorized') !== -1 ||
-    raw.indexOf('unauthorized') !== -1 ||
-    /\bHTTP 401\b/i.test(rawMsg)
+    raw.indexOf('jwt') !== -1 ||
+    raw.indexOf('field-key') !== -1 ||
+    raw.indexOf('field key') !== -1 ||
+    /\bHTTP 40[13]\b/i.test(String((err && err.message) || err || ''))
   ) {
     return (
       'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
@@ -6838,20 +6849,13 @@ function _plainSyncFailureMessage(err) {
     );
   }
   if (
-    raw.indexOf('full') !== -1 ||
-    raw.indexOf('1 gb') !== -1 ||
     raw.indexOf('quota') !== -1 ||
-    raw.indexOf('507') !== -1 ||
-    raw.indexOf('daily') !== -1 ||
-    raw.indexOf('429') !== -1 ||
-    raw.indexOf('over the') !== -1
+    raw.indexOf('payload too large') !== -1 ||
+    raw.indexOf('insufficient') !== -1 ||
+    raw.indexOf('staging is full') !== -1 ||
+    raw.indexOf('office staging is full') !== -1 ||
+    (raw.indexOf('daily') !== -1 && raw.indexOf('limit') !== -1)
   ) {
-    if (raw.indexOf('daily') !== -1 || raw.indexOf('today') !== -1) {
-      return (
-        'Today’s upload limit for office staging is used up. Photos are still on this phone.\n\n' +
-        'Try Sync again tomorrow, or ask the office to check staging usage.'
-      );
-    }
     return (
       'Office staging looks full. Photos are still on this phone.\n\n' +
       'Ask the office to Download jobs to a computer, then Delete them from staging, and try Sync again.'
@@ -6863,14 +6867,158 @@ function _plainSyncFailureMessage(err) {
       'Try Sync again when you have a stronger signal.'
     );
   }
+  // Prefer server plain-English message when present
+  const serverMsg = String((err && err.message) || '').trim();
+  if (serverMsg && serverMsg.length < 400 && serverMsg.indexOf('HTTP ') !== 0) {
+    return serverMsg;
+  }
   return (
     'Couldn’t upload to office staging. Photos are still on this phone.\n\n' +
     'Try Sync again when you have a signal. If it keeps failing, tell the office — staging may be locked for maintenance.'
   );
 }
 
-/** Upload one file as raw binary pieces ≤4 MB with resume/retry. */
-async function _uploadRawObject(jobId, path, blob, contentType) {
+async function _uploadPart(jobId, part, onProgress) {
+  const objectName = jobId + '/' + part.name;
+  if (window.tus && window.tus.Upload) {
+    return new Promise(async (resolve, reject) => {
+      const upload = new window.tus.Upload(part.blob, {
+        endpoint: PGG_SUPA_URL + '/storage/v1/upload/resumable',
+        retryDelays: [0, 1500, 3000, 5000, 10000, 20000],
+        chunkSize: 6 * 1024 * 1024,
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        headers: {
+          'apikey': PGG_SUPA_KEY,
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY
+        },
+        metadata: {
+          bucketName: 'exports',
+          objectName,
+          contentType: 'application/zip',
+          cacheControl: '3600'
+        },
+        onProgress(bytesUploaded, bytesTotal) {
+          if (onProgress) onProgress(bytesUploaded, bytesTotal);
+        },
+        onSuccess() { resolve(); },
+        onError(error) {
+          if (_isAlreadyExistsUploadError(error)) resolve();
+          else reject(error);
+        }
+      });
+      try {
+        const previous = await upload.findPreviousUploads();
+        if (previous && previous.length) upload.resumeFromPreviousUpload(previous[0]);
+        upload.start();
+      } catch (error) {
+        if (_isAlreadyExistsUploadError(error)) resolve();
+        else reject(error);
+      }
+    });
+  }
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4 * 60 * 1000);
+    try {
+      const res = await fetch(PGG_SUPA_URL + '/storage/v1/object/exports/' + jobId + '/' + encodeURIComponent(part.name), {
+        method: 'POST',
+        headers: {
+          'apikey': PGG_SUPA_KEY,
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+          'Content-Type': 'application/zip'
+        },
+        body: part.blob,
+        signal: controller.signal
+      });
+      if (res.ok) return;
+      const detail = (await res.text()).slice(0, 200);
+      if (_isAlreadyExistsUploadDetail(res.status, detail)) return;
+      lastError = new Error('HTTP ' + res.status + ': ' + detail);
+      if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (_isAlreadyExistsUploadError(error)) return;
+      if (error && error.message && error.message.startsWith('HTTP 4') && !error.message.startsWith('HTTP 408') && !error.message.startsWith('HTTP 429')) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise(r => setTimeout(r, Math.min(12000, 1200 * Math.pow(2, attempt))));
+  }
+  throw lastError || new Error('Upload failed after automatic retries');
+}
+
+// ================= Raw asset transfer =================
+const RAW_PROGRESS_KEY = 'pgg_raw_upload_v1';
+
+function _readRawProgress(signature) {
+  try {
+    const s = JSON.parse(localStorage.getItem(RAW_PROGRESS_KEY) || 'null');
+    if (s && s.signature === signature && s.jobId) return { jobId: s.jobId, done: new Set(s.done || []) };
+  } catch (e) { console.warn('raw progress read failed', e); }
+  return null;
+}
+function _writeRawProgress(signature, jobId, doneSet) {
+  try { localStorage.setItem(RAW_PROGRESS_KEY, JSON.stringify({ signature, jobId, done: Array.from(doneSet) })); }
+  catch (e) { console.warn('raw progress write failed', e); }
+}
+function _clearRawProgress() {
+  try { localStorage.removeItem(RAW_PROGRESS_KEY); } catch (e) { /* ignore */ }
+}
+
+async function _photoBlobForExport(item) {
+  if (item.strokes && item.strokes.length) {
+    const d = await resolvePhoto(item.entry);
+    if (!d) return null;
+    let out = d;
+    try { out = await compositePhotoWithStrokes(d, item.strokes); }
+    catch (e) { console.warn('annotate composite failed', e); }
+    return dataUrlToBlob(out);
+  }
+  return resolvePhotoBlob(item.entry);
+}
+
+/** Lovable host: single-object Supabase upload. */
+async function _uploadRawObjectSupabase(jobId, path, blob, contentType) {
+  const url = PGG_SUPA_URL + '/storage/v1/object/exports/' +
+    (jobId + '/' + path).split('/').map(encodeURIComponent).join('/');
+  let lastError = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90 * 1000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': PGG_SUPA_KEY,
+          'Authorization': 'Bearer ' + PGG_SUPA_KEY,
+          'Content-Type': contentType || 'application/octet-stream'
+        },
+        body: blob,
+        signal: controller.signal
+      });
+      if (res.ok) return;
+      const detail = (await res.text()).slice(0, 160);
+      if (_isAlreadyExistsUploadDetail(res.status, detail)) return;
+      lastError = new Error('HTTP ' + res.status + ': ' + detail);
+      if (res.status < 500 && res.status !== 408 && res.status !== 429) throw lastError;
+    } catch (error) {
+      lastError = error;
+      if (_isAlreadyExistsUploadError(error)) return;
+      if (error && error.message && error.message.startsWith('HTTP 4') && !error.message.startsWith('HTTP 408') && !error.message.startsWith('HTTP 429')) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise(function (r) { setTimeout(r, Math.min(10000, 800 * Math.pow(2, attempt))); });
+  }
+  if (lastError) throw lastError || new Error('Upload failed after automatic retries');
+}
+
+/** www / Netlify: chunked Blobs upload. */
+async function _uploadRawObjectNetlify(jobId, path, blob, contentType) {
+
   const size = Number(blob.size) || 0;
   const total = Math.max(1, Math.ceil(size / PGG_SYNC_CHUNK_BYTES) || 1);
   const type = contentType || blob.type || 'application/octet-stream';
@@ -6944,11 +7092,16 @@ async function _uploadRawObject(jobId, path, blob, contentType) {
     }
     if (lastError) throw lastError || new Error('Upload failed after automatic retries');
   }
+
 }
 
-// Uploads every metadata file + photo individually. Resumable from *phone*
-// progress only (pgg_raw_upload_v1) — no remote list / SELECT needed after lockdown.
-// If a path was already uploaded, INSERT "already exists" is treated as success.
+async function _uploadRawObject(jobId, path, blob, contentType) {
+  if (useLovableSupabaseSync()) {
+    return _uploadRawObjectSupabase(jobId, path, blob, contentType);
+  }
+  return _uploadRawObjectNetlify(jobId, path, blob, contentType);
+}
+
 async function _uploadRawAssets(items, onStatus, manifestExtra) {
   const signature = _partsExportSignature(items);
   const prior = _readRawProgress(signature);
