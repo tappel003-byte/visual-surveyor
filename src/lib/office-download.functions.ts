@@ -2,13 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { hasValidOfficeSession } from "@/server/office-session";
 import {
-  fetchOfficeJobDownloadFromLovable,
-  fetchOfficeSignedUrlFromLovable,
+  buildOfficeJobDownload,
   isSafeExportJobId,
   isSafeExportRelativePath,
+  signOfficeExportFile,
   type OfficeJobDownloadPayload,
 } from "@/server/office-download";
-import { exportsListTokenConfigured } from "@/server/office-jobs";
+import { officeLockerConfigured } from "@/server/office-jobs";
 
 export type OfficeJobDownloadResult = OfficeJobDownloadPayload & {
   storageLinksAvailable: boolean;
@@ -43,22 +43,18 @@ export const officeGetJobDownload = createServerFn({ method: "POST" })
     }
 
     const jobId = data.jobId.trim();
-    if (!exportsListTokenConfigured()) {
+    if (!officeLockerConfigured()) {
       return { ...emptyDownload(jobId), storageLinksAvailable: false };
     }
 
-    const result = await fetchOfficeJobDownloadFromLovable(jobId);
-    if (!result.ok) {
-      return { ...emptyDownload(jobId), storageLinksAvailable: false };
-    }
-
+    const payload = await buildOfficeJobDownload(jobId);
     return {
-      ...result.payload,
+      ...payload,
       storageLinksAvailable: true,
     };
   });
 
-/** Lazy sign-on-click: mint one file URL via Lovable (Netlify has no service role). */
+/** Lazy access: same-origin chunk marker (session cookie authorizes Download). */
 export const officeSignFile = createServerFn({ method: "POST" })
   .validator(
     z.object({
@@ -66,22 +62,26 @@ export const officeSignFile = createServerFn({ method: "POST" })
       path: z.string().min(1).max(500),
     }),
   )
-  .handler(async ({ data }): Promise<{ signedUrl: string; expiresIn: number }> => {
-    if (!hasValidOfficeSession()) {
-      throw new Error("Sign in at /office with the company password, then try Download again.");
-    }
-    if (!isSafeExportJobId(data.jobId) || !isSafeExportRelativePath(data.path)) {
-      throw new Error("That file link looks wrong. Open the job again from the office list.");
-    }
-    if (!exportsListTokenConfigured()) {
-      throw new Error(
-        "Download is not available right now. Tell whoever runs Netlify to check the shared office list token and Publish once in Lovable. Do not add storage service keys on Netlify.",
-      );
-    }
+  .handler(
+    async ({
+      data,
+    }): Promise<{ signedUrl: string; expiresIn: number; totalChunks: number; sizeBytes: number }> => {
+      if (!hasValidOfficeSession()) {
+        throw new Error("Sign in at /office with the company password, then try Download again.");
+      }
+      if (!isSafeExportJobId(data.jobId) || !isSafeExportRelativePath(data.path)) {
+        throw new Error("That file link looks wrong. Open the job again from the office list.");
+      }
+      if (!officeLockerConfigured()) {
+        throw new Error(
+          "Download is not available right now. Tell whoever runs Netlify to check the site deploy.",
+        );
+      }
 
-    const result = await fetchOfficeSignedUrlFromLovable(data.jobId.trim(), data.path.trim());
-    if (!result.ok) {
-      throw new Error("Sign in at /office with the company password, then try Download again.");
-    }
-    return { signedUrl: result.signedUrl, expiresIn: result.expiresIn };
-  });
+      const result = await signOfficeExportFile(data.jobId.trim(), data.path.trim());
+      if (!result) {
+        throw new Error("Could not prepare that file. Refresh and try again.");
+      }
+      return result;
+    },
+  );

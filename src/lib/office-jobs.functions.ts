@@ -1,32 +1,37 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
-  exportsListTokenConfigured,
-  fetchExportJobListFromLovable,
+  fetchExportJobListFromBlobs,
+  officeLockerConfigured,
   type OfficeJobFolder,
+  type OfficeLockerStats,
 } from "@/server/office-jobs";
 import { hasValidOfficeSession } from "@/server/office-session";
 
 export type OfficeJobListResult = {
   listAvailable: boolean;
   jobs: OfficeJobFolder[];
+  locker: OfficeLockerStats | null;
 };
 
-export type { OfficeJobFolder };
+export type { OfficeJobFolder, OfficeLockerStats };
 
 /** POST avoids browser/CDN caching so Refresh always re-fetches the job list. */
-export const officeListJobs = createServerFn({ method: "POST" }).handler(async (): Promise<OfficeJobListResult> => {
-  if (!hasValidOfficeSession()) {
-    throw new Error("Sign in required.");
-  }
+export const officeListJobs = createServerFn({ method: "POST" }).handler(
+  async (): Promise<OfficeJobListResult> => {
+    if (!hasValidOfficeSession()) {
+      throw new Error("Sign in required.");
+    }
 
-  if (!exportsListTokenConfigured()) {
-    return { listAvailable: false, jobs: [] };
-  }
+    if (!officeLockerConfigured()) {
+      return { listAvailable: false, jobs: [], locker: null };
+    }
 
-  const result = await fetchExportJobListFromLovable();
-  if (!result.ok) {
-    return { listAvailable: false, jobs: [] };
-  }
-
-  return { listAvailable: true, jobs: result.jobs };
-});
+    try {
+      const result = await fetchExportJobListFromBlobs();
+      return { listAvailable: true, jobs: result.jobs, locker: result.locker };
+    } catch (e) {
+      console.error("[officeListJobs] blobs list failed", e);
+      return { listAvailable: false, jobs: [], locker: null };
+    }
+  },
+);

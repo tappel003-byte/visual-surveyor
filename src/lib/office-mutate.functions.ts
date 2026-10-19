@@ -9,7 +9,6 @@ import {
   fetchSetExportNameFromLovable,
   fetchUpdateExportPinsFromLovable,
 } from "@/server/office-mutate";
-import { exportsListTokenConfigured } from "@/server/office-jobs";
 import type { OfficePinsPayload } from "@/lib/office-pins";
 
 export const officeDeleteJob = createServerFn({ method: "POST" })
@@ -21,13 +20,10 @@ export const officeDeleteJob = createServerFn({ method: "POST" })
     if (!isSafeExportJobId(data.jobId)) {
       throw new Error("Invalid job id.");
     }
-    if (!exportsListTokenConfigured()) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
-    }
 
     const result = await fetchDeleteExportJobFromLovable(data.jobId.trim());
     if (!result.ok) {
-      throw new Error("Could not delete job (unauthorized).");
+      throw new Error("Could not delete job.");
     }
     return { deleted: result.deleted };
   });
@@ -46,13 +42,10 @@ export const officeSetJobFrom = createServerFn({ method: "POST" })
     if (!isSafeExportJobId(data.jobId)) {
       throw new Error("Invalid job id.");
     }
-    if (!exportsListTokenConfigured()) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
-    }
 
     const result = await fetchSetExportFromFromLovable(data.jobId.trim(), data.syncedFrom.trim());
     if (!result.ok) {
-      throw new Error("Could not update From (unauthorized).");
+      throw new Error("Could not update From.");
     }
     return { syncedFrom: result.syncedFrom };
   });
@@ -71,13 +64,10 @@ export const officeSetJobName = createServerFn({ method: "POST" })
     if (!isSafeExportJobId(data.jobId)) {
       throw new Error("Invalid job id.");
     }
-    if (!exportsListTokenConfigured()) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
-    }
 
     const result = await fetchSetExportNameFromLovable(data.jobId.trim(), data.folderName.trim());
     if (!result.ok) {
-      throw new Error("Could not update job name (unauthorized).");
+      throw new Error("Could not update job name.");
     }
     return { folderName: result.folderName };
   });
@@ -91,13 +81,10 @@ export const officeGetJobPins = createServerFn({ method: "POST" })
     if (!isSafeExportJobId(data.jobId)) {
       throw new Error("Invalid job id.");
     }
-    if (!exportsListTokenConfigured()) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
-    }
 
     const result = await fetchExportPinsFromLovable(data.jobId.trim());
     if (!result.ok) {
-      throw new Error("Could not load pin notes (unauthorized).");
+      throw new Error("Could not load pin notes.");
     }
     return result.payload;
   });
@@ -125,13 +112,10 @@ export const officeUpdateJobPins = createServerFn({ method: "POST" })
     if (!isSafeExportJobId(data.jobId)) {
       throw new Error("Invalid job id.");
     }
-    if (!exportsListTokenConfigured()) {
-      throw new Error("EXPORTS_LIST_TOKEN is not configured.");
-    }
 
     const result = await fetchUpdateExportPinsFromLovable(data.jobId.trim(), data.updates);
     if (!result.ok) {
-      throw new Error("Could not save pin notes (unauthorized).");
+      throw new Error("Could not save pin notes.");
     }
     return result.payload;
   });

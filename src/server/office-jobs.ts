@@ -1,4 +1,9 @@
-const EXPORTS_LIST_URL = "https://visual-surveyor.lovable.app/api/public/exports-list";
+import {
+  getDownloadMonthBytes,
+  listJobFolders,
+  LOCKER_BUDGET_BYTES,
+  sumLockerBytes,
+} from "@/server/office-blobs";
 
 export type OfficeJobFolder = {
   /** Top-level folder name (job id used by /office File Explorer). */
@@ -16,79 +21,40 @@ export type OfficeJobFolder = {
   syncedFrom: string | null;
 };
 
-export function exportsListTokenConfigured(): boolean {
-  return Boolean(process.env.EXPORTS_LIST_TOKEN?.trim());
-}
-
-type ExportsListResponse = {
-  jobs?: Array<{
-    id: string;
-    displayName?: string | null;
-    fileCount: number;
-    totalBytes: number;
-    manifestFileCount?: number | null;
-    storageObjectCount?: number;
-    syncIncomplete?: boolean;
-    syncedAt?: string | null;
-    syncedFrom?: string | null;
-  }>;
+export type OfficeLockerStats = {
+  usedBytes: number;
+  budgetBytes: number;
+  downloadedMonthBytes: number;
+  downloadedMonthKey: string;
 };
 
-/** Fetches job folders from the Lovable public exports-list API (Netlify server-only). */
-export async function fetchExportJobListFromLovable(): Promise<
-  { ok: true; jobs: OfficeJobFolder[] } | { ok: false; unauthorized: boolean }
-> {
-  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
-  if (!token) {
-    return { ok: false, unauthorized: true };
-  }
+/** Blobs locker is always the www source of truth after cutover (no Lovable token). */
+export function officeLockerConfigured(): boolean {
+  return true;
+}
 
-  const res = await fetch(EXPORTS_LIST_URL, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+/** @deprecated Use officeLockerConfigured — kept so old call sites compile during edit. */
+export function exportsListTokenConfigured(): boolean {
+  return officeLockerConfigured();
+}
 
-  if (res.status === 401) {
-    return { ok: false, unauthorized: true };
-  }
-
-  if (!res.ok) {
-    throw new Error(`Exports list failed (${res.status}).`);
-  }
-
-  const body = (await res.json()) as ExportsListResponse;
-  const jobs: OfficeJobFolder[] = [];
-  for (const item of body.jobs ?? []) {
-    const id = item.id?.trim();
-    if (!id) continue;
-    const displayName =
-      typeof item.displayName === "string" && item.displayName.trim() ? item.displayName.trim() : null;
-    const manifestFileCount =
-      typeof item.manifestFileCount === "number" ? item.manifestFileCount : null;
-    const storageObjectCount = Number(item.storageObjectCount) || 0;
-    const syncedAt =
-      typeof item.syncedAt === "string" && item.syncedAt.trim() ? item.syncedAt.trim() : null;
-    const syncedFrom =
-      typeof item.syncedFrom === "string" && item.syncedFrom.trim() ? item.syncedFrom.trim() : null;
-    jobs.push({
-      id,
-      displayName,
-      fileCount: Number(item.fileCount) || 0,
-      totalBytes: Number(item.totalBytes) || 0,
-      manifestFileCount,
-      storageObjectCount,
-      syncIncomplete: Boolean(item.syncIncomplete),
-      syncedAt,
-      syncedFrom,
-    });
-  }
-
-  jobs.sort((a, b) => {
-    const aTime = a.syncedAt ? Date.parse(a.syncedAt) : 0;
-    const bTime = b.syncedAt ? Date.parse(b.syncedAt) : 0;
-    if (aTime !== bTime) return bTime - aTime;
-    return (a.displayName || a.id).localeCompare(b.displayName || b.id);
-  });
-  return { ok: true, jobs };
+/** Lists job folders from the site-wide Netlify Blobs locker. */
+export async function fetchExportJobListFromBlobs(): Promise<{
+  ok: true;
+  jobs: OfficeJobFolder[];
+  locker: OfficeLockerStats;
+}> {
+  const jobs = (await listJobFolders()) as OfficeJobFolder[];
+  const usedBytes = await sumLockerBytes();
+  const dl = await getDownloadMonthBytes();
+  return {
+    ok: true,
+    jobs,
+    locker: {
+      usedBytes,
+      budgetBytes: LOCKER_BUDGET_BYTES,
+      downloadedMonthBytes: dl.bytes,
+      downloadedMonthKey: dl.month,
+    },
+  };
 }

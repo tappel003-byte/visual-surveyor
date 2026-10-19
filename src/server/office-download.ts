@@ -1,18 +1,27 @@
+import {
+  isSafeExportJobId,
+  isSafeExportRelativePath,
+  listJobFiles,
+  readManifest,
+  type LockerManifest,
+} from "@/server/office-blobs";
+
+export { isSafeExportJobId, isSafeExportRelativePath };
+
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
-const EXPORTS_JOB_URL = "https://visual-surveyor.lovable.app/api/public/exports-job";
-const EXPORTS_SIGN_URL = "https://visual-surveyor.lovable.app/api/public/exports-sign";
 
 export type OfficeDownloadFile = {
-  /** Storage path relative to the job folder (used for lazy sign). */
+  /** Storage path relative to the job folder (used for lazy chunk download). */
   path: string;
   /** Human label (zip part name or zipPath from manifest). */
   label: string;
   sizeBytes: number | null;
   /**
-   * Direct HTTPS URL — only present when a single file was signed on demand.
-   * Open list responses leave this null so large jobs load quickly.
+   * Same-origin chunk base — client fetches /api/office/file-chunk with session.
+   * Kept as signedUrl field name for UI compatibility; value is a marker URL.
    */
   signedUrl: string | null;
+  totalChunks?: number;
 };
 
 export type OfficeJobDownloadPayload = {
@@ -22,10 +31,6 @@ export type OfficeJobDownloadPayload = {
   uploadKind: string | null;
   syncedAt: string | null;
   syncedFrom: string | null;
-  /**
-   * Legacy field kept for Lovable payload compatibility.
-   * Public /get downloads are retired — desk uses token/sign via /office.
-   */
   getPagePath: string;
   signedUrlTtlSeconds: number;
   files: OfficeDownloadFile[];
@@ -35,149 +40,33 @@ export type OfficeJobDownloadPayload = {
   missingManifestPaths: number;
 };
 
-type ManifestJson = {
-  folderName?: string;
-  uploadKind?: string;
-  syncedAt?: string;
-  syncedFrom?: string;
-  deviceName?: string;
-  files?: Array<{ path: string; zipPath: string }>;
-};
-
-/** True when Lovable can mint signed URLs (service role present on that host). */
+/** Blobs locker is always available on www after cutover. */
 export function officeDownloadStorageConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+  return true;
 }
 
-/**
- * Netlify office Open: fetch unsigned file list from Lovable (Bearer EXPORTS_LIST_TOKEN).
- * Never requires SUPABASE_SERVICE_ROLE_KEY on Netlify.
- */
-export async function fetchOfficeJobDownloadFromLovable(jobId: string): Promise<
-  | { ok: true; payload: OfficeJobDownloadPayload }
-  | { ok: false; unauthorized: boolean }
-> {
-  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
-  if (!token) {
-    return { ok: false, unauthorized: true };
-  }
-
-  const url = `${EXPORTS_JOB_URL}?jobId=${encodeURIComponent(jobId)}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (res.status === 401) {
-    return { ok: false, unauthorized: true };
-  }
-
-  if (!res.ok) {
-    throw new Error(
-      `Exports job failed (${res.status}). If this is 404, publish the app once in Lovable so /api/public/exports-job is live.`,
-    );
-  }
-
-  const payload = (await res.json()) as OfficeJobDownloadPayload;
-  return { ok: true, payload };
-}
-
-/**
- * Netlify: mint one signed URL via Lovable when the user clicks a file.
- */
-export async function fetchOfficeSignedUrlFromLovable(
-  jobId: string,
-  relativePath: string,
-): Promise<{ ok: true; signedUrl: string; expiresIn: number } | { ok: false; unauthorized: boolean }> {
-  const token = process.env.EXPORTS_LIST_TOKEN?.trim();
-  if (!token) {
-    return { ok: false, unauthorized: true };
-  }
-
-  const url =
-    `${EXPORTS_SIGN_URL}?jobId=${encodeURIComponent(jobId)}` +
-    `&path=${encodeURIComponent(relativePath)}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (res.status === 401) {
-    return { ok: false, unauthorized: true };
-  }
-
-  if (!res.ok) {
-    throw new Error(
-      `Exports sign failed (${res.status}). If this is 404, publish once in Lovable so /api/public/exports-sign is live.`,
-    );
-  }
-
-  const body = (await res.json()) as { signedUrl?: string; expiresIn?: number };
-  if (!body.signedUrl) {
-    throw new Error("Exports sign returned no URL.");
-  }
-  return {
-    ok: true,
-    signedUrl: body.signedUrl,
-    expiresIn: Number(body.expiresIn) || SIGNED_URL_TTL_SECONDS,
-  };
-}
-
-/** Reject path segments and odd characters — job ids are UUIDs or similar single folder names. */
-export function isSafeExportJobId(jobId: string): boolean {
-  const id = jobId.trim();
-  if (!id || id.length > 200) return false;
-  if (id.includes("/") || id.includes("\\") || id.includes("..")) return false;
-  return /^[a-zA-Z0-9._-]+$/.test(id);
-}
-
-/** Safe relative storage path under a job (no traversal). */
-export function isSafeExportRelativePath(relativePath: string): boolean {
-  const p = relativePath.trim();
-  if (!p || p.length > 500) return false;
-  if (p.startsWith("/") || p.includes("\\") || p.includes("..")) return false;
-  if (p.includes("//")) return false;
-  return /^[a-zA-Z0-9._/-]+$/.test(p);
-}
-
-async function signObject(storagePath: string): Promise<string | null> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const bucket = supabaseAdmin.storage.from("exports");
-  const { data, error } = await bucket.createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
-  if (error || !data?.signedUrl) {
-    console.error("[office-download] signed URL failed", storagePath, error?.message);
-    return null;
-  }
-  return data.signedUrl;
-}
-
-async function loadManifest(jobId: string): Promise<ManifestJson | null> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin.storage.from("exports").download(`${jobId}/manifest.json`);
-  if (error || !data) return null;
-  try {
-    return JSON.parse(await data.text()) as ManifestJson;
-  } catch {
-    return null;
-  }
-}
-
-function manifestSyncedAt(manifest: ManifestJson | null): string | null {
+function manifestSyncedAt(manifest: LockerManifest | null): string | null {
   const raw = manifest?.syncedAt?.trim();
   if (!raw) return null;
   const t = Date.parse(raw);
   return Number.isFinite(t) ? new Date(t).toISOString() : raw;
 }
 
-function manifestSyncedFrom(manifest: ManifestJson | null): string | null {
+function manifestSyncedFrom(manifest: LockerManifest | null): string | null {
   return manifest?.syncedFrom?.trim() || manifest?.deviceName?.trim() || null;
 }
 
+/** Marker URL — client uses session + /api/office/file-chunk, not this as a direct GET. */
+export function officeFileAccessMarker(jobId: string, relativePath: string): string {
+  return (
+    `/api/office/file-chunk?jobId=${encodeURIComponent(jobId)}` +
+    `&path=${encodeURIComponent(relativePath)}`
+  );
+}
+
 /**
- * Lists files for Open — does NOT mint signed URLs (lazy sign on click via signOfficeExportFile).
- * Runs on Lovable with service role for storage listing only.
+ * Lists files for Open — no third-party signed URLs.
+ * Desk loads each file via chunked same-origin Download.
  */
 export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDownloadPayload> {
   const base = {
@@ -193,25 +82,17 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
     syncedFrom: null as string | null,
   };
 
-  if (!officeDownloadStorageConfigured()) {
+  if (!isSafeExportJobId(jobId)) {
     return { ...base, kind: "empty", folderName: null, uploadKind: null };
   }
 
-  const { listStoredObjectsForJob } = await import("@/server/export-storage-stats");
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const bucket = supabaseAdmin.storage.from("exports");
-  let storedObjects: Awaited<ReturnType<typeof listStoredObjectsForJob>> = [];
-  try {
-    storedObjects = await listStoredObjectsForJob(bucket, jobId);
-  } catch (e) {
-    console.error("[office-download] storage walk failed", jobId, e);
-  }
-  const contentObjects = storedObjects.filter((o) => o.relativePath !== "manifest.json");
-  const storedPathSet = new Set(contentObjects.map((o) => o.relativePath));
-  const sizeByPath = new Map(contentObjects.map((o) => [o.relativePath, o.sizeBytes]));
-  base.storageObjectCount = contentObjects.length;
+  const stored = await listJobFiles(jobId);
+  const storedPathSet = new Set(stored.map((o) => o.relativePath));
+  const sizeByPath = new Map(stored.map((o) => [o.relativePath, o.sizeBytes]));
+  const chunksByPath = new Map(stored.map((o) => [o.relativePath, o.totalChunks]));
+  base.storageObjectCount = stored.length;
 
-  const manifest = await loadManifest(jobId);
+  const manifest = await readManifest(jobId);
   base.syncedAt = manifestSyncedAt(manifest);
   base.syncedFrom = manifestSyncedFrom(manifest);
 
@@ -233,11 +114,12 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
         label,
         sizeBytes: sizeByPath.get(path) ?? null,
         signedUrl: null,
+        totalChunks: chunksByPath.get(path) ?? 1,
       });
     }
     files.sort((a, b) => a.label.localeCompare(b.label));
     const manifestExpectedFiles = manifest.files.length;
-    const syncIncomplete = missingManifestPaths > 0 || manifestExpectedFiles > contentObjects.length;
+    const syncIncomplete = missingManifestPaths > 0 || manifestExpectedFiles > stored.length;
     return {
       ...base,
       kind: files.length ? "manifest" : "empty",
@@ -250,29 +132,20 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
     };
   }
 
-  const { data, error } = await bucket.list(jobId, { limit: 200 });
-  if (error) {
-    console.error("[office-download] list failed", jobId, error.message);
-    return { ...base, kind: "empty", folderName: null, uploadKind: null };
-  }
-
-  const zips = (data || [])
-    .filter((f) => f.name.endsWith(".zip"))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const files: OfficeDownloadFile[] = [];
-  for (const part of zips) {
-    files.push({
-      path: part.name,
-      label: part.name,
-      sizeBytes: Number(part.metadata?.size) || null,
+  const files: OfficeDownloadFile[] = stored
+    .filter((o) => o.relativePath !== "manifest.json")
+    .map((o) => ({
+      path: o.relativePath,
+      label: o.relativePath.replace(/^files\//, ""),
+      sizeBytes: o.sizeBytes,
       signedUrl: null,
-    });
-  }
+      totalChunks: o.totalChunks,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   return {
     ...base,
-    kind: files.length ? "zip-parts" : "empty",
+    kind: files.length ? "manifest" : "empty",
     folderName: null,
     uploadKind: null,
     files,
@@ -282,17 +155,24 @@ export async function buildOfficeJobDownload(jobId: string): Promise<OfficeJobDo
   };
 }
 
-/** Mint one time-limited signed URL for a file under the job (Lovable / service role). */
+/**
+ * Desk “sign”: return same-origin chunk access marker (session cookie authorizes).
+ */
 export async function signOfficeExportFile(
   jobId: string,
   relativePath: string,
-): Promise<{ signedUrl: string; expiresIn: number } | null> {
-  if (!officeDownloadStorageConfigured()) return null;
+): Promise<{ signedUrl: string; expiresIn: number; totalChunks: number; sizeBytes: number } | null> {
   if (!isSafeExportJobId(jobId) || !isSafeExportRelativePath(relativePath)) return null;
   if (relativePath === "manifest.json") return null;
 
-  const storagePath = `${jobId}/${relativePath}`;
-  const signedUrl = await signObject(storagePath);
-  if (!signedUrl) return null;
-  return { signedUrl, expiresIn: SIGNED_URL_TTL_SECONDS };
+  const files = await listJobFiles(jobId);
+  const hit = files.find((f) => f.relativePath === relativePath);
+  if (!hit) return null;
+
+  return {
+    signedUrl: officeFileAccessMarker(jobId, relativePath),
+    expiresIn: SIGNED_URL_TTL_SECONDS,
+    totalChunks: hit.totalChunks,
+    sizeBytes: hit.sizeBytes,
+  };
 }
