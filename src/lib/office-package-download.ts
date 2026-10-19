@@ -1,4 +1,13 @@
+import { downloadZip, makeZip } from "client-zip";
 import { officeGetJobDownload, officeSignFile } from "@/lib/office-download.functions";
+import {
+  fallbackSaveMessage,
+  isSaveCancelled,
+  openSaveWritable,
+  pickerSavedMessage,
+  saveBlobWithSaveAs,
+  supportsSaveFilePicker,
+} from "@/lib/office-save-file";
 
 /** List Download sets this before navigating to the job page. */
 export const OFFICE_AUTO_PACKAGE_KEY = "pgg_office_auto_package";
@@ -10,8 +19,19 @@ export type OfficePackageFile = {
   totalChunks?: number;
 };
 
+/** User closed Save As — do not treat as a failed package. */
+export class OfficeSaveCancelledError extends Error {
+  constructor() {
+    super("Download cancelled.");
+    this.name = "OfficeSaveCancelledError";
+  }
+}
+
 /** Plain-English download failures for desk staff. */
 export function plainOfficeDownloadFailure(err: unknown): string {
+  if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err)) {
+    return "Download cancelled.";
+  }
   const raw = String(err instanceof Error ? err.message : err || "").toLowerCase();
   if (raw.includes("sign in") || raw.includes("unauthorized") || raw.includes("session")) {
     return "Sign in at /office with the company password, then try Download again.";
@@ -20,24 +40,25 @@ export function plainOfficeDownloadFailure(err: unknown): string {
     return "Download isn’t available right now. Tell whoever runs the Netlify site to check the latest deploy.";
   }
   if (raw.includes("network") || raw.includes("fetch") || raw.includes("failed to fetch")) {
-    return "Couldn’t download. Check your internet, then try Download again.";
+    return "Couldn’t download. Check your internet, then try Download package again.";
   }
-  return "Couldn’t download this job. Try downloading files one at a time. Photos stay in staging until Delete.";
-}
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return "Download package didn’t finish. Try Download package again. Photos stay in staging until Delete.";
 }
 
 const CHUNK_FETCH_MAX_ATTEMPTS = 5;
+/** Extra whole-file retries so a flaky file doesn’t abort a 100+ file package. */
+const FILE_FETCH_MAX_ATTEMPTS = 4;
+
+function safeZipPath(rootName: string, label: string): string {
+  const safeRoot = rootName.replace(/[/\\]+/g, "_").replace(/^\.+/, "") || "field-export";
+  const safeLabel = label.replace(/^[/\\]+/, "").replace(/\.\./g, "_") || "file";
+  return `${safeRoot}/${safeLabel}`;
+}
+
+function safeZipFilename(rootName: string): string {
+  const base = rootName.replace(/[/\\?%*:|"<>]+/g, "_").trim() || "field-export";
+  return `${base}.zip`;
+}
 
 /**
  * Fetch one file as a Blob via ≤4 MB same-origin chunks (session cookie).
@@ -84,10 +105,32 @@ export async function fetchOfficeFileBlob(
   return new Blob(parts, { type: contentType });
 }
 
+async function fetchOfficeFileBlobResilient(
+  jobId: string,
+  file: OfficePackageFile,
+  onChunk?: (done: number, total: number) => void,
+): Promise<Blob> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < FILE_FETCH_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fetchOfficeFileBlob(jobId, file.path, {
+        totalChunks: file.totalChunks,
+        meterDownload: true,
+        onChunk,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (attempt === FILE_FETCH_MAX_ATTEMPTS - 1) break;
+      await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(`Could not download ${file.label}`);
+}
+
 /**
- * Per-file Download to disk (preferred over giant ZIP).
- * Streams each file via chunks; saves one file at a time so the desk never
- * holds the whole job in memory.
+ * Desk Download package: one ZIP for the whole job + Save As (Chromium).
+ * Streams files into the ZIP as they arrive so the browser never holds the full
+ * job as separate downloads, and Save As runs before bytes are committed.
  */
 export async function downloadOfficeJobPackage(opts: {
   jobId: string;
@@ -120,28 +163,67 @@ export async function downloadOfficeJobPackage(opts: {
   }
 
   const rootName = folderName || "field-export";
+  const zipFilename = safeZipFilename(rootName);
+  const total = files.length;
 
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i]!;
-    opts.onProgress?.(`Downloading file ${i + 1} of ${files.length}: ${f.label}…`);
-    const blob = await fetchOfficeFileBlob(jobId, f.path, {
-      totalChunks: f.totalChunks,
-      meterDownload: true,
-      onChunk: (done, total) => {
-        if (total > 1) {
-          opts.onProgress?.(
-            `Downloading file ${i + 1} of ${files.length}: ${f.label} (piece ${done}/${total})…`,
-          );
+  const zipEntries = () =>
+    (async function* () {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]!;
+        opts.onProgress?.(`Downloading ${i + 1} of ${total}…`);
+        const blob = await fetchOfficeFileBlobResilient(jobId, f, (done, chunkTotal) => {
+          if (chunkTotal > 1) {
+            opts.onProgress?.(
+              `Downloading ${i + 1} of ${total} (piece ${done}/${chunkTotal})…`,
+            );
+          }
+        });
+        yield {
+          name: safeZipPath(rootName, f.label),
+          lastModified: new Date(),
+          input: blob,
+        };
+      }
+    })();
+
+  // Prefer Save As first, then stream the ZIP straight into that file (harden large jobs).
+  if (supportsSaveFilePicker()) {
+    opts.onProgress?.("Choose where to save the ZIP…");
+    try {
+      const { filename, writable } = await openSaveWritable(zipFilename, "application/zip", ".zip");
+      try {
+        opts.onProgress?.(`Downloading 1 of ${total}…`);
+        await makeZip(zipEntries()).pipeTo(writable);
+        opts.onProgress?.(pickerSavedMessage(filename));
+        return;
+      } catch (err) {
+        try {
+          await writable.abort();
+        } catch {
+          /* ignore */
         }
-      },
-    });
-    const safeName = f.label.replace(/[/\\]/g, "_");
-    saveBlob(blob, `${rootName}__${safeName}`);
-    // Brief gap so the browser can flush each download.
-    await new Promise((r) => setTimeout(r, 200));
+        if (isSaveCancelled(err)) throw new OfficeSaveCancelledError();
+        throw err;
+      }
+    } catch (err) {
+      if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err)) {
+        throw new OfficeSaveCancelledError();
+      }
+      // No user gesture (auto-start) or picker blocked — fall through to build-then-save.
+    }
   }
 
-  opts.onProgress?.(`Done — ${files.length} file${files.length === 1 ? "" : "s"} saved. Check your downloads folder.`);
+  // Anchor / late Save As path: stream files into one ZIP blob, then save.
+  const blob = await downloadZip(zipEntries()).blob();
+  opts.onProgress?.("Choose where to save the ZIP…");
+  const outcome = await saveBlobWithSaveAs(blob, zipFilename, {
+    mimeType: "application/zip",
+    extension: ".zip",
+  });
+  if (outcome.kind === "cancelled") throw new OfficeSaveCancelledError();
+  opts.onProgress?.(
+    outcome.mode === "fallback" ? fallbackSaveMessage(outcome.filename) : outcome.message,
+  );
 }
 
 /** Build an object URL for Open / lightbox (one file, chunked). */

@@ -11,9 +11,11 @@ import {
 import {
   downloadOfficeJobPackage,
   fetchOfficeFileBlob,
+  OfficeSaveCancelledError,
   officeFileObjectUrl,
   plainOfficeDownloadFailure,
 } from "@/lib/office-package-download";
+import { saveBlobWithSaveAs } from "@/lib/office-save-file";
 import {
   fromLabel,
   OFFICE_BTN_CLASS,
@@ -254,17 +256,14 @@ export function JobFileExplorer({
         totalChunks: fileMeta?.totalChunks,
         meterDownload: true,
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = entry.name;
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setStatus(`Download started: ${entry.name}`);
-      window.setTimeout(() => setStatus(null), 2200);
+      const outcome = await saveBlobWithSaveAs(blob, entry.name);
+      if (outcome.kind === "cancelled") {
+        setStatus("Download cancelled.");
+        window.setTimeout(() => setStatus(null), 2200);
+        return;
+      }
+      setStatus(outcome.message);
+      window.setTimeout(() => setStatus(null), outcome.mode === "fallback" ? 8000 : 3200);
     } catch (err) {
       setSignError(plainOfficeDownloadFailure(err));
       setStatus(null);
@@ -290,11 +289,22 @@ export function JobFileExplorer({
       await downloadOfficeJobPackage({
         jobId,
         folderName: displayTitle || data.folderName || title,
-        files: data.files.map((f) => ({ path: f.path, label: f.label })),
+        files: data.files.map((f) => ({
+          path: f.path,
+          label: f.label,
+          sizeBytes: f.sizeBytes,
+          totalChunks: f.totalChunks,
+        })),
         onProgress: (msg) => setStatus(msg),
       });
-      window.setTimeout(() => setStatus(null), 3200);
+      window.setTimeout(() => setStatus(null), 8000);
     } catch (err) {
+      if (err instanceof OfficeSaveCancelledError) {
+        setStatus("Download cancelled.");
+        setSignError(null);
+        window.setTimeout(() => setStatus(null), 2200);
+        return;
+      }
       const msg = plainOfficeDownloadFailure(err);
       setSignError(msg);
       setStatus(null);
