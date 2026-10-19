@@ -100,6 +100,8 @@ export function plainOfficeDownloadFailure(err: unknown): string {
 const CHUNK_FETCH_MAX_ATTEMPTS = 5;
 /** Extra whole-file retries so a flaky file doesn’t abort a 100+ file package. */
 const FILE_FETCH_MAX_ATTEMPTS = 4;
+/** How many ≤4 MB pieces of one file to fetch at once (Download package). */
+const CHUNK_FETCH_CONCURRENCY = 4;
 
 function safeZipPath(rootName: string, label: string): string {
   const safeRoot = rootName.replace(/[/\\]+/g, "_").replace(/^\.+/, "") || "field-export";
@@ -159,10 +161,11 @@ export async function fetchOfficeFileBlob(
   }
 
   const totalChunks = opts?.totalChunks || access.totalChunks || 1;
-  const parts: BlobPart[] = [];
+  const parts: BlobPart[] = new Array(totalChunks);
   let contentType = "application/octet-stream";
+  let chunksDone = 0;
 
-  for (let index = 0; index < totalChunks; index++) {
+  const fetchOneChunk = async (index: number): Promise<void> => {
     throwIfAborted(opts?.signal);
     let body: ArrayBuffer | null = null;
     for (let attempt = 0; attempt < CHUNK_FETCH_MAX_ATTEMPTS && !body; attempt++) {
@@ -188,9 +191,24 @@ export async function fetchOfficeFileBlob(
       }
     }
     if (!body) throw new Error(`Could not download chunk ${index + 1} of ${path}`);
-    parts.push(body);
-    opts?.onChunk?.(index + 1, totalChunks);
-  }
+    parts[index] = body;
+    chunksDone += 1;
+    opts?.onChunk?.(chunksDone, totalChunks);
+  };
+
+  // Sliding window: keep up to CHUNK_FETCH_CONCURRENCY pieces in flight.
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(CHUNK_FETCH_CONCURRENCY, totalChunks) },
+    async () => {
+      while (nextIndex < totalChunks) {
+        const index = nextIndex;
+        nextIndex += 1;
+        await fetchOneChunk(index);
+      }
+    },
+  );
+  await Promise.all(workers);
 
   return new Blob(parts, { type: contentType });
 }
@@ -291,31 +309,58 @@ export async function downloadOfficeJobPackage(opts: {
 
   const zipEntries = () =>
     (async function* () {
+      type PrefetchResult =
+        | { ok: true; blob: Blob }
+        | { ok: false; err: unknown };
+
+      // Only the file currently awaited for the ZIP reports piece progress
+      // (prefetch of the next file stays quiet so the meter doesn’t jump ahead).
+      let activeReportFile = 1;
+
+      const startFileFetch = (
+        file: OfficePackageFile,
+        fileNumber: number,
+      ): Promise<PrefetchResult> =>
+        fetchOfficeFileBlobResilient(
+          jobId,
+          file,
+          (done, chunkTotal) => {
+            if (fileNumber === activeReportFile && chunkTotal > 1) {
+              report(
+                formatPackageDownloadProgress(fileNumber, total, saveAsName, {
+                  done,
+                  total: chunkTotal,
+                }),
+              );
+            }
+          },
+          opts.signal,
+        )
+          .then((blob): PrefetchResult => ({ ok: true, blob }))
+          .catch((err): PrefetchResult => ({ ok: false, err }));
+
+      // Prefetch file i+1 while file i is written into the ZIP.
+      let nextPrefetch: Promise<PrefetchResult> | null =
+        files.length > 0 ? startFileFetch(files[0]!, 1) : null;
+
       for (let i = 0; i < files.length; i++) {
         throwIfAborted(opts.signal);
         const f = files[i]!;
         const current = i + 1;
+        activeReportFile = current;
         report(formatPackageDownloadProgress(current, total, saveAsName));
+
+        const pending = nextPrefetch;
+        nextPrefetch =
+          i + 1 < files.length ? startFileFetch(files[i + 1]!, i + 2) : null;
+
         try {
-          const blob = await fetchOfficeFileBlobResilient(
-            jobId,
-            f,
-            (done, chunkTotal) => {
-              if (chunkTotal > 1) {
-                report(
-                  formatPackageDownloadProgress(current, total, saveAsName, {
-                    done,
-                    total: chunkTotal,
-                  }),
-                );
-              }
-            },
-            opts.signal,
-          );
+          const result = pending ? await pending : await startFileFetch(f, current);
+          if (!result.ok) throw result.err;
           yield {
             name: safeZipPath(rootName, f.label),
             lastModified: new Date(),
-            input: blob,
+            input: result.blob,
           };
         } catch (err) {
           if (err instanceof OfficeSaveCancelledError || isSaveCancelled(err) || opts.signal?.aborted) {
