@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.19-split" />
+<meta name="pgg-app-version" content="2026.10.19-pins2" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -705,7 +705,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.19-split</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.19-pins2</p>
   </div>
 
 
@@ -6892,7 +6892,7 @@ const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 // Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
 const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
 /** Bump when shipping a field shell Tim must verify on every phone. */
-const PGG_APP_VERSION = '2026.10.19-split';
+const PGG_APP_VERSION = '2026.10.19-pins2';
 const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
@@ -7908,13 +7908,13 @@ async function buildPinLogPdf() {
   // Composed full-building plan with numbered pins — PDF uses larger markers
   // than ZIP map.png / on-screen so house-plan numbers stay readable on tabloid.
   // Explicit opts only on this path; ZIP map.png keeps exportPinRadius defaults.
-  // Sized for residential overviews: Tim's Grace-style plans need ~½″ markers
-  // on the 11×17 sheet; PR #7 (0.018) was still too small to read in the field.
+  // Residential overviews (Grace-style): PR #45 (0.030) still too small in the
+  // field — bump again so overview numbers read clearly on the 11×17 sheet.
   const pngBlob = await composeMapImage('png-blob', {
-    baseFrac: 0.030,
-    minFrac: 0.015,
-    comfortN: 120,
-    densFloor: 0.85
+    baseFrac: 0.048,
+    minFrac: 0.024,
+    comfortN: 200,
+    densFloor: 0.92
   });
   const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
