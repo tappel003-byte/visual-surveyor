@@ -39,7 +39,7 @@ export type OfficeLockerStats = {
 
 export { exportsListTokenConfigured };
 
-/** www always has Blobs; Lovable uses Supabase. Dual-read when token present. */
+/** www always has Blobs; Lovable uses Supabase. */
 export function officeLockerConfigured(): boolean {
   if (isLovableOfficeRuntime()) return true;
   return true;
@@ -191,10 +191,10 @@ export async function fetchExportJobListFromBlobs(): Promise<{
 }
 
 /**
- * Dual-host list:
- * - Lovable runtime → Supabase locker only (old jobs).
- * - Netlify www → merge Lovable locker (EXPORTS_LIST_TOKEN) + Netlify Blobs (new Syncs).
- *   Same id: prefer Blobs (new path) but keep Lovable-only jobs visible.
+ * Host-split list (Tim 2026-10-19):
+ * - Lovable runtime → Supabase locker only (old jobs through 16 Dec 2026).
+ * - Netlify www → Netlify Blobs only. Empty is correct until a phone Syncs new work.
+ *   Do NOT merge old Lovable jobs onto www.
  */
 export async function fetchMergedOfficeJobList(): Promise<{
   listAvailable: boolean;
@@ -221,48 +221,11 @@ export async function fetchMergedOfficeJobList(): Promise<{
     }
   }
 
-  let blobsJobs: OfficeJobFolder[] = [];
-  let locker: OfficeLockerStats | null = null;
-  let blobsOk = false;
   try {
     const blobs = await fetchExportJobListFromBlobs();
-    blobsJobs = blobs.jobs;
-    locker = blobs.locker;
-    blobsOk = true;
+    return { listAvailable: true, jobs: blobs.jobs, locker: blobs.locker };
   } catch (e) {
     console.error("[officeListJobs] blobs list failed", e);
+    return { listAvailable: false, jobs: [], locker: null };
   }
-
-  let lovableJobs: OfficeJobFolder[] = [];
-  let lovableOk = false;
-  if (exportsListTokenConfigured()) {
-    try {
-      const lovable = await fetchExportJobListFromLovable();
-      if (lovable.ok) {
-        lovableJobs = lovable.jobs;
-        lovableOk = true;
-      }
-    } catch (e) {
-      console.error("[officeListJobs] lovable list failed", e);
-    }
-  }
-
-  const byId = new Map<string, OfficeJobFolder>();
-  // Lovable first, then Blobs overwrites on id clash (new www Sync wins).
-  for (const j of lovableJobs) byId.set(j.id, j);
-  for (const j of blobsJobs) byId.set(j.id, j);
-  const jobs = Array.from(byId.values());
-  sortJobs(jobs);
-
-  const listAvailable = blobsOk || lovableOk;
-  if (!locker && listAvailable) {
-    locker = {
-      usedBytes: jobs.reduce((sum, j) => sum + (Number(j.totalBytes) || 0), 0),
-      budgetBytes: LOCKER_BUDGET_BYTES,
-      downloadedMonthBytes: 0,
-      downloadedMonthKey: "",
-    };
-  }
-
-  return { listAvailable, jobs, locker };
 }

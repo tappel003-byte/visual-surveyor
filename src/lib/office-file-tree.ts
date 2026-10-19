@@ -60,6 +60,7 @@ export function isPdfFileName(name: string): boolean {
 export function fileTypeLabel(name: string): string {
   if (isImageFileName(name)) return "Image";
   if (isPdfFileName(name)) return "PDF";
+  if (/\.csv$/i.test(name)) return "CSV";
   if (/\.zip$/i.test(name)) return "ZIP";
   if (/\.json$/i.test(name)) return "JSON";
   if (/\.txt$/i.test(name)) return "Text";

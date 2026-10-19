@@ -280,30 +280,10 @@ export async function fetchUpdateExportPinsViaLovableApi(
   return { ok: true, payload };
 }
 
-async function jobExistsInBlobs(jobId: string): Promise<boolean> {
-  try {
-    const files = await listJobFilesSafe(jobId);
-    return files > 0;
-  } catch {
-    return false;
-  }
-}
-
-async function listJobFilesSafe(jobId: string): Promise<number> {
-  const { listJobFiles } = await import("@/server/office-blobs");
-  const files = await listJobFiles(jobId);
-  return files.length;
-}
-
 /**
- * Delete so the job stays gone from the merged /office list.
- *
- * - Lovable host: Supabase locker only (that host’s list).
- * - www / Netlify: remove from **every** locker (Blobs + Lovable API when
- *   token is set). Dual-host #46 lists both; deleting only one made jobs
- *   like Christine reappear from the other store.
- *
- * `preferredSource` is kept for callers but does not limit www deletes.
+ * Delete from this host’s locker only.
+ * - Lovable → Supabase (old jobs).
+ * - www → Blobs only. Never call Lovable delete from www (old jobs stay on lovable.app).
  */
 export async function fetchDeleteExportJobFromLovable(
   jobId: string,
@@ -314,81 +294,29 @@ export async function fetchDeleteExportJobFromLovable(
     return { ok: true, deleted: result.deleted };
   }
 
-  let deleted = 0;
-  let blobsOk = false;
-  let lovableOk = false;
-  let lovableUnauthorized = false;
-  const errors: string[] = [];
-
-  // Idempotent — clears Blobs even when the list row was tagged "lovable".
-  try {
-    const result = await deleteExportJobFolderBlobs(jobId);
-    deleted += result.deleted;
-    blobsOk = true;
-  } catch (e) {
-    errors.push(e instanceof Error ? e.message : "Blobs delete failed");
-  }
-
-  if (process.env.EXPORTS_LIST_TOKEN?.trim()) {
-    try {
-      const result = await fetchDeleteExportJobViaLovableApi(jobId);
-      if (!result.ok) {
-        lovableUnauthorized = true;
-      } else {
-        deleted += result.deleted;
-        lovableOk = true;
-      }
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : "Lovable delete failed");
-    }
-  } else {
-    // No Lovable token — Blobs-only site; Blobs result is enough.
-    lovableOk = true;
-  }
-
-  if (blobsOk || lovableOk) {
-    return { ok: true, deleted };
-  }
-
-  if (lovableUnauthorized) {
-    return { ok: false, unauthorized: true };
-  }
-
-  throw new Error(
-    errors[0] ||
-      "Could not delete this job from staging. Refresh and try Delete again.",
-  );
+  const result = await deleteExportJobFolderBlobs(jobId);
+  return { ok: true, deleted: result.deleted };
 }
 
 export async function fetchSetExportFromFromLovable(
   jobId: string,
   syncedFrom: string,
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<{ ok: true; syncedFrom: string } | { ok: false; unauthorized: boolean }> {
   if (isLovableOfficeRuntime()) {
-    // Direct Supabase write via local public API path — reuse Lovable API self-call would need token.
-    // Import pre-cutover style: use supabase admin through a small inline (same as pre updateExportJobFrom).
     const { updateExportJobFrom: updateSupa } = await import("@/server/office-mutate-supabase");
     const result = await updateSupa(jobId, syncedFrom);
     return { ok: true, syncedFrom: result.syncedFrom };
   }
 
-  const preferBlobs =
-    preferredSource === "blobs" ||
-    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
-
-  if (preferBlobs) {
-    const result = await updateExportJobFromBlobs(jobId, syncedFrom);
-    return { ok: true, syncedFrom: result.syncedFrom };
-  }
-
-  return fetchSetExportFromViaLovableApi(jobId, syncedFrom);
+  const result = await updateExportJobFromBlobs(jobId, syncedFrom);
+  return { ok: true, syncedFrom: result.syncedFrom };
 }
 
 export async function fetchSetExportNameFromLovable(
   jobId: string,
   folderName: string,
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<
   | { ok: true; folderName: string; officeNameEditedAt: string | null }
   | { ok: false; unauthorized: boolean }
@@ -404,25 +332,17 @@ export async function fetchSetExportNameFromLovable(
     };
   }
 
-  const preferBlobs =
-    preferredSource === "blobs" ||
-    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
-
-  if (preferBlobs) {
-    const result = await updateExportJobFolderNameBlobs(jobId, folderName);
-    return {
-      ok: true,
-      folderName: result.folderName,
-      officeNameEditedAt: result.officeNameEditedAt,
-    };
-  }
-
-  return fetchSetExportNameViaLovableApi(jobId, folderName);
+  const result = await updateExportJobFolderNameBlobs(jobId, folderName);
+  return {
+    ok: true,
+    folderName: result.folderName,
+    officeNameEditedAt: result.officeNameEditedAt,
+  };
 }
 
 export async function fetchExportPinsFromLovable(
   jobId: string,
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
   if (isLovableOfficeRuntime()) {
     const { readExportJobPinsSupabase } = await import("@/server/office-pins-supabase");
@@ -430,22 +350,14 @@ export async function fetchExportPinsFromLovable(
     return { ok: true, payload };
   }
 
-  const preferBlobs =
-    preferredSource === "blobs" ||
-    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
-
-  if (preferBlobs) {
-    const payload = await readBlobsPins(jobId);
-    return { ok: true, payload };
-  }
-
-  return fetchExportPinsViaLovableApi(jobId);
+  const payload = await readBlobsPins(jobId);
+  return { ok: true, payload };
 }
 
 export async function fetchUpdateExportPinsFromLovable(
   jobId: string,
   updates: PinDescriptionUpdate[],
-  preferredSource?: OfficeJobSource | null,
+  _preferredSource?: OfficeJobSource | null,
 ): Promise<{ ok: true; payload: OfficePinsPayload } | { ok: false; unauthorized: boolean }> {
   if (isLovableOfficeRuntime()) {
     const { updateExportJobPinDescriptionsSupabase } =
@@ -454,16 +366,8 @@ export async function fetchUpdateExportPinsFromLovable(
     return { ok: true, payload };
   }
 
-  const preferBlobs =
-    preferredSource === "blobs" ||
-    (preferredSource !== "lovable" && (await jobExistsInBlobs(jobId)));
-
-  if (preferBlobs) {
-    const payload = await updateBlobsPins(jobId, updates);
-    return { ok: true, payload };
-  }
-
-  return fetchUpdateExportPinsViaLovableApi(jobId, updates);
+  const payload = await updateBlobsPins(jobId, updates);
+  return { ok: true, payload };
 }
 
 /** @deprecated Prefer deleteExportJobFolderBlobs / Supabase. */

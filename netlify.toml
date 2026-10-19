@@ -8,5 +8,5 @@
   publish = "dist"
 
 # NLF office + field Sync (Blobs locker): NLF_OFFICE_PASSWORD, NLF_SESSION_SECRET, NLF_FIELD_KEY.
-# EXPORTS_LIST_TOKEN is unused after cutover (safe to remove later).
+# www /office is Blobs-only — EXPORTS_LIST_TOKEN is not used for the job list (safe to remove).
 # Do not set SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY on Netlify — see docs/nlf-office-env.md.
