@@ -32,6 +32,7 @@ export const Route = createFileRoute("/office/jobs/$jobId")({
   },
   /** Fast path: only fetch this job’s files. Sidebar list comes from session cache + soft refresh. */
   loader: async ({ params }) => {
+    const auth = await officeAuthStatus();
     const jobId = params.jobId.trim();
     if (!isSafeExportJobId(jobId)) {
       throw new Error("Invalid job id.");
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/office/jobs/$jobId")({
     const source = cached?.jobs.find((j) => j.id === jobId)?.source ?? null;
     const download = await officeGetJobDownload({ data: { jobId, source } });
     const title = download.folderName || "Field export";
-    return { jobId, title, download };
+    return { jobId, title, download, simpleDownload: auth.hostKind === "lovable" };
   },
   pendingComponent: () => (
     <div
@@ -78,10 +79,12 @@ function OfficeJobBrowserPage() {
     jobId,
     title: loaderTitle,
     download,
+    simpleDownload,
   } = Route.useLoaderData() as {
     jobId: string;
     title: string;
     download: Awaited<ReturnType<typeof officeGetJobDownload>>;
+    simpleDownload: boolean;
   };
   const navigate = useNavigate();
   const cached = typeof window !== "undefined" ? readJobsCache() : null;
@@ -165,7 +168,7 @@ function OfficeJobBrowserPage() {
       jobs={jobs}
       listAvailable={listAvailableState}
       selectedJobId={jobId}
-      breadcrumbExtra={folderSegments}
+      breadcrumbExtra={simpleDownload ? [] : folderSegments}
       onRefresh={() => onRefresh().catch(() => {})}
       refreshing={refreshing}
       onJobsChanged={(next) => {
@@ -176,19 +179,21 @@ function OfficeJobBrowserPage() {
       statusMessage={status}
       onDownloadPackage={() => packageTriggerRef.current?.()}
       onNavigateUp={() => {
-        if (navigateUpRef.current) {
+        if (!simpleDownload && navigateUpRef.current) {
           navigateUpRef.current();
           return;
         }
         void navigate({ to: "/office" });
       }}
-      navigateUpLabel={navigateUpLabel}
+      navigateUpLabel={simpleDownload ? "Back to download list" : navigateUpLabel}
+      simpleDownload={simpleDownload}
     >
       <JobFileExplorer
         jobId={jobId}
         title={title}
         data={download}
         embedded
+        simpleDownload={simpleDownload}
         onStatusChange={setExplorerStatus}
         onDisplayNameChange={(folderName) => {
           setTitleOverride(folderName);
@@ -202,12 +207,22 @@ function OfficeJobBrowserPage() {
         registerPackageDownload={(fn) => {
           packageTriggerRef.current = fn;
         }}
-        registerNavigateUp={(fn) => {
-          navigateUpRef.current = fn;
-        }}
-        onFolderPathChange={(segments) => {
-          setFolderSegments((prev) => (prev.join("/") === segments.join("/") ? prev : segments));
-        }}
+        registerNavigateUp={
+          simpleDownload
+            ? undefined
+            : (fn) => {
+                navigateUpRef.current = fn;
+              }
+        }
+        onFolderPathChange={
+          simpleDownload
+            ? undefined
+            : (segments) => {
+                setFolderSegments((prev) =>
+                  prev.join("/") === segments.join("/") ? prev : segments,
+                );
+              }
+        }
       />
     </OfficeChrome>
   );

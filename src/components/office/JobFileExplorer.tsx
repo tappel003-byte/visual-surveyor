@@ -84,6 +84,8 @@ type Props = {
   registerNavigateUp?: (fn: (() => void) | null) => void;
   /** Folder segments under the job (chrome breadcrumb + Back tooltip). */
   onFolderPathChange?: (segments: string[]) => void;
+  /** Lovable bridge: Download package + optional photos — no explorer browse / edit extras. */
+  simpleDownload?: boolean;
 };
 
 export function JobFileExplorer({
@@ -97,6 +99,7 @@ export function JobFileExplorer({
   registerPackageDownload,
   registerNavigateUp,
   onFolderPathChange,
+  simpleDownload = false,
 }: Props) {
   const navigate = useNavigate();
   const [dirPath, setDirPath] = useState("");
@@ -181,7 +184,13 @@ export function JobFileExplorer({
   const entries = useMemo(() => toExplorerEntries(data.files), [data.files]);
   const { folders, files } = useMemo(() => listDirectory(entries, dirPath), [entries, dirPath]);
 
-  const imageFiles = useMemo(() => files.filter((f) => isImageFileName(f.name)), [files]);
+  const imageFiles = useMemo(() => {
+    if (simpleDownload) {
+      // All photos in the job (flat), not only the current explorer folder.
+      return entries.filter((f) => isImageFileName(f.name));
+    }
+    return files.filter((f) => isImageFileName(f.name));
+  }, [simpleDownload, entries, files]);
   const otherFiles = useMemo(() => files.filter((f) => !isImageFileName(f.name)), [files]);
 
   const breadcrumbs = dirPath ? dirPath.split("/") : [];
@@ -492,34 +501,40 @@ export function JobFileExplorer({
           >
             {displayTitle}
           </h1>
-          <button
-            type="button"
-            className={`${OFFICE_BTN_CLASS}${nameBusy ? " is-busy" : ""}`}
-            onClick={() => void onEditName()}
-            disabled={nameBusy}
-            title="Edit customer / job name"
-            style={btnSecondary}
-          >
-            {nameBusy ? "Saving…" : "Edit name"}
-          </button>
+          {!simpleDownload && (
+            <button
+              type="button"
+              className={`${OFFICE_BTN_CLASS}${nameBusy ? " is-busy" : ""}`}
+              onClick={() => void onEditName()}
+              disabled={nameBusy}
+              title="Edit customer / job name"
+              style={btnSecondary}
+            >
+              {nameBusy ? "Saving…" : "Edit name"}
+            </button>
+          )}
         </div>
         <p style={{ fontSize: 12, color: PGG.muted, margin: 0, lineHeight: 1.4 }}>
           Last synced: <strong style={{ color: PGG.ink }}>{formatSyncedAt(data.syncedAt)}</strong>
           {" · "}From: <strong style={{ color: PGG.ink }}>{fromLabel(data.syncedFrom)}</strong>
           {data.uploadKind === "office-sync" ? " · Field sync" : null}
-          {" · "}
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{jobId}</span>
+          {!simpleDownload && (
+            <>
+              {" · "}
+              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{jobId}</span>
+            </>
+          )}
         </p>
       </header>
 
-      <OfficeDesktopReminder compact />
+      {!simpleDownload && <OfficeDesktopReminder compact />}
 
       {!data.storageLinksAvailable && (
         <section style={alertBox}>
           <p style={{ margin: 0 }}>
-            File list and Download need the shared office list token on Netlify and a Lovable
-            Publish of the job list / sign APIs. Do not add storage service keys on Netlify. Ask
-            whoever manages the site to fix that, then Refresh.
+            {simpleDownload
+              ? "Download isn’t available right now. Ask whoever runs this temporary host to check office secrets, then Refresh."
+              : "File list and Download need the shared office list token on Netlify and a Lovable Publish of the job list / sign APIs. Do not add storage service keys on Netlify. Ask whoever manages the site to fix that, then Refresh."}
           </p>
         </section>
       )}
@@ -571,14 +586,18 @@ export function JobFileExplorer({
             </span>
             <button
               type="button"
-              className={`${OFFICE_BTN_CLASS}${packageBusy ? " is-busy" : ""}`}
-              style={{ ...btnSecondary, display: "inline-flex" }}
+              className={`${OFFICE_BTN_CLASS}${simpleDownload ? " office-btn-primary" : ""}${packageBusy ? " is-busy" : ""}`}
+              style={{
+                ...btnSecondary,
+                display: "inline-flex",
+                fontWeight: simpleDownload ? 700 : undefined,
+              }}
               onClick={() => void onPackageDownload()}
               disabled={packageBusy}
             >
               {packageBusy ? "Downloading…" : "Download package"}
             </button>
-            {data.kind === "manifest" && (
+            {!simpleDownload && data.kind === "manifest" && (
               <button
                 type="button"
                 className={OFFICE_BTN_CLASS}
@@ -724,7 +743,7 @@ export function JobFileExplorer({
             </section>
           )}
 
-          {data.kind === "manifest" && (
+          {!simpleDownload && data.kind === "manifest" && (
             <nav
               aria-label="Folder path"
               style={{
@@ -780,8 +799,8 @@ export function JobFileExplorer({
             </nav>
           )}
 
-          {/* Explorer-native folders + non-image files first */}
-          {hasListRows && (
+          {/* Explorer-native folders + non-image files first (hidden on Lovable bridge) */}
+          {!simpleDownload && hasListRows && (
             <div
               className="office-explorer-table"
               style={{ overflowX: "auto", marginBottom: imageFiles.length > 0 ? 12 : 0 }}
@@ -978,13 +997,15 @@ export function JobFileExplorer({
         </>
       )}
 
-      <OfficePinNotesEditor
-        jobId={jobId}
-        source={data.source ?? null}
-        open={notesOpen}
-        onClose={() => setNotesOpen(false)}
-        onStatusChange={setStatus}
-      />
+      {!simpleDownload && (
+        <OfficePinNotesEditor
+          jobId={jobId}
+          source={data.source ?? null}
+          open={notesOpen}
+          onClose={() => setNotesOpen(false)}
+          onStatusChange={setStatus}
+        />
+      )}
 
       {preview && (
         <div

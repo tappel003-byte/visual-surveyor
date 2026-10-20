@@ -373,6 +373,11 @@ type Props = {
   onNavigateUp?: () => void;
   /** Tooltip / aria for onNavigateUp (e.g. "Back to parent folder"). */
   navigateUpLabel?: string;
+  /**
+   * Lovable bridge: simple Download list — no File Explorer chrome
+   * (sidebar, breadcrumbs, Name/From/Open toolbar extras).
+   */
+  simpleDownload?: boolean;
   children: ReactNode;
 };
 
@@ -389,6 +394,7 @@ export function OfficeChrome({
   onDownloadPackage,
   onNavigateUp,
   navigateUpLabel,
+  simpleDownload = false,
   children,
 }: Props) {
   const navigate = useNavigate();
@@ -628,19 +634,21 @@ export function OfficeChrome({
     <div style={root}>
       {/* Title bar */}
       <header style={titleBar}>
-        <button
-          type="button"
-          className={`office-nav-toggle ${OFFICE_BTN_CLASS}`}
-          onClick={() => setSidebarOpen((v) => !v)}
-          style={iconBtn}
-          aria-label="Toggle navigation pane"
-        >
-          ☰
-        </button>
+        {!simpleDownload && (
+          <button
+            type="button"
+            className={`office-nav-toggle ${OFFICE_BTN_CLASS}`}
+            onClick={() => setSidebarOpen((v) => !v)}
+            style={iconBtn}
+            aria-label="Toggle navigation pane"
+          >
+            ☰
+          </button>
+        )}
         <FolderIcon small />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: PGG.ink, letterSpacing: "-0.01em" }}>
-            File Explorer — PGG Office
+            {simpleDownload ? "Download — synced jobs" : "File Explorer — PGG Office"}
           </div>
           <div
             style={{
@@ -651,14 +659,16 @@ export function OfficeChrome({
               whiteSpace: "nowrap",
             }}
           >
-            PGG Photo Documentation · staging
+            {simpleDownload
+              ? "PGG Photo Documentation · temporary online folder"
+              : "PGG Photo Documentation · staging"}
           </div>
         </div>
         <a
           href="/"
           className={`${OFFICE_BTN_CLASS} office-field-home`}
           style={quietBtn}
-          title="Back to field home — Open all jobs & capture"
+          title="Back to field home — capture & download"
         >
           <span className="office-field-home-short">Home</span>
           <span className="office-field-home-long">Field home</span>
@@ -674,8 +684,12 @@ export function OfficeChrome({
         </button>
       </header>
 
-      {/* Command bar — grouped like Explorer; ← Back first (primary nav) */}
-      <div style={toolbar} role="toolbar" aria-label="File commands">
+      {/* Command bar — simple Download keeps Back / Download / Refresh only */}
+      <div
+        style={toolbar}
+        role="toolbar"
+        aria-label={simpleDownload ? "Download commands" : "File commands"}
+      >
         <div className="office-cmd-group">
           {onJobsRoot ? (
             <a
@@ -713,27 +727,28 @@ export function OfficeChrome({
         </div>
         <span className="office-cmd-sep" aria-hidden />
         <div className="office-cmd-group">
-          {selectedJobId ? (
-            <Link
-              to="/office/jobs/$jobId"
-              params={{ jobId: selectedJobId }}
-              style={toolBtn}
-              className={`${OFFICE_BTN_CLASS}${busyAction === "open" ? " is-busy" : ""}`}
-              onClick={markOpenBusy}
-              aria-disabled={busyAction === "open"}
-            >
-              {busyAction === "open" ? "Opening…" : "Open"}
-            </Link>
-          ) : (
-            <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
-              Open
-            </span>
-          )}
+          {!simpleDownload &&
+            (selectedJobId ? (
+              <Link
+                to="/office/jobs/$jobId"
+                params={{ jobId: selectedJobId }}
+                style={toolBtn}
+                className={`${OFFICE_BTN_CLASS}${busyAction === "open" ? " is-busy" : ""}`}
+                onClick={markOpenBusy}
+                aria-disabled={busyAction === "open"}
+              >
+                {busyAction === "open" ? "Opening…" : "Open"}
+              </Link>
+            ) : (
+              <span style={toolBtn} className={`${OFFICE_BTN_CLASS} is-disabled`}>
+                Open
+              </span>
+            ))}
           {selectedJobId ? (
             <button
               type="button"
               style={toolBtn}
-              className={`${OFFICE_BTN_CLASS}${busyAction === "download" ? " is-busy" : ""}`}
+              className={`${OFFICE_BTN_CLASS}${busyAction === "download" ? " is-busy" : ""}${simpleDownload ? " office-btn-primary" : ""}`}
               onClick={onPackageDownload}
               disabled={busy}
             >
@@ -744,39 +759,45 @@ export function OfficeChrome({
               Download
             </span>
           )}
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={!selectedJobId || busy}
-            className={`${OFFICE_BTN_CLASS} office-btn-danger${!selectedJobId ? " is-disabled" : ""}${busyAction === "delete" ? " is-busy" : ""}`}
-            style={{ ...toolBtn, color: selectedJobId ? PGG.bad : undefined }}
-          >
-            {busyAction === "delete" ? "Deleting…" : "Delete"}
-          </button>
+          {!simpleDownload && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={!selectedJobId || busy}
+              className={`${OFFICE_BTN_CLASS} office-btn-danger${!selectedJobId ? " is-disabled" : ""}${busyAction === "delete" ? " is-busy" : ""}`}
+              style={{ ...toolBtn, color: selectedJobId ? PGG.bad : undefined }}
+            >
+              {busyAction === "delete" ? "Deleting…" : "Delete"}
+            </button>
+          )}
         </div>
-        <span className="office-cmd-sep" aria-hidden />
-        <div className="office-cmd-group">
-          <button
-            type="button"
-            onClick={onEditName}
-            disabled={!selectedJobId || busy}
-            className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "name" ? " is-busy" : ""}`}
-            style={toolBtn}
-            title="Edit customer / job name (list + header)"
-          >
-            {busyAction === "name" ? "Saving…" : "Name…"}
-          </button>
-          <button
-            type="button"
-            onClick={onEditFrom}
-            disabled={!selectedJobId || busy}
-            className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "from" ? " is-busy" : ""}`}
-            style={toolBtn}
-            title="Edit From label on this job"
-          >
-            {busyAction === "from" ? "Saving…" : "From…"}
-          </button>
-        </div>
+        {!simpleDownload && (
+          <>
+            <span className="office-cmd-sep" aria-hidden />
+            <div className="office-cmd-group">
+              <button
+                type="button"
+                onClick={onEditName}
+                disabled={!selectedJobId || busy}
+                className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "name" ? " is-busy" : ""}`}
+                style={toolBtn}
+                title="Edit customer / job name (list + header)"
+              >
+                {busyAction === "name" ? "Saving…" : "Name…"}
+              </button>
+              <button
+                type="button"
+                onClick={onEditFrom}
+                disabled={!selectedJobId || busy}
+                className={`${OFFICE_BTN_CLASS}${!selectedJobId ? " is-disabled" : ""}${busyAction === "from" ? " is-busy" : ""}`}
+                style={toolBtn}
+                title="Edit From label on this job"
+              >
+                {busyAction === "from" ? "Saving…" : "From…"}
+              </button>
+            </div>
+          </>
+        )}
         <span className="office-cmd-sep" aria-hidden />
         <div className="office-cmd-group">
           <button
@@ -799,39 +820,41 @@ export function OfficeChrome({
         </div>
       )}
 
-      {/* Address / breadcrumb bar */}
-      <nav aria-label="Breadcrumb" style={breadcrumbBar}>
-        <span style={{ color: PGG.muted, fontWeight: 600, marginRight: 4 }}>›</span>
-        <a href="/" style={crumbLink} className={`${OFFICE_BTN_CLASS} office-btn-linkish`}>
-          Field home
-        </a>
-        <span style={crumbSep}>›</span>
-        <Link to="/office" style={crumbLink} className={`${OFFICE_BTN_CLASS} office-btn-linkish`}>
-          Office
-        </Link>
-        {selected && (
-          <>
-            <span style={crumbSep}>›</span>
-            <Link
-              to="/office/jobs/$jobId"
-              params={{ jobId: selected.id }}
-              style={crumbLink}
-              className={`${OFFICE_BTN_CLASS} office-btn-linkish`}
+      {/* Address / breadcrumb bar — explorer only */}
+      {!simpleDownload && (
+        <nav aria-label="Breadcrumb" style={breadcrumbBar}>
+          <span style={{ color: PGG.muted, fontWeight: 600, marginRight: 4 }}>›</span>
+          <a href="/" style={crumbLink} className={`${OFFICE_BTN_CLASS} office-btn-linkish`}>
+            Field home
+          </a>
+          <span style={crumbSep}>›</span>
+          <Link to="/office" style={crumbLink} className={`${OFFICE_BTN_CLASS} office-btn-linkish`}>
+            Office
+          </Link>
+          {selected && (
+            <>
+              <span style={crumbSep}>›</span>
+              <Link
+                to="/office/jobs/$jobId"
+                params={{ jobId: selected.id }}
+                style={crumbLink}
+                className={`${OFFICE_BTN_CLASS} office-btn-linkish`}
+              >
+                {selectedTitle}
+              </Link>
+            </>
+          )}
+          {breadcrumbExtra.map((seg, i) => (
+            <span
+              key={`${seg}-${i}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
-              {selectedTitle}
-            </Link>
-          </>
-        )}
-        {breadcrumbExtra.map((seg, i) => (
-          <span
-            key={`${seg}-${i}`}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
-            <span style={crumbSep}>›</span>
-            <span style={{ fontWeight: i === breadcrumbExtra.length - 1 ? 700 : 500 }}>{seg}</span>
-          </span>
-        ))}
-      </nav>
+              <span style={crumbSep}>›</span>
+              <span style={{ fontWeight: i === breadcrumbExtra.length - 1 ? 700 : 500 }}>{seg}</span>
+            </span>
+          ))}
+        </nav>
+      )}
 
       {error && (
         <p
@@ -850,7 +873,7 @@ export function OfficeChrome({
       )}
 
       <div style={bodyRow} className="office-body">
-        {sidebarOpen && (
+        {!simpleDownload && sidebarOpen && (
           <button
             type="button"
             className="office-sidebar-scrim"
@@ -860,77 +883,79 @@ export function OfficeChrome({
           />
         )}
 
-        <aside className={`office-sidebar${sidebarOpen ? " open" : ""}`} style={sidebar}>
-          <div style={sidebarHead}>Navigation</div>
-          <div style={sidebarSection}>Quick access</div>
-          <Link
-            to="/office"
-            onClick={() => setSidebarOpen(false)}
-            className={`office-nav-item${onJobsRoot ? " is-active" : ""}`}
-          >
-            <FolderIcon small />
-            <span>All jobs</span>
-          </Link>
+        {!simpleDownload && (
+          <aside className={`office-sidebar${sidebarOpen ? " open" : ""}`} style={sidebar}>
+            <div style={sidebarHead}>Navigation</div>
+            <div style={sidebarSection}>Quick access</div>
+            <Link
+              to="/office"
+              onClick={() => setSidebarOpen(false)}
+              className={`office-nav-item${onJobsRoot ? " is-active" : ""}`}
+            >
+              <FolderIcon small />
+              <span>All jobs</span>
+            </Link>
 
-          <div style={sidebarSection}>Jobs ({jobs.length})</div>
-          {!listAvailable && (
-            <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.bad, margin: 0 }}>
-              List unavailable — try Refresh. If it keeps failing, check the latest Netlify deploy.
-            </p>
-          )}
-          {listAvailable && jobs.length === 0 && (
-            <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.muted, margin: 0 }}>
-              No jobs yet
-            </p>
-          )}
-          <ul style={{ listStyle: "none", margin: 0, padding: 0, overflow: "auto", flex: 1 }}>
-            {jobs.map((job) => {
-              const active = job.id === selectedJobId;
-              const title = job.displayName || "Field export";
-              return (
-                <li key={job.id}>
-                  <Link
-                    to="/office/jobs/$jobId"
-                    params={{ jobId: job.id }}
-                    onClick={() => {
-                      setSidebarOpen(false);
-                      markOpenBusy();
-                    }}
-                    className={`office-nav-item${active ? " is-active" : ""}`}
-                    title={`${title} · ${fromLabel(job.syncedFrom)}`}
-                  >
-                    <FolderIcon small />
-                    <span style={{ minWidth: 0, overflow: "hidden" }}>
-                      <span
-                        style={{
-                          display: "block",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {title}
+            <div style={sidebarSection}>Jobs ({jobs.length})</div>
+            {!listAvailable && (
+              <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.bad, margin: 0 }}>
+                List unavailable — try Refresh.
+              </p>
+            )}
+            {listAvailable && jobs.length === 0 && (
+              <p style={{ padding: "8px 12px", fontSize: 12, color: PGG.muted, margin: 0 }}>
+                No jobs yet
+              </p>
+            )}
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, overflow: "auto", flex: 1 }}>
+              {jobs.map((job) => {
+                const active = job.id === selectedJobId;
+                const title = job.displayName || "Field export";
+                return (
+                  <li key={job.id}>
+                    <Link
+                      to="/office/jobs/$jobId"
+                      params={{ jobId: job.id }}
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        markOpenBusy();
+                      }}
+                      className={`office-nav-item${active ? " is-active" : ""}`}
+                      title={`${title} · ${fromLabel(job.syncedFrom)}`}
+                    >
+                      <FolderIcon small />
+                      <span style={{ minWidth: 0, overflow: "hidden" }}>
+                        <span
+                          style={{
+                            display: "block",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {title}
+                        </span>
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: 11,
+                            color: PGG.muted,
+                            fontWeight: 400,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {fromLabel(job.syncedFrom)}
+                        </span>
                       </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 11,
-                          color: PGG.muted,
-                          fontWeight: 400,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {fromLabel(job.syncedFrom)}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </aside>
+        )}
 
         <main style={mainPane}>{children}</main>
       </div>
@@ -938,10 +963,12 @@ export function OfficeChrome({
       {/* Details / status strip */}
       <footer style={detailsBar}>
         <span>
-          {jobs.length} item{jobs.length === 1 ? "" : "s"}
-          {selected ? ` · Selected: ${selectedTitle}` : ""}
+          {jobs.length} job{jobs.length === 1 ? "" : "s"}
+          {selected ? ` · ${selectedTitle}` : ""}
         </span>
-        <span style={{ color: PGG.muted }}>PGG Office staging</span>
+        <span style={{ color: PGG.muted }}>
+          {simpleDownload ? "Download to this computer" : "PGG Office staging"}
+        </span>
       </footer>
 
       <style>{`
