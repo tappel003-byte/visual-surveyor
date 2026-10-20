@@ -460,9 +460,10 @@ function OfficeExplorer() {
   const deleteJob = async (job: OfficeJobFolder) => {
     setSelectedJobId(job.id);
     const name = job.displayName || job.id;
+    const when = formatLastSynced(job.syncedAt);
     if (
       !confirm(
-        `Delete "${name}" from office staging?\n\nRemoves the synced copy from shared storage. Field phones keep their local copy.`,
+        `Delete "${name}" (${when}) from the online folder?\n\nThis removes only this synced copy from the temporary online folder. Phone files are separate and stay on the phone. This cannot be undone.`,
       )
     ) {
       return;
@@ -475,6 +476,8 @@ function OfficeExplorer() {
       await officeDeleteJob({ data: { jobId: job.id, source: job.source } });
       // Drop cache, then re-fetch so the list matches staging.
       clearJobsCache();
+      setJobList(jobList.filter((j) => j.id !== job.id));
+      if (selectedJobId === job.id) setSelectedJobId(null);
       setStatusMessage("Deleted — refreshing list…");
       try {
         const next = await officeListJobs();
@@ -488,7 +491,6 @@ function OfficeExplorer() {
         );
         window.setTimeout(() => setStatusMessage(null), stillThere ? 5000 : 1800);
       } catch {
-        setJobList(jobList.filter((j) => j.id !== job.id));
         setStatusMessage("Deleted.");
         window.setTimeout(() => setStatusMessage(null), 1800);
       }
@@ -572,8 +574,9 @@ function OfficeExplorer() {
       <div style={{ padding: "8px 10px 20px" }}>
         {simpleDownload ? (
           <p style={{ fontSize: 13, color: PGG.muted, margin: "0 0 10px", lineHeight: 1.4 }}>
-            Synced jobs from the phone. Tap <strong>Download</strong> to save the package on this
-            computer.
+            Synced jobs from the phone. <strong>Download package</strong> to this computer, then{" "}
+            <strong>Delete</strong> that online copy (phone files stay on the phone). Same address
+            listed more than once = separate Sync folders — delete each one you no longer need.
           </p>
         ) : (
           <OfficeDesktopReminder />
@@ -696,6 +699,23 @@ function OfficeExplorer() {
                         >
                           {opening ? "Opening…" : "Open photos"}
                         </Link>
+                        <button
+                          type="button"
+                          className={`${OFFICE_BTN_CLASS} office-btn-danger${rowBusy && rowBusyKind === "delete" ? " is-busy" : ""}`}
+                          style={{
+                            ...actionBtn,
+                            flex: "0 1 auto",
+                            justifyContent: "center",
+                            color: PGG.bad,
+                          }}
+                          disabled={rowBusy}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteJob(job);
+                          }}
+                        >
+                          {rowBusy && rowBusyKind === "delete" ? "Deleting…" : "Delete"}
+                        </button>
                       </div>
                     </div>
                   </div>
