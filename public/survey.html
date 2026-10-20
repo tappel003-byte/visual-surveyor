@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.20-pins5" />
+<meta name="pgg-app-version" content="2026.10.20-pins6" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -705,7 +705,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-pins5</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-pins6</p>
   </div>
 
 
@@ -6149,28 +6149,30 @@ function renderPins() {
   const pins = project.pins || [];
   const topOfStack = new Map(); // key -> pin id
   pins.forEach(p => {
-    const key = Math.round(p.x / tol) + ',' + Math.round(p.y / tol);
+    const c = pinCenterPlan(p);
+    const key = Math.round(c.x / tol) + ',' + Math.round(c.y / tol);
     topOfStack.set(key, p.id);
   });
   pins.forEach((p, idx) => {
+    const { x: px, y: py } = pinCenterPlan(p);
     const isDragging = _dragPin && _dragPin.pinId === p.id;
     const isExt = !!p.isExterior && project.mode !== 'external';
     const selected = p.id === ui.selectedPinId;
     const sw = R * (isDragging ? 0.28 : selected ? 0.22 : 0.18);
     const grp = svgEl('g', { class: 'pin' + (selected?' selected':'') + (isDragging?' dragging':'') + (isExt?' exterior':'') });
-    grp.appendChild(svgEl('circle', { class:'pin-bg', cx:p.x, cy:p.y, r:R, 'stroke-width': sw }));
-    const t = svgEl('text', { class:'pin-txt', x:p.x, y:p.y });
+    grp.appendChild(svgEl('circle', { class:'pin-bg', cx:px, cy:py, r:R, 'stroke-width': sw }));
+    const t = svgEl('text', { class:'pin-txt', x:px, y:py });
     t.style.fontSize = (R*1.05) + 'px';
     t.textContent = pinPlanLabel(p, idx);
     grp.appendChild(t);
     // Stack badge: only on topmost pin at this coord, when stack > 1
-    const key = Math.round(p.x / tol) + ',' + Math.round(p.y / tol);
+    const key = Math.round(px / tol) + ',' + Math.round(py / tol);
     if (topOfStack.get(key) === p.id) {
       const stackN = stackSizeAt(p);
       if (stackN > 1) {
         const br = R * 0.55;
-        const bx = p.x + R * 0.85;
-        const by = p.y - R * 0.85;
+        const bx = px + R * 0.85;
+        const by = py - R * 0.85;
         grp.appendChild(svgEl('circle', { cx:bx, cy:by, r:br, fill:'#facc15', stroke:'#1f2937', 'stroke-width': R*0.08 }));
         const bt = svgEl('text', { x:bx, y:by, 'text-anchor':'middle', 'dominant-baseline':'central', fill:'#1f2937' });
         bt.style.fontSize = (br*1.2) + 'px';
@@ -6428,6 +6430,20 @@ async function _refreshExportSizeNote() {
 }
 
 
+// Plan-space pin center — single source for on-screen SVG and export canvas.
+// Pins are stored in project.plan width/height image pixels (origin top-left,
+// Y down). No normalize, Y-flip, or letterbox math here; both render paths
+// draw in this same space so export centers match the live map.
+function pinCenterPlan(p) {
+  if (!p) return { x: 0, y: 0 };
+  const x = Number(p.x);
+  const y = Number(p.y);
+  return {
+    x: isFinite(x) ? x : 0,
+    y: isFinite(y) ? y : 0
+  };
+}
+
 // Pin radius for map.png / picture-map PDF. Default fractions suit ZIP map.png;
 // picture-map PDF passes larger opts so overview numbers stay readable.
 // opts.baseFrac / opts.minFrac / opts.comfortN / opts.densFloor override;
@@ -6448,20 +6464,22 @@ function exportPinRadius(W, H, pins, opts) {
   // Comfortable near comfortN pins on a full overview; shrink with sqrt(n).
   const countScale = Math.min(1, Math.sqrt(comfortN / n));
 
-  // Nearest-neighbor: ignore exact stacks (handled by ×N badge); if distinct
-  // pins sit closer than ~3R, shrink so markers don't blot each other out.
+  // Nearest-neighbor: ignore exact stacks (handled by ×N badge). Shrink so
+  // distinct pin *diameters* fit in the gap (~2.2R) — a 3R threshold with a
+  // high densFloor left Grace-style ~2% stacks illegibly overlapped even when
+  // on-screen (smaller) markers stayed readable.
   let minD = Infinity;
   for (let i = 0; i < n; i++) {
-    const a = list[i];
+    const a = pinCenterPlan(list[i]);
     for (let j = i + 1; j < n; j++) {
-      const b = list[j];
-      const d = Math.hypot((a.x || 0) - (b.x || 0), (a.y || 0) - (b.y || 0));
+      const b = pinCenterPlan(list[j]);
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (d > maxDim * 0.001) minD = Math.min(minD, d);
     }
   }
   let densScale = 1;
-  if (isFinite(minD) && minD < R * 3) {
-    densScale = Math.max(densFloor, minD / (R * 3));
+  if (isFinite(minD) && minD < R * 2.2) {
+    densScale = Math.max(densFloor, minD / (R * 2.2));
   }
 
   R = R * Math.min(countScale, densScale);
@@ -6533,10 +6551,12 @@ async function composeMapImage(format, opts) {
         : { x: 0, y: 0, w: fullW, h: fullH };
       const W = crop.w, H = crop.h;
       const allPins = o.pins || project.pins || [];
-      const pins = allPins.filter(p =>
-        p && p.x >= crop.x && p.x <= crop.x + crop.w &&
-        p.y >= crop.y && p.y <= crop.y + crop.h
-      );
+      const pins = allPins.filter(p => {
+        if (!p) return false;
+        const c0 = pinCenterPlan(p);
+        return c0.x >= crop.x && c0.x <= crop.x + crop.w &&
+          c0.y >= crop.y && c0.y <= crop.y + crop.h;
+      });
       const R = exportPinRadius(W, H, pins, o);
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(W));
@@ -6544,7 +6564,15 @@ async function composeMapImage(format, opts) {
       const ctx = c.getContext('2d');
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, crop.x, crop.y, W, H, 0, 0, c.width, c.height);
+      // Map full decoded image → plan W×H like SVG <image width/height>, so
+      // naturalWidth/Height (or EXIF) mismatches cannot shift pins vs on-screen.
+      const natW = img.naturalWidth || fullW;
+      const natH = img.naturalHeight || fullH;
+      const sx = crop.x * (natW / fullW);
+      const sy = crop.y * (natH / fullH);
+      const sw = crop.w * (natW / fullW);
+      const sh = crop.h * (natH / fullH);
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
 
       const ox = crop.x, oy = crop.y;
       const inCrop = (x, y) => x >= ox - 1 && x <= ox + W + 1 && y >= oy - 1 && y <= oy + H + 1;
@@ -6605,16 +6633,18 @@ async function composeMapImage(format, opts) {
         }
       });
 
-      // pins — density-aware radius; stack badge matches on-screen ×N cue
+      // pins — same pinCenterPlan() as on-screen; density-aware radius; ×N badge
       const tol = Math.max(fullW, fullH) * 0.005;
       const topOfStack = new Map();
       pins.forEach(p => {
-        const key = Math.round(p.x / tol) + ',' + Math.round(p.y / tol);
+        const c0 = pinCenterPlan(p);
+        const key = Math.round(c0.x / tol) + ',' + Math.round(c0.y / tol);
         topOfStack.set(key, p.id);
       });
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       pins.forEach((p, idx) => {
-        const px = p.x - ox, py = p.y - oy;
+        const c0 = pinCenterPlan(p);
+        const px = c0.x - ox, py = c0.y - oy;
         const isExt = !!p.isExterior && project.mode !== 'external';
         ctx.beginPath();
         ctx.arc(px, py, R, 0, Math.PI*2);
@@ -6625,11 +6655,12 @@ async function composeMapImage(format, opts) {
         ctx.font = `700 ${R*1.05}px -apple-system, "Segoe UI", Roboto, sans-serif`;
         ctx.fillText(pinPlanLabel(p, idx), px, py + R*0.04);
 
-        const key = Math.round(p.x / tol) + ',' + Math.round(p.y / tol);
+        const key = Math.round(c0.x / tol) + ',' + Math.round(c0.y / tol);
         if (topOfStack.get(key) === p.id) {
           let stackN = 0;
           for (const q of pins) {
-            if (Math.abs(q.x - p.x) <= tol && Math.abs(q.y - p.y) <= tol) stackN++;
+            const cq = pinCenterPlan(q);
+            if (Math.abs(cq.x - c0.x) <= tol && Math.abs(cq.y - c0.y) <= tol) stackN++;
           }
           if (stackN > 1) {
             const br = R * 0.55;
@@ -7053,7 +7084,7 @@ const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 // Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
 const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
 /** Bump when shipping a field shell Tim must verify on every phone. */
-const PGG_APP_VERSION = '2026.10.20-pins5';
+const PGG_APP_VERSION = '2026.10.20-pins6';
 const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
@@ -8069,15 +8100,15 @@ async function buildPinLogPdf() {
   // Composed full-building plan with numbered pins — PDF uses larger markers
   // than ZIP map.png / on-screen so house-plan numbers stay readable on tabloid.
   // Explicit opts only on this path; ZIP map.png keeps exportPinRadius defaults.
-  // #52 (0.048 / comfortN 200 / densFloor 0.92) blotted dense ~50-pin jobs.
-  // pins4 was 0.032/0.014; pins5 ≈15% smaller base/min again (Tim: still a bit big).
-  // comfortN / densFloor unchanged — still tied to pin count / nearest-neighbor.
-  // #45 was 0.030/0.015/120/0.85; #52 was 0.048/0.024/200/0.92.
+  // pins6: same baseFrac as pins5, but densFloor/minFrac let nearest-neighbor
+  // shrink enough that Grace-style readable stacks (~2% apart) stay separable
+  // like on-screen — pins5 densFloor 0.55 left those illegibly overlapped.
+  // Centers still pinCenterPlan() (same as live map); no slider / Sync change.
   const pngBlob = await composeMapImage('png-blob', {
     baseFrac: 0.027,
-    minFrac: 0.012,
+    minFrac: 0.008,
     comfortN: 36,
-    densFloor: 0.55
+    densFloor: 0.22
   });
   const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
