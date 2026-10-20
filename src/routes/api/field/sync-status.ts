@@ -24,30 +24,26 @@ export const Route = createFileRoute("/api/field/sync-status")({
             );
           }
 
-          await cleanupStaleIncompleteUploads();
-
           const url = new URL(request.url);
           const jobId = url.searchParams.get("jobId")?.trim() || "";
           const path = url.searchParams.get("path")?.trim() || "";
-          const used = await sumLockerBytes();
 
-          if (!path) {
-            return Response.json(
-              {
-                lockerUsedBytes: used,
-                lockerBudgetBytes: LOCKER_BUDGET_BYTES,
-                lockerFull: used >= LOCKER_BUDGET_BYTES,
-              },
-              { headers: { "Cache-Control": "no-store" } },
-            );
+          if (path) {
+            // Per-file resume check (phone calls this once per file). Keep it cheap:
+            // no full-locker scan. Caps are enforced when the first piece uploads.
+            const status = await getUploadFileStatus(jobId, path);
+            return Response.json(status, { headers: { "Cache-Control": "no-store" } });
           }
 
-          const status = await getUploadFileStatus(jobId, path);
+          // Locker capacity check (no path): the full scan is fine here.
+          await cleanupStaleIncompleteUploads();
+          const used = await sumLockerBytes();
+
           return Response.json(
             {
-              ...status,
               lockerUsedBytes: used,
               lockerBudgetBytes: LOCKER_BUDGET_BYTES,
+              lockerFull: used >= LOCKER_BUDGET_BYTES,
             },
             { headers: { "Cache-Control": "no-store" } },
           );
