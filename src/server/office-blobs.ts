@@ -212,12 +212,11 @@ export function plainCapMessage(
 export async function listAllBlobs(prefix: string): Promise<Array<{ key: string }>> {
   const store = getOfficeLockerStore();
   const out: Array<{ key: string }> = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const page = await store.list({ prefix, paginate: true, cursor });
+  // With paginate: true, @netlify/blobs returns an AsyncIterable of pages
+  // (there is no cursor / next_cursor). Awaiting it as a single page made
+  // `page.blobs` undefined and every Sync / list call fail with a 500.
+  for await (const page of store.list({ prefix, paginate: true })) {
     for (const b of page.blobs) out.push({ key: b.key });
-    if (!page.next_cursor) break;
-    cursor = page.next_cursor;
   }
   return out;
 }
