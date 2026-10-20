@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.20-pins6" />
+<meta name="pgg-app-version" content="2026.10.20-bridge" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -705,7 +705,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-pins6</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-bridge</p>
   </div>
 
 
@@ -715,7 +715,7 @@
     <div class="icon">🗂️</div>
     <div class="meta">
       <span id="homeOfficeTitle">Download</span>
-      <small id="homeOfficeSub">Synced jobs · fix names in explorer if needed · get them on this computer</small>
+      <small id="homeOfficeSub">Synced jobs · download package to this computer</small>
     </div>
   </a>
 
@@ -1588,8 +1588,8 @@ function goHome() {
   ui.redo = [];
   renderHome();
   showScreen('screenHome');
-  // Auto-sync after leaving a job (debounced; never-lose via resumable upload).
-  if (leaving && projectNeedsOfficeSync(leaving)) {
+  // Auto-sync after leaving a job (debounced). Lovable bridge = manual Sync only.
+  if (leaving && projectNeedsOfficeSync(leaving) && !isLovableHostedFieldApp()) {
     if (autoSyncPreference() == null) ensureAutoSyncPreferenceAsked();
     // Re-attach leaving project briefly via schedule — maybeAutoSync finds it in store.
     scheduleAutoSyncOffice('leave-job');
@@ -7085,7 +7085,7 @@ const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 // Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
 const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
 /** Bump when shipping a field shell Tim must verify on every phone. */
-const PGG_APP_VERSION = '2026.10.20-pins6';
+const PGG_APP_VERSION = '2026.10.20-bridge';
 const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
@@ -7617,7 +7617,9 @@ function getOrAskDeviceNickname() {
   if (nick) return nick;
   const asked = window.prompt(
     "Name this phone (user and device you're using this on).\n\n" +
-    'Shown as From in the office File Explorer after Sync. Set once on this device.',
+    (isLovableHostedFieldApp()
+      ? 'Shown with the job on Download after Sync. Set once on this device.'
+      : 'Shown as From in the office job list after Sync. Set once on this device.'),
     ''
   );
   nick = (asked || '').trim();
@@ -7646,11 +7648,14 @@ function autoSyncPreference() {
 }
 
 function isAutoSyncOn() {
+  // Lovable bridge through Dec 16: manual Sync only (no background auto-sync).
+  if (isLovableHostedFieldApp()) return false;
   return autoSyncPreference() === 'on';
 }
 
 /** Prompt once: OK = enable auto-sync, Cancel = leave manual-only. */
 function ensureAutoSyncPreferenceAsked() {
+  if (isLovableHostedFieldApp()) return 'off';
   const cur = autoSyncPreference();
   if (cur === 'on' || cur === 'off') return cur;
   const ok = confirm(
@@ -7668,6 +7673,10 @@ function ensureAutoSyncPreferenceAsked() {
 
 function toggleAutoSyncPreference() {
   closeMenu();
+  if (isLovableHostedFieldApp()) {
+    toast('Use Sync to office — auto-sync is off on this app');
+    return;
+  }
   const cur = autoSyncPreference();
   let next;
   if (cur === 'on') {
@@ -7687,6 +7696,11 @@ function toggleAutoSyncPreference() {
 function refreshAutoSyncMenuLabel() {
   const btn = document.getElementById('autoSyncMenuBtn');
   if (!btn) return;
+  if (isLovableHostedFieldApp()) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = '';
   const cur = autoSyncPreference();
   btn.textContent = cur === 'on' ? '⟳ Auto-sync: On' : (cur === 'off' ? '⟳ Auto-sync: Off' : '⟳ Auto-sync: Ask…');
 }
@@ -7865,12 +7879,13 @@ async function syncProjectToOffice() {
   if (!project.pins || !project.pins.length) {
     if (!confirm('No pins yet — sync anyway?')) return;
   }
-  ensureAutoSyncPreferenceAsked();
+  if (!isLovableHostedFieldApp()) ensureAutoSyncPreferenceAsked();
   await runOfficeSyncUpload({ silent: false, projectRef: project });
 }
 
 /** Debounced auto-sync trigger — background / online / leave job. */
 function scheduleAutoSyncOffice(reason) {
+  if (isLovableHostedFieldApp()) return;
   if (!isAutoSyncOn()) return;
   if (_autoSyncTimer) clearTimeout(_autoSyncTimer);
   _autoSyncTimer = setTimeout(function () {
@@ -7880,6 +7895,7 @@ function scheduleAutoSyncOffice(reason) {
 }
 
 async function maybeAutoSyncOffice(reason) {
+  if (isLovableHostedFieldApp()) return;
   if (!isAutoSyncOn()) return;
   if (!navigator.onLine) return;
   if (_officeSyncBusy) { _autoSyncQueued = true; return; }
@@ -7903,6 +7919,8 @@ async function maybeAutoSyncOffice(reason) {
 
 function _wireOfficeAutoSync() {
   refreshAutoSyncMenuLabel();
+  // Lovable bridge: Capture → manual Sync → Download. No background auto-sync.
+  if (isLovableHostedFieldApp()) return;
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'hidden') return;
     if (project) {
@@ -8795,7 +8813,9 @@ function wireHomeModeBtnPress() {
     office.classList.add('is-busy', 'is-pressed');
     office.setAttribute('aria-busy', 'true');
     if (title) title.textContent = 'Opening…';
-    if (sub) sub.textContent = 'Loading File Explorer…';
+    if (sub) sub.textContent = isLovableHostedFieldApp()
+      ? 'Loading synced jobs…'
+      : 'Loading downloads…';
   };
   // Click = committed navigation; keep busy until /office paints or unload.
   office.addEventListener('click', markBusy);

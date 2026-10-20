@@ -26,10 +26,10 @@ type SortDir = "asc" | "desc";
 export const Route = createFileRoute("/office/")({
   head: () => ({
     meta: [
-      { title: "PGG Office — File Explorer" },
+      { title: "PGG — Download synced jobs" },
       {
         name: "description",
-        content: "Password-protected office file explorer for synced PGG field jobs (staging).",
+        content: "Password-protected download list for synced PGG field jobs.",
       },
     ],
   }),
@@ -272,10 +272,13 @@ function OfficeExplorer() {
         >
           PGG Photo Documentation
         </p>
-        <h1 style={{ fontSize: 24, marginBottom: 8, fontWeight: 700 }}>Office staging</h1>
+        <h1 style={{ fontSize: 24, marginBottom: 8, fontWeight: 700 }}>
+          {auth.hostKind === "lovable" ? "Download" : "Office staging"}
+        </h1>
         <p style={{ fontSize: 14, color: PGG.muted, lineHeight: 1.5, marginBottom: 20 }}>
-          Company password required. Browse synced field jobs and download files — not the field
-          survey app.
+          {auth.hostKind === "lovable"
+            ? "Company password required. List synced jobs and download the package to this computer."
+            : "Company password required. Browse synced field jobs and download files — not the field survey app."}
         </p>
         <form
           onSubmit={onLogin}
@@ -552,6 +555,8 @@ function OfficeExplorer() {
     }
   };
 
+  const simpleDownload = auth.hostKind === "lovable";
+
   return (
     <OfficeChrome
       jobs={jobList}
@@ -562,10 +567,18 @@ function OfficeExplorer() {
       onJobsChanged={setJobList}
       onLogout={() => onLogout().catch(() => {})}
       statusMessage={statusMessage}
+      simpleDownload={simpleDownload}
     >
       <div style={{ padding: "8px 10px 20px" }}>
-        <OfficeDesktopReminder />
-        {listReady && (
+        {simpleDownload ? (
+          <p style={{ fontSize: 13, color: PGG.muted, margin: "0 0 10px", lineHeight: 1.4 }}>
+            Synced jobs from the phone. Tap <strong>Download</strong> to save the package on this
+            computer.
+          </p>
+        ) : (
+          <OfficeDesktopReminder />
+        )}
+        {listReady && !simpleDownload && (
           <OfficeStagingCapacity
             usedBytes={
               jobs?.locker?.usedBytes ??
@@ -578,9 +591,9 @@ function OfficeExplorer() {
 
         {!listReady && (
           <p style={{ fontSize: 13, color: PGG.muted, lineHeight: 1.5 }}>
-            Job list unavailable — try Refresh. On www, check the latest Netlify deploy and the
-            office password secrets. Older jobs stay on the temporary lovable.app host through 16
-            Dec 2026 — not on www.
+            {simpleDownload
+              ? "Job list unavailable — try Refresh. If it keeps failing, ask whoever runs this temporary host to check office password secrets."
+              : "Job list unavailable — try Refresh. On www, check the latest Netlify deploy and the office password secrets. Older jobs stay on the temporary lovable.app host through 16 Dec 2026 — not on www."}
           </p>
         )}
 
@@ -594,11 +607,12 @@ function OfficeExplorer() {
             }}
           >
             <h2 style={{ fontSize: 15, margin: "0 0 6px", color: PGG.ink, fontWeight: 600 }}>
-              No jobs in staging yet
+              {simpleDownload ? "No synced jobs yet" : "No jobs in staging yet"}
             </h2>
             <p style={{ fontSize: 13, margin: 0, lineHeight: 1.45 }}>
-              www only shows new Syncs to this site. On the phone at www: Sync to office, then
-              Refresh. Older synced jobs stay on lovable.app through 16 Dec 2026.
+              {simpleDownload
+                ? "On the phone: finish the job → ⋯ → Sync to office → come back here and Refresh."
+                : "www only shows new Syncs to this site. On the phone at www: Sync to office, then Refresh. Older synced jobs stay on lovable.app through 16 Dec 2026."}
             </p>
           </div>
         )}
@@ -609,7 +623,89 @@ function OfficeExplorer() {
           </p>
         )}
 
-        {listReady && jobList.length > 0 && (
+        {listReady && jobList.length > 0 && simpleDownload && (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }} aria-label="Synced jobs">
+            {sortedJobs.map((job) => {
+              const title = job.displayName || "Field export";
+              const rowBusy = rowBusyId === job.id;
+              const opening = openingJobId === job.id;
+              const selected = selectedJobId === job.id;
+              return (
+                <li
+                  key={job.id}
+                  className={`office-list-row${selected ? " is-selected" : ""}`}
+                  onClick={() => setSelectedJobId(job.id)}
+                  style={{
+                    padding: "12px 8px",
+                    borderBottom: `1px solid ${PGG.line}`,
+                    background: selected ? PGG.select : undefined,
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <FolderIcon />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 600,
+                          color: PGG.ink,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {title}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: PGG.muted, marginTop: 4, lineHeight: 1.35 }}
+                      >
+                        {formatLastSynced(job.syncedAt)} · {formatSize(job.totalBytes)} ·{" "}
+                        {job.fileCount} files
+                        {job.syncedFrom ? ` · ${fromLabel(job.syncedFrom)}` : ""}
+                      </div>
+                      {job.syncIncomplete && job.manifestFileCount != null ? (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: PGG.bad,
+                            fontWeight: 600,
+                            marginTop: 4,
+                          }}
+                        >
+                          Sync incomplete — {job.storageObjectCount}/{job.manifestFileCount} in
+                          storage. On the phone: Sync again.
+                        </div>
+                      ) : null}
+                      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className={`${OFFICE_BTN_CLASS} office-btn-primary${rowBusy && rowBusyKind === "download" ? " is-busy" : ""}`}
+                          style={{ ...actionBtn, flex: "1 1 140px", justifyContent: "center", fontWeight: 700 }}
+                          disabled={rowBusy}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startPackageDownload(job.id);
+                          }}
+                        >
+                          {rowBusy && rowBusyKind === "download" ? "Starting…" : "Download package"}
+                        </button>
+                        <Link
+                          to="/office/jobs/$jobId"
+                          params={{ jobId: job.id }}
+                          onClick={() => markOpening(job.id)}
+                          className={`${OFFICE_BTN_CLASS}${opening ? " is-busy" : ""}`}
+                          style={{ ...actionBtn, flex: "0 1 auto", justifyContent: "center" }}
+                        >
+                          {opening ? "Opening…" : "Open photos"}
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {listReady && jobList.length > 0 && !simpleDownload && (
           <>
             <p style={{ fontSize: 11, color: PGG.muted, margin: "0 0 6px" }}>
               Click to select · double-click or Enter to open · Date = last synced · From = user

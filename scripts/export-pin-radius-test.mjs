@@ -67,8 +67,8 @@ assert(pdfOpts.minFrac === 0.008, `minFrac is 0.008 so dense stacks can shrink (
 assert(pdfOpts.comfortN === 36, `comfortN is 36 so countScale shrinks by ~50 pins (got ${pdfOpts.comfortN})`);
 assert(pdfOpts.densFloor === 0.22, `densFloor is 0.22 (got ${pdfOpts.densFloor})`);
 assert(
-  html.includes("PGG_APP_VERSION = '2026.10.20-pins6'"),
-  'PGG_APP_VERSION is 2026.10.20-pins6'
+  html.includes("PGG_APP_VERSION = '2026.10.20-bridge'"),
+  'PGG_APP_VERSION is 2026.10.20-bridge'
 );
 assert(
   html.includes('pinCenterPlan(p)') && html.includes('function renderPins()'),
