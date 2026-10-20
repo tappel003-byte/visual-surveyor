@@ -376,6 +376,7 @@ type Props = {
   /**
    * Lovable bridge: simple Download list — no File Explorer chrome
    * (sidebar, breadcrumbs, Name/From/Open toolbar extras).
+   * Delete stays available (per-row on the list + toolbar when a job is open).
    */
   simpleDownload?: boolean;
   children: ReactNode;
@@ -456,7 +457,7 @@ export function OfficeChrome({
     const name = selected.displayName || selectedJobId;
     if (
       !confirm(
-        `Delete "${name}" from office staging?\n\nThis removes the synced copy from shared storage. Field phones keep their local copy. This cannot be undone.`,
+        `Delete "${name}" from the online folder?\n\nThis removes only this synced copy from the temporary online folder. Phone files are separate and stay on the phone. This cannot be undone.`,
       )
     ) {
       return;
@@ -684,7 +685,7 @@ export function OfficeChrome({
         </button>
       </header>
 
-      {/* Command bar — simple Download keeps Back / Download / Refresh only */}
+      {/* Command bar — simple Download keeps Back / Download / Delete / Refresh */}
       <div
         style={toolbar}
         role="toolbar"
@@ -759,17 +760,15 @@ export function OfficeChrome({
               Download
             </span>
           )}
-          {!simpleDownload && (
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={!selectedJobId || busy}
-              className={`${OFFICE_BTN_CLASS} office-btn-danger${!selectedJobId ? " is-disabled" : ""}${busyAction === "delete" ? " is-busy" : ""}`}
-              style={{ ...toolBtn, color: selectedJobId ? PGG.bad : undefined }}
-            >
-              {busyAction === "delete" ? "Deleting…" : "Delete"}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={!selectedJobId || busy}
+            className={`${OFFICE_BTN_CLASS} office-btn-danger${!selectedJobId ? " is-disabled" : ""}${busyAction === "delete" ? " is-busy" : ""}`}
+            style={{ ...toolBtn, color: selectedJobId ? PGG.bad : undefined }}
+          >
+            {busyAction === "delete" ? "Deleting…" : "Delete"}
+          </button>
         </div>
         {!simpleDownload && (
           <>
