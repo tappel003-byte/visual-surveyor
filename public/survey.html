@@ -7014,8 +7014,9 @@ async function _addPhotosToZip(root, photos, onProgress) {
       done++;
       if (onProgress) onProgress(done, photos.length);
       const blob = blobs.get(item);
+      // Skip missing photos — do not create an empty day folder shell in the ZIP.
       if (!blob) continue;
-      root.folder(item.folder).file(item.base + '.' + mimeExt(blob.type), blob, item.date ? { date: item.date } : undefined);
+      root.file(item.folder + '/' + item.base + '.' + mimeExt(blob.type), blob, item.date ? { date: item.date } : undefined);
     }
     blobs.clear();
     await new Promise(r => setTimeout(r, 0)); // let Safari breathe / GC
@@ -7533,12 +7534,14 @@ async function exportProjectZip() {
 
     } else {
       try {
+        // Files at ZIP root (day folders + misc). ZIP filename is already the job
+        // address — nesting another job folder made Extract All / Explorer show
+        // Job → Job → 3498_date (double nest) and empty day shells.
         const zip = new JSZip();
-        const root = zip.folder(items.folderName);
-        _addMetaToZip(root, items.meta);
+        _addMetaToZip(zip, items.meta);
         // Timing: reading photos out of IndexedDB vs JSZip writing the archive.
         const t0 = performance.now();
-        await _addPhotosToZip(root, items.photos, (n, t) => setLabel('Photo ' + n + ' of ' + t + '…'));
+        await _addPhotosToZip(zip, items.photos, (n, t) => setLabel('Photo ' + n + ' of ' + t + '…'));
         const t1 = performance.now();
         setLabel('Writing ZIP…');
         const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -7963,13 +7966,13 @@ async function _runPartsExport(items, setLabel, opts) {
 
   const buildPart = async (idx) => {
     const partNum = idx + 1;
+    // Same flat layout as one-ZIP Export — no nested job-name folder.
     const zip = new JSZip();
-    const root = zip.folder(items.folderName);
     if (idx === 0) {
-      _addMetaToZip(root, items.meta);
-      root.file('README.txt', PARTS_README);
+      _addMetaToZip(zip, items.meta);
+      zip.file('README.txt', PARTS_README);
     }
-    await _addPhotosToZip(root, batches[idx] || [], (n, t) => {
+    await _addPhotosToZip(zip, batches[idx] || [], (n, t) => {
       const line = 'Building part ' + partNum + ' of ' + totalParts + ' — photo ' + n + ' of ' + t + '…';
       setLabel(line); exportPanel.msg(line);
     });
