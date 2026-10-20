@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.20-sync2" />
+<meta name="pgg-app-version" content="2026.10.20-pins3" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -705,7 +705,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-sync2</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-pins3</p>
   </div>
 
 
@@ -7053,7 +7053,7 @@ const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 // Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
 const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
 /** Bump when shipping a field shell Tim must verify on every phone. */
-const PGG_APP_VERSION = '2026.10.20-sync2';
+const PGG_APP_VERSION = '2026.10.20-pins3';
 const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
@@ -8069,13 +8069,14 @@ async function buildPinLogPdf() {
   // Composed full-building plan with numbered pins — PDF uses larger markers
   // than ZIP map.png / on-screen so house-plan numbers stay readable on tabloid.
   // Explicit opts only on this path; ZIP map.png keeps exportPinRadius defaults.
-  // Residential overviews (Grace-style): PR #45 (0.030) still too small in the
-  // field — bump again so overview numbers read clearly on the 11×17 sheet.
+  // #52 (0.048 / comfortN 200 / densFloor 0.92) blotted dense ~50-pin jobs —
+  // density-aware middle: readable on sparse plans, shrinks when pin count rises.
+  // #45 was 0.030/0.015/120/0.85; #52 was 0.048/0.024/200/0.92.
   const pngBlob = await composeMapImage('png-blob', {
-    baseFrac: 0.048,
-    minFrac: 0.024,
-    comfortN: 200,
-    densFloor: 0.92
+    baseFrac: 0.038,
+    minFrac: 0.016,
+    comfortN: 36,
+    densFloor: 0.55
   });
   const planDataUrl = await blobToDataUrl(pngBlob);
   const planW = project.plan.width, planH = project.plan.height;
@@ -8087,9 +8088,10 @@ async function buildPinLogPdf() {
   const pageH = pdf.internal.pageSize.getHeight();  // 11
   const margin = 0.3;
 
-  // Map-majority layout: ~12.5" plan box, ~3.7" table (readable map first).
+  // Map-majority layout: ~11.9" plan box, ~4.3" table (Location/Notes readable
+  // on phone Preview + printed PDF without starving the plan).
   const gutter = 0.18;
-  const planBoxW = 12.5;
+  const planBoxW = 11.9;
   const planBoxX = margin;
   const planBoxY = margin;
   const planBoxH = pageH - margin*2;
@@ -8098,10 +8100,10 @@ async function buildPinLogPdf() {
   const tableY = margin;
   const tableH = pageH - margin*2;
 
-  // Thinner table columns to fund the wider plan
-  const colPhoto = 0.52;
-  const colNum = 0.36;
-  const colLoc = 0.95;
+  // Slightly wider Location + taller rows so Notes stay legible at phone zoom.
+  const colPhoto = 0.55;
+  const colNum = 0.40;
+  const colLoc = 1.15;
   const colNotes = tableW - (colPhoto + colNum + colLoc);
   const colX = [
     tableX,
@@ -8110,9 +8112,9 @@ async function buildPinLogPdf() {
     tableX + colPhoto + colNum + colLoc,
     tableX + tableW
   ];
-  const headerH = 0.32;
-  const minRowH = 0.30;
-  const lineH = 0.125;
+  const headerH = 0.40;
+  const minRowH = 0.40;
+  const lineH = 0.155;
   const maxNoteLines = 5;
 
   // Build the row data — p.location wins over auto-detected pinRoom guess.
@@ -8142,14 +8144,14 @@ async function buildPinLogPdf() {
 
   // Measure note wrap so company review can see descriptions (not just 2 lines).
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(9);
+  pdf.setFontSize(11);
   const notesMax = colNotes - 0.14;
   rows.forEach(row => {
     const noteLines = pdf.splitTextToSize(row.notes || '', notesMax);
     row._noteLines = noteLines;
     const shown = Math.min(maxNoteLines, Math.max(1, noteLines.length || 1));
     row._shown = shown;
-    row._rowH = Math.max(minRowH, 0.10 + shown * lineH);
+    row._rowH = Math.max(minRowH, 0.12 + shown * lineH);
   });
 
   // Pack variable-height rows into overview pages.
@@ -8225,9 +8227,9 @@ async function buildPinLogPdf() {
     pdf.rect(tableX, tableY, tableW, headerH, 'F');
 
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10);
+    pdf.setFontSize(12);
     pdf.setTextColor(30);
-    const hy = tableY + headerH/2 + 0.04;
+    const hy = tableY + headerH/2 + 0.05;
     pdf.text('Photo', colX[0] + colPhoto/2, hy, { align: 'center' });
     pdf.text('#',     colX[1] + colNum/2,   hy, { align: 'center' });
     pdf.text('Location', colX[2] + colLoc/2, hy, { align: 'center' });
@@ -8250,7 +8252,7 @@ async function buildPinLogPdf() {
     const bodyTop = tableY + headerH;
     let y = bodyTop;
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(9);
+    pdf.setFontSize(11);
     pageRows.forEach((row, i) => {
       if (i > 0) {
         pdf.setDrawColor(180);
@@ -8258,17 +8260,17 @@ async function buildPinLogPdf() {
         pdf.line(tableX, y, tableX + tableW, y);
       }
       const rowH = row._rowH;
-      const ty = y + Math.min(rowH, minRowH) / 2 + 0.035;
+      const ty = y + Math.min(rowH, minRowH) / 2 + 0.045;
       pdf.setTextColor(30);
       if (row.photo) pdf.text(row.photo, colX[0] + colPhoto/2, ty, { align: 'center' });
       const cx = colX[1] + colNum/2;
       const cy = y + Math.min(rowH, minRowH) / 2;
       pdf.setDrawColor(60);
       pdf.setLineWidth(0.010);
-      pdf.circle(cx, cy, 0.1375, 'S');
-      pdf.setFontSize(10);
-      pdf.text(String(row.pinNum), cx, cy + 0.04, { align: 'center' });
-      pdf.setFontSize(9);
+      pdf.circle(cx, cy, 0.155, 'S');
+      pdf.setFontSize(12);
+      pdf.text(String(row.pinNum), cx, cy + 0.045, { align: 'center' });
+      pdf.setFontSize(11);
       const locMax = colLoc - 0.12;
       let locTxt = row.location;
       while (locTxt && pdf.getTextWidth(locTxt) > locMax) locTxt = locTxt.slice(0, -1);
@@ -8288,7 +8290,7 @@ async function buildPinLogPdf() {
         shown.forEach((ln, li) => {
           let text = ln;
           if (truncated && li === shown.length - 1 && text.length > 3) text = text.slice(0, -1) + '…';
-          pdf.text(text, colX[3] + 0.07, y + 0.12 + li * lineH);
+          pdf.text(text, colX[3] + 0.07, y + 0.14 + li * lineH);
         });
       }
       y += rowH;
