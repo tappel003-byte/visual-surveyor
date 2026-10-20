@@ -60,12 +60,43 @@ export type FileMeta = {
 
 let storeSingleton: Store | null = null;
 
-/** Site-wide store with strong consistency (Sync must show in /office immediately). */
+/**
+ * Strong consistency needs `uncachedEdgeURL` in NETLIFY_BLOBS_CONTEXT.
+ * Some Netlify runtimes omit it; `@netlify/blobs` then throws BlobsConsistencyError
+ * on every read — Sync dies with a generic 500 after the field key checks out.
+ */
+function blobsSupportsStrongConsistency(): boolean {
+  try {
+    const globalCtx = (globalThis as { netlifyBlobsContext?: unknown }).netlifyBlobsContext;
+    const raw =
+      (typeof globalCtx === "string" && globalCtx) ||
+      process.env.NETLIFY_BLOBS_CONTEXT ||
+      "";
+    if (!raw) return false;
+    const json = JSON.parse(Buffer.from(raw, "base64").toString("utf8")) as {
+      uncachedEdgeURL?: string;
+    };
+    return Boolean(json.uncachedEdgeURL?.trim());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Site-wide store. Prefer strong consistency so Sync shows in /office immediately;
+ * fall back to eventual when the runtime cannot do strong reads.
+ */
 export function getOfficeLockerStore(): Store {
   if (!storeSingleton) {
+    const consistency = blobsSupportsStrongConsistency() ? "strong" : "eventual";
+    if (consistency === "eventual") {
+      console.warn(
+        "[office-blobs] Blobs strong consistency unavailable (no uncachedEdgeURL); using eventual",
+      );
+    }
     storeSingleton = getStore({
       name: OFFICE_LOCKER_STORE,
-      consistency: "strong",
+      consistency,
     });
   }
   return storeSingleton;
