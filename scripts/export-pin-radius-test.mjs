@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * Density-aware PDF pin radius QC for public/survey.html.
- * Extracts exportPinRadius + asserts buildPinLogPdf overview opts (pins3).
+ * Extracts exportPinRadius + asserts buildPinLogPdf overview opts (pins4).
  *
  * #52 (0.048 / comfortN 200 / densFloor 0.92) kept ~full size at 50 pins.
  * pins3: middle baseFrac + comfortN that actually shrinks dense jobs.
+ * pins4: ~15% smaller base/min than pins3; comfortN / densFloor unchanged.
  *
  * Run: node scripts/export-pin-radius-test.mjs
  */
@@ -54,13 +55,13 @@ function assert(cond, msg) {
   }
 }
 
-assert(pdfOpts.baseFrac === 0.038, `baseFrac is 0.038 (got ${pdfOpts.baseFrac})`);
-assert(pdfOpts.minFrac === 0.016, `minFrac is 0.016 (got ${pdfOpts.minFrac})`);
+assert(pdfOpts.baseFrac === 0.032, `baseFrac is 0.032 (got ${pdfOpts.baseFrac})`);
+assert(pdfOpts.minFrac === 0.014, `minFrac is 0.014 (got ${pdfOpts.minFrac})`);
 assert(pdfOpts.comfortN === 36, `comfortN is 36 so countScale shrinks by ~50 pins (got ${pdfOpts.comfortN})`);
 assert(pdfOpts.densFloor === 0.55, `densFloor is 0.55 (got ${pdfOpts.densFloor})`);
 assert(
-  html.includes("PGG_APP_VERSION = '2026.10.20-pins3'"),
-  'PGG_APP_VERSION is 2026.10.20-pins3'
+  html.includes("PGG_APP_VERSION = '2026.10.20-pins4'"),
+  'PGG_APP_VERSION is 2026.10.20-pins4'
 );
 
 const W = 3000;
@@ -81,6 +82,7 @@ function latticePins(n, cols, gap) {
 const baseR = maxDim * pdfOpts.baseFrac;
 const r52 = maxDim * 0.048; // #52 base; comfortN 200 → no count shrink at n=50
 const r45 = maxDim * 0.030;
+const rPins3 = maxDim * 0.038;
 
 // Sparse: gaps >> 3R so densScale stays 1; countScale also 1 at n=12.
 const sparse = exportPinRadius(W, H, latticePins(12, 4, 700), pdfOpts);
@@ -96,6 +98,7 @@ assert(dense80 < dense50, `80 spread pins smaller than 50 (${dense80.toFixed(1)}
 assert(crowded50 < dense50, `crowded 50 smaller than spread 50 (${crowded50.toFixed(1)} < ${dense50.toFixed(1)})`);
 assert(dense50 < r52 * 0.92, `50-pin radius below #52 blot size (${dense50.toFixed(1)} < ${(r52 * 0.92).toFixed(1)})`);
 assert(dense50 > r45 * 0.85, `50-pin radius still above tiny #45 floor (${dense50.toFixed(1)} > ${(r45 * 0.85).toFixed(1)})`);
+assert(sparse < rPins3 * 0.9, `pins4 sparse ~15% under pins3 base (${sparse.toFixed(1)} < ${(rPins3 * 0.9).toFixed(1)})`);
 
 const expect50 = baseR * Math.sqrt(pdfOpts.comfortN / 50);
 assert(
@@ -106,10 +109,11 @@ assert(
 console.log('\nQC radii (maxDim=3000):');
 console.log(`  #45 base:       ${r45.toFixed(1)}px`);
 console.log(`  #52 base:       ${r52.toFixed(1)}px`);
-console.log(`  pins3 sparse:   ${sparse.toFixed(1)}px`);
-console.log(`  pins3 n=50:     ${dense50.toFixed(1)}px`);
-console.log(`  pins3 n=80:     ${dense80.toFixed(1)}px`);
-console.log(`  pins3 crowded50:${crowded50.toFixed(1)}px`);
+console.log(`  pins3 base:     ${rPins3.toFixed(1)}px`);
+console.log(`  pins4 sparse:   ${sparse.toFixed(1)}px`);
+console.log(`  pins4 n=50:     ${dense50.toFixed(1)}px`);
+console.log(`  pins4 n=80:     ${dense80.toFixed(1)}px`);
+console.log(`  pins4 crowded50:${crowded50.toFixed(1)}px`);
 
 if (failed) {
   console.error(`\n${failed} assertion(s) failed`);

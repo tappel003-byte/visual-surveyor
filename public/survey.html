@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>PGG</title>
 <!-- Visible on home so Tim can verify every phone updated before storage lockdown. -->
-<meta name="pgg-app-version" content="2026.10.20-pins3" />
+<meta name="pgg-app-version" content="2026.10.20-pins4" />
 <link rel="manifest" href="/manifest-pgg.webmanifest?v=pgg-7" />
 <meta name="theme-color" content="#8b5e34" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -705,7 +705,7 @@
         <p id="updateAppHint" class="update-app-hint" hidden>Tap Update, then swipe the app out and open it again.</p>
       </div>
     </div>
-    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-pins3</p>
+    <p id="homeAppVersion" class="home-app-version" aria-label="App version">App 2026.10.20-pins4</p>
   </div>
 
 
@@ -7053,7 +7053,7 @@ const PGG_SUPA_KEY = 'sb_publishable_7zrQFuuF1LQMDKWI7nKoTw_DbXqK5R7';
 // Field key is a public speed bump (also in Netlify env NLF_FIELD_KEY). Caps + daily limit are the real brake.
 const PGG_FIELD_KEY = 'pggFk_8mR2nQ7vX4wL9cH6tY1bA3';
 /** Bump when shipping a field shell Tim must verify on every phone. */
-const PGG_APP_VERSION = '2026.10.20-pins3';
+const PGG_APP_VERSION = '2026.10.20-pins4';
 const PGG_SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
 
 /** True when storage says the object is already there (INSERT-only resume — no UPDATE). */
@@ -8069,12 +8069,13 @@ async function buildPinLogPdf() {
   // Composed full-building plan with numbered pins — PDF uses larger markers
   // than ZIP map.png / on-screen so house-plan numbers stay readable on tabloid.
   // Explicit opts only on this path; ZIP map.png keeps exportPinRadius defaults.
-  // #52 (0.048 / comfortN 200 / densFloor 0.92) blotted dense ~50-pin jobs —
-  // density-aware middle: readable on sparse plans, shrinks when pin count rises.
+  // #52 (0.048 / comfortN 200 / densFloor 0.92) blotted dense ~50-pin jobs.
+  // pins3 was 0.038/0.016; pins4 ≈15% smaller base/min (dense Grace St still too big).
+  // comfortN / densFloor unchanged — still tied to pin count / nearest-neighbor.
   // #45 was 0.030/0.015/120/0.85; #52 was 0.048/0.024/200/0.92.
   const pngBlob = await composeMapImage('png-blob', {
-    baseFrac: 0.038,
-    minFrac: 0.016,
+    baseFrac: 0.032,
+    minFrac: 0.014,
     comfortN: 36,
     densFloor: 0.55
   });
